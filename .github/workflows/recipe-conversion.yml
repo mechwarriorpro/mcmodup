@@ -1,0 +1,66 @@
+name: Verify original recipe conversion
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/recipe-conversion.yml'
+      - 'tests/recipe_conversion_smoke.py'
+      - 'tests/fixtures/*Recipe*Smoke.java'
+      - 'mcmodup/recipe*.py'
+
+permissions:
+  contents: read
+
+jobs:
+  recipes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.11'
+      - name: Inspect pinned original releases without running their code
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/recipe-originals"
+          cd "$RUNNER_TEMP/recipe-originals"
+          download() {
+            curl --proto '=https' --proto-redir '=https' --fail --location --silent --show-error \
+              --retry 2 --max-time 60 --max-filesize 1500000 --output "$1" "$2" &&
+              printf '%s  %s\n' "$3" "$1" | sha1sum --check
+          }
+          download XtraRecipes_v2.1.1__1.5.2_.zip https://edge.forgecdn.net/files/711/105/XtraRecipes_v2.1.1__1.5.2_.zip 1632cde94e42c54099db63bf5f988bd4e3b7b2ca
+          download CBR_1.0.zip https://edge.forgecdn.net/files/713/755/CBR_1.0.zip 353289623195f43a7b5bc2e06066e831d4362728
+          download Saddle_Recipe.jar https://edge.forgecdn.net/files/772/757/Saddle_Recipe.jar f4b6441696eb58e8d42747fe1909ba43edd936c7
+          download 'Craftable Saddles mc 1.7.10.jar' https://edge.forgecdn.net/files/2336/175/Craftable%20Saddles%20mc%201.7.10.jar 939434ba9ff8e7788839dd5ecf01a74909d60f2a
+          cd "$GITHUB_WORKSPACE"
+          python - "$RUNNER_TEMP/recipe-originals" <<'PY'
+          from pathlib import Path
+          import re
+          import subprocess
+          import sys
+          from mcmodup.inputs import open_input
+          from mcmodup.classfiles import CLASS_LIMIT, class_entries, read_class
+
+          for path in sorted(Path(sys.argv[1]).iterdir()):
+              def notice(text):
+                  print(f'::notice title={path.name}::' + text.replace('%', '%25').replace('\n', '%0A'))
+
+              with open_input(path) as archive:
+                  notice('entries: ' + ', '.join(archive.files)[:2000])
+                  for owner, entry in class_entries(archive.files).items():
+                      cls = read_class(archive.read(entry, CLASS_LIMIT))
+                      notice(f'{owner} {cls.parents} {cls.legacy_mod!r}; methods: ' + ', '.join(
+                          name + descriptor for name, descriptor in cls.members if descriptor.startswith('(')))
+                      calls = sorted(s.key for s in cls.references if s.kind == 'method')
+                      notice(f'{owner} calls: ' + ', '.join(calls)[:2200])
+                      fields = sorted(s.key for s in cls.references if s.kind == 'field' and s.owner != owner)
+                      notice(f'{owner} external fields: ' + ', '.join(fields)[:2200])
+                      disassembly = subprocess.check_output(['javap', '-p', '-c', '-classpath', str(path), owner.replace('/', '.')], text=True)
+                      ops = sorted(set(re.findall(r'^\s+\d+:\s+(\w+)', disassembly, re.M)))
+                      notice(f'{owner} instruction set: ' + ', '.join(ops))
+          PY
