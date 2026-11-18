@@ -63,7 +63,11 @@ public final class LegacyRecipeSmoke {
                 require(changed == count, "Different number of original furnace registrations: " + changed);
                 for (String row : rows.subList(1, rows.size())) smelt(server, world, row.split("\t"));
             }
-            System.out.println("MCMODUP_RECIPE_PASS " + (rows.size() - 1) + " runtime cases for " + meta[3]);
+            String difference = "";
+            for (String row : rows) if (row.startsWith("A\t")) {
+                difference = "; 1 XP after two automated extractions and one player pickup";
+            }
+            System.out.println("MCMODUP_RECIPE_PASS " + (rows.size() - 1) + " runtime cases for " + meta[3] + difference);
         } catch (Throwable error) {
             System.err.println("MCMODUP_RECIPE_FAIL " + error);
             error.printStackTrace();
@@ -141,33 +145,44 @@ public final class LegacyRecipeSmoke {
     }
 
     private static void smelt(Object server, Object world, String[] c) throws Exception {
-        require(c[0].equals("S") && c[2].equals("minecraft:rotten_flesh") && c[3].equals("minecraft:leather"),
+        boolean automated = c[0].equals("A");
+        require((automated || c[0].equals("S")) && c[2].equals("minecraft:rotten_flesh") && c[3].equals("minecraft:leather"),
             "Unexpected historical furnace fixture");
         Object recipes = furnaceRecipes();
         Object registered = smeltingList().get(367);
         require(registered != null && (Integer) field(registered, "field_77993_c") == 334, "Original registry did not map rotten flesh to leather");
         require(!smeltingList().containsKey(280), "A stick must not smelt");
-        final int ticks = Integer.parseInt(c[5]);
+        final int ticks = Integer.parseInt(c[5]), expectedCount = Integer.parseInt(c[4]);
         final float rawXp = Float.parseFloat(c[6]);
         final int xp = Integer.parseInt(c[7]);
         require(call(recipes, "func_77601_c", new Class<?>[]{int.class}, 334).equals(rawXp), "Unexpected original registered XP");
         Object spawn = call(world, "func_72861_E", new Class<?>[0]);
-        int x = (Integer) field(spawn, "field_71574_a"), y = (Integer) field(spawn, "field_71572_b") + 4, z = (Integer) field(spawn, "field_71573_c");
+        int x = (Integer) field(spawn, "field_71574_a") + (automated ? 12 : 0);
+        int y = (Integer) field(spawn, "field_71572_b") + 4, z = (Integer) field(spawn, "field_71573_c");
         call(world, "func_94575_c", new Class<?>[]{int.class, int.class, int.class, int.class}, x, y, z, 61);
         Object furnace = call(world, "func_72796_p", new Class<?>[]{int.class, int.class, int.class}, x, y, z);
         Class<?> stack = type("item.ItemStack");
+        int operations = automated ? 3 : 1;
         call(furnace, "func_70299_a", new Class<?>[]{int.class, stack}, 0,
-            stack.getConstructor(int.class, int.class, int.class).newInstance(367, 2, 0));
+            stack.getConstructor(int.class, int.class, int.class).newInstance(367, operations + 1, 0));
         call(furnace, "func_70299_a", new Class<?>[]{int.class, stack}, 1,
             stack.getConstructor(int.class, int.class, int.class).newInstance(263, 1, 0));
-        for (int i = 1; i <= ticks; i++) {
-            call(furnace, "func_70316_g", new Class<?>[0]);
-            if (i < ticks) require(slot(furnace, 2) == null, "Early legacy furnace output at " + i + " ticks");
+        Object output = null;
+        for (int operation = 1; operation <= operations; operation++) {
+            for (int i = 1; i <= ticks; i++) {
+                call(furnace, "func_70316_g", new Class<?>[0]);
+                if (i < ticks) require(slot(furnace, 2) == null, "Early legacy furnace output at " + i + " ticks");
+            }
+            output = slot(furnace, 2);
+            require(output != null && (Integer) field(output, "field_77993_c") == 334 && stackCount(output) == expectedCount,
+                "Wrong legacy furnace result at tick " + ticks);
+            require(stackCount(slot(furnace, 0)) == operations + 1 - operation, "Legacy furnace consumed the wrong amount");
+            if (operation < operations) {
+                // Pull straight from the inventory, as automation does. This
+                // deliberately does not invoke SlotFurnace's player pickup hook.
+                call(furnace, "func_70298_a", new Class<?>[]{int.class, int.class}, 2, expectedCount);
+            }
         }
-        Object output = slot(furnace, 2);
-        require(output != null && (Integer) field(output, "field_77993_c") == 334 && stackCount(output) == Integer.parseInt(c[4]),
-            "Wrong legacy furnace result at tick " + ticks);
-        require(stackCount(slot(furnace, 0)) == 1, "Legacy furnace consumed the wrong amount");
         Object manager = type("item.ItemInWorldManager").getConstructor(type("world.World")).newInstance(world);
         Object player = type("entity.player.EntityPlayerMP").getConstructor(type("server.MinecraftServer"), type("world.World"), String.class, manager.getClass())
             .newInstance(server, world, "RecipeProbe", manager);

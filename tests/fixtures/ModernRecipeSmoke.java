@@ -43,10 +43,12 @@ public final class ModernRecipeSmoke {
             for (final String row : rows.subList(1, rows.size())) {
                 final String[] c = row.split("\t");
                 if (c[0].equals("C")) craft(level, c);
-                else if (c[0].equals("S")) smelt(level, c);
+                else if (c[0].equals("S") || c[0].equals("A")) smelt(level, c);
                 else throw new IllegalArgumentException(row);
             }
-            System.out.println("MCMODUP_RECIPE_PASS " + (rows.size() - 1) + " runtime cases for " + meta[1]);
+            final String difference = rows.stream().anyMatch(row -> row.startsWith("A\t"))
+                ? "; 3 XP after two automated extractions and one player pickup" : "";
+            System.out.println("MCMODUP_RECIPE_PASS " + (rows.size() - 1) + " runtime cases for " + meta[1] + difference);
         } catch (Throwable error) {
             System.err.println("MCMODUP_RECIPE_FAIL " + error);
             error.printStackTrace();
@@ -85,25 +87,31 @@ public final class ModernRecipeSmoke {
         require(holder.id().equals(ResourceLocation.parse(c[1])), "Smelting is not supplied by the converted mod");
         final SmeltingRecipe recipe = holder.value();
         final int ticks = Integer.parseInt(c[5]);
-        final int xp = Integer.parseInt(c[7]);
-        require(recipe.getCookingTime() == ticks && recipe.getExperience() == xp, "Changed cook time or XP");
+        final int xp = Integer.parseInt(c[8]);
+        final int count = Integer.parseInt(c[4]);
+        final boolean automated = c[0].equals("A");
+        require(recipe.getCookingTime() == ticks && recipe.getExperience() == Integer.parseInt(c[7]), "Changed cook time or per-cook XP");
         require(manager.getRecipeFor(RecipeType.SMELTING, new SingleRecipeInput(new ItemStack(Items.STICK)), level).isEmpty(),
             "Unrelated furnace input unexpectedly smelts");
         require(manager.getRecipeFor(RecipeType.SMOKING, input, level).isEmpty()
             && manager.getRecipeFor(RecipeType.BLASTING, input, level).isEmpty(), "Unexpected additional cooker support");
-        final BlockPos pos = level.getSharedSpawnPos().above(4);
+        final BlockPos pos = level.getSharedSpawnPos().above(4).east(automated ? 12 : 0);
         final AABB range = new AABB(pos).inflate(4);
         final int before = level.getEntitiesOfClass(ExperienceOrb.class, range).stream().mapToInt(ExperienceOrb::getValue).sum();
         level.setBlockAndUpdate(pos, Blocks.FURNACE.defaultBlockState());
         final var furnace = (AbstractFurnaceBlockEntity) level.getBlockEntity(pos);
-        furnace.setItem(0, new ItemStack(input.item().getItem(), 2));
+        final int operations = automated ? 3 : 1;
+        furnace.setItem(0, new ItemStack(input.item().getItem(), operations + 1));
         furnace.setItem(1, new ItemStack(Items.COAL));
-        for (int tick = 1; tick <= ticks; tick++) {
-            AbstractFurnaceBlockEntity.serverTick(level, pos, level.getBlockState(pos), furnace);
-            if (tick < ticks) require(furnace.getItem(2).isEmpty(), "Furnace produced output before the expected tick");
+        for (int operation = 1; operation <= operations; operation++) {
+            for (int tick = 1; tick <= ticks; tick++) {
+                AbstractFurnaceBlockEntity.serverTick(level, pos, level.getBlockState(pos), furnace);
+                if (tick < ticks) require(furnace.getItem(2).isEmpty(), "Furnace produced output before the expected tick");
+            }
+            result(furnace.getItem(2), c[3], count);
+            require(furnace.getItem(0).getCount() == operations + 1 - operation, "Furnace must consume exactly one input");
+            if (operation < operations) result(furnace.removeItem(2, count), c[3], count);
         }
-        result(furnace.getItem(2), c[3], Integer.parseInt(c[4]));
-        require(furnace.getItem(0).getCount() == 1, "Furnace must consume exactly one input");
         furnace.getRecipesToAwardAndPopExperience(level, Vec3.atCenterOf(pos));
         final int after = level.getEntitiesOfClass(ExperienceOrb.class, range).stream().mapToInt(ExperienceOrb::getValue).sum();
         require(after - before == xp, "Expected " + xp + " XP, got " + (after - before));

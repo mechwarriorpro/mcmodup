@@ -127,7 +127,12 @@ def input_cases(root: Path, output: Path, report: dict, version: str, mod_id: st
             # Independent fixture expectations, not the converter's XP value.
             assert len(recipes) == 1 and recipe["type"] == "minecraft:smelting"
             raw, awarded = ("2.0", "1") if version == "1.5.2" else ("0.0", "0")
-            rows.append(["S", recipe_id, "minecraft:rotten_flesh", "minecraft:leather", "1", "200", raw, awarded])
+            recipe_case = [recipe_id, "minecraft:rotten_flesh", "minecraft:leather", "1", "200", raw]
+            rows.append(["S", *recipe_case, awarded, awarded])
+            if version == "1.5.2":
+                # Two automated removals, then one player pickup: the old slot
+                # only pays for the pickup. Modern furnaces retain XP on removal.
+                rows.append(["A", *recipe_case, "1", "3"])
     path = root / f"cases-{version}.tsv"
     path.write_text("".join("\t".join(row) + "\n" for row in rows), encoding="utf-8")
     return path
