@@ -6,6 +6,7 @@ on:
     paths:
       - '.github/workflows/thaumic-tinkerer-preview.yml'
       - 'tests/prepare_tinkerer_preview.py'
+      - 'examples/port-patches/thaumic-tinkerer/**'
       - 'tests/fixtures/TinkererPackSmoke.java'
 
 permissions:

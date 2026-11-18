@@ -1,4 +1,4 @@
-"""Inspect exact Thaumcraft assets without distributing any files or executing the old JAR."""
+"""Inspect exact Thaumcraft and Tinkerer assets without publishing or running the old JARs."""
 
 import argparse
 from collections import defaultdict
@@ -16,8 +16,8 @@ def fingerprint(content: bytes) -> str:
 
 
 def analyze(original: Path, archive: Path, recipe: Path) -> dict:
-    [port] = load_ports(BuildOptions(recipe)).values()
-    if digest(original) != port.legacy_sha256 or digest(archive) != port.source_sha256:
+    port = load_ports(BuildOptions(recipe)).get(digest(original))
+    if port is None or digest(archive) != port.source_sha256:
         raise ValueError("Use the exact original JAR and pinned source ZIP from the recipe.")
     with tempfile.TemporaryDirectory(prefix="mcmodup-asset-audit-") as scratch, open_input(original) as old:
         workspace = Path(scratch) / "project"
@@ -67,7 +67,7 @@ def analyze(original: Path, archive: Path, recipe: Path) -> dict:
                 "unsupported_locale_lines": sum(r["unsupported_lines"] for r in locale_rows),
                 "duplicate_locale_entries": sum(r["duplicate_entries"] for r in locale_rows),
                 "other_resource_paths": sorted(name for name in old.files
-                    if not name.endswith(".class") and not name.startswith(("assets/", "META-INF/")))}
+                    if not is_legacy_asset(name) and not name.endswith(".class") and not name.startswith("META-INF/"))}
 
 
 if __name__ == "__main__":

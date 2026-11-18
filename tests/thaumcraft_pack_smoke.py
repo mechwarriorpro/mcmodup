@@ -40,14 +40,15 @@ neoForge.runs.named('client') {{
     log = run_gradle(project, "runClient")
     markers = ["MCMD_CLIENT_PASSED", "MCMD_CLIENT_BOOK_RENDERED", "MCMD_CLIENT_WARP_RENDERED_RELOADED_CLEARED"]
     if with_tinkerer:
-        markers.append("MCMD_CLIENT_TINKERER_RENDERED")
+        markers.extend(("MCMD_CLIENT_TINKERER_RENDERED", "MCMD_CLIENT_BEDROCK_PORTAL_FOG_CLOUDS"))
     assert all(marker in log for marker in markers), log[-12000:]
     assert "Unable to render warp post chain" not in log and "MCMD_CLIENT_FAILED" not in log, log[-12000:]
     assert (project / "run/saves/mcmodup-runtime-check/level.dat").is_file(), "Client did not save its fresh world"
     assert {file.name: digest(file) for file in mods.iterdir()} == expected
     print("Staged production JARs passed a fresh NeoForge client world: the Thaumonomicon opened and rendered, "
           "all four Warp post chains rendered, survived a pack reload and cleared, and the world saved." +
-          (" The staged Osmotic Enchanter opened and rendered its GUI." if with_tinkerer else ""))
+          (" The Osmotic Enchanter opened and rendered, and the Bedrock portal reached its dimension with legacy base fog and clouds."
+           if with_tinkerer else ""))
 from neoforge_smoke import empty_test_structure
 
 

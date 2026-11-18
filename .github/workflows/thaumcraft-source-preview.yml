@@ -91,8 +91,12 @@ jobs:
             python - "$log" <<'PY'
           import pathlib
           import sys
-          log = pathlib.Path(sys.argv[1]).read_text(errors="replace")[-5000:]
-          print("::error title=Native source preview failed::" + log.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A"))
+          text = pathlib.Path(sys.argv[1]).read_text(errors="replace")[-11000:]
+          # The Checks API truncates long notices. Preserve the final error and nearby context.
+          chunks = [text[i:i + 2500] for i in range(0, len(text), 2500)]
+          for i, part in enumerate(chunks, 1):
+              escaped = part.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+              print(f"::error title=Native source preview failed ({i}/{len(chunks)})::{escaped}")
           PY
             exit "$result"
           fi

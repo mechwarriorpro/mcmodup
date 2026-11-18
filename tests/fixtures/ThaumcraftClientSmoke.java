@@ -15,6 +15,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.Difficulty;
@@ -23,6 +24,7 @@ import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.GameRules;
 import net.minecraft.world.level.GameType;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.level.LevelSettings;
 import net.minecraft.world.level.WorldDataConfiguration;
 import net.minecraft.world.level.levelgen.WorldOptions;
@@ -44,6 +46,8 @@ public final class ThaumcraftClientSmoke {
             "sun_scorned", "warp_sun_scorned", "unnatural_hunger", "warp_hunger");
     private static final ResourceLocation BOOK = ResourceLocation.parse("thaumcraft:thaumonomicon");
     private static final ResourceLocation ENCHANTER = ResourceLocation.parse("thaumictinkerer:enchanter");
+    private static final ResourceLocation PORTAL = ResourceLocation.parse("thaumictinkerer:bedrock_portal");
+    private static final ResourceKey<Level> BEDROCK = ResourceKey.create(Registries.DIMENSION, ResourceLocation.parse("thaumictinkerer:bedrock"));
     private static final String BROWSER = "thaumcraft.client.gui.GuiResearchBrowser";
     private static final String ENCHANTING = "thaumic.tinkerer.client.gui.GuiEnchanting";
     private static final int ACTIVE_FRAMES = 5;
@@ -54,7 +58,7 @@ public final class ThaumcraftClientSmoke {
     private BlockPos enchanterPosition;
     private Map<String, PostChain> initialChains;
 
-    private enum Stage { START, JOIN, BOOK, BROWSER, EFFECTS, RELOADED, CLEARED, TABLE, TABLE_GUI, DONE }
+    private enum Stage { START, JOIN, BOOK, BROWSER, EFFECTS, RELOADED, CLEARED, TABLE, TABLE_GUI, PORTAL, DONE }
 
     public ThaumcraftClientSmoke() {
         NeoForge.EVENT_BUS.addListener(this::tick);
@@ -152,7 +156,26 @@ public final class ThaumcraftClientSmoke {
                 }
                 case TABLE_GUI -> {
                     if (!screenIs(client, ENCHANTING) || frames < ACTIVE_FRAMES) return;
+                    client.screen.onClose();
                     System.out.println("MCMD_CLIENT_TINKERER_RENDERED");
+                    require(BuiltInRegistries.BLOCK.containsKey(PORTAL), "Missing Bedrock portal registration");
+                    server(client, actor -> {
+                        require(actor.serverLevel().getServer().getLevel(BEDROCK) != null, "Missing Bedrock dimension in fresh world");
+                        require(actor.serverLevel().setBlockAndUpdate(actor.blockPosition(), BuiltInRegistries.BLOCK.get(PORTAL).defaultBlockState()),
+                                "Could not place a Bedrock portal at the player's feet");
+                    });
+                    advance(Stage.PORTAL);
+                }
+                case PORTAL -> {
+                    if (frames < ACTIVE_FRAMES) return;
+                    var effects = client.level.effects();
+                    var expected = new Vec3(160 / 255F * .15F, 128 / 255F * .15F, 160 / 255F * .15F);
+                    var night = effects.getBrightnessDependentFogColor(Vec3.ZERO, 0);
+                    var day = effects.getBrightnessDependentFogColor(new Vec3(1, 1, 1), 1);
+                    require(night.distanceTo(expected) < 1e-7 && day.distanceTo(expected) < 1e-7,
+                            "Legacy Bedrock base fog must keep its original colour in daylight and at night");
+                    require(effects.getCloudHeight() == 0, "Legacy Bedrock cloud height must be zero");
+                    System.out.println("MCMD_CLIENT_BEDROCK_PORTAL_FOG_CLOUDS");
                     finish(client, null);
                 }
                 default -> { }
@@ -169,6 +192,7 @@ public final class ThaumcraftClientSmoke {
                 case EFFECTS, RELOADED -> activePostChains().keySet().containsAll(WARP.values());
                 case CLEARED -> activePostChains().isEmpty();
                 case TABLE_GUI -> screenIs(client, ENCHANTING);
+                case PORTAL -> client.level != null && client.level.dimension().equals(BEDROCK) && client.screen == null;
                 default -> false;
             };
             frames = counting ? frames + 1 : 0;

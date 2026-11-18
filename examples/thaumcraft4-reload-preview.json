@@ -66,7 +66,7 @@
       "status": "preview",
       "limitations": [
         "Thaumcraft 4 Reload alpha.24 is an unofficial source port. Keep this a personal local build; the port license does not relicense Azanor's original code or assets.",
-        "Original assets are retained, relocated, or mapped to native resources. Legacy translation keys are restored without replacing authored translations. Rendered equivalence, renamed key coverage, survival progression and multiplayer parity are not established.",
+        "Legacy asset paths are checked against the production JAR. Original English and Russian files and unused shader samples are preserved for custody; the authored native translations and ported effects remain active. Full localization and visual equivalence are not established.",
         "Original Thaumcraft add-on binaries and worlds do not work as-is. Each detected add-on needs its own exact source recipe. The native port has integrated accessory slots."
       ],
       "asset_map": {
@@ -119,6 +119,12 @@
         },
         "assets/thaumcraft/lang/README.md": {
           "path": "assets/thaumcraft/lang/legacy_readme.md"
+        },
+        "assets/thaumcraft/lang/en_US.lang": {
+          "path": "assets/thaumcraft/legacy/lang/en_us.lang"
+        },
+        "assets/thaumcraft/lang/ru_RU.lang": {
+          "path": "assets/thaumcraft/legacy/lang/ru_ru.lang"
         },
         "assets/thaumcraft/sounds.json": {
           "path": "assets/thaumcraft/sounds.json",
@@ -232,11 +238,13 @@
         "TCLogo.png": "common/src/main/resources/assets/thaumcraft/textures/gui/legacy_tc_logo.png",
         "assets/thaumcraft/lang/README.md": "common/src/main/resources/assets/thaumcraft/lang/legacy_readme.md",
         "assets/thaumcraft/lang/contributing.md": "common/src/main/resources/assets/thaumcraft/lang/contributing.md",
+        "assets/thaumcraft/lang/en_US.lang": "common/src/main/resources/assets/thaumcraft/legacy/lang/en_us.lang",
+        "assets/thaumcraft/lang/ru_RU.lang": "common/src/main/resources/assets/thaumcraft/legacy/lang/ru_ru.lang",
         "assets/thaumcraft/shader/test.frag": "common/src/main/resources/assets/thaumcraft/shader/test.frag",
         "assets/thaumcraft/shader/test2.frag": "common/src/main/resources/assets/thaumcraft/shader/test2.frag",
         "assets/thaumcraft/shader/test2.vert": "common/src/main/resources/assets/thaumcraft/shader/test2.vert"
       },
-      "merge_locale_keys": true
+      "require_asset_coverage": true
     }
   ]
 }

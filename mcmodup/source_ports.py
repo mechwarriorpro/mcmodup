@@ -108,7 +108,7 @@ class SourcePort:
     asset_map: dict[str, tuple[str, str | None]] = field(default_factory=dict)
     locale_imports: dict[str, str] = field(default_factory=dict)
     original_jar_checks: OriginalJarChecks | None = None
-    merge_locale_keys: bool = False
+    require_asset_coverage: bool = False
 
     def describe(self) -> dict:
         result = {"original_sha256": self.legacy_sha256, "source_sha256": self.source_sha256,
@@ -124,7 +124,7 @@ def _parse_port(data: object, base: Path) -> SourcePort:
     allowed = {"legacy_sha256", "source_sha256", "source_zip", "source_url", "source_root", "ids", "neoforge",
                "dependencies", "artifact", "tasks", "game_report", "minimum_tests", "features", "limitations",
                "status", "target_property", "import_assets", "asset_map", "locale_imports", "original_jar_checks",
-               "merge_locale_keys"}
+               "require_asset_coverage"}
     if extra := set(row) - allowed:
         raise InputError(f"Unknown recipe fields: {', '.join(sorted(extra))}")
     legacy, source = row.get("legacy_sha256"), row.get("source_sha256")
@@ -210,9 +210,9 @@ def _parse_port(data: object, base: Path) -> SourcePort:
         _asset(old)
         if old.count("/") != 2 or not old.endswith("/lang") or not _resource_dest(_relative(dest), old):
             raise InputError("locale_imports must map assets/<namespace>/lang to a module's matching src/main/resources directory")
-    merge_locale_keys = row.get("merge_locale_keys", False)
-    if type(merge_locale_keys) is not bool or (merge_locale_keys and not locale_imports):
-        raise InputError("merge_locale_keys must be a boolean; true requires locale_imports")
+    require_asset_coverage = row.get("require_asset_coverage", False)
+    if type(require_asset_coverage) is not bool:
+        raise InputError("require_asset_coverage must be a boolean")
     original_checks = None
     if "original_jar_checks" in row:
         check = _object(row["original_jar_checks"])
@@ -230,7 +230,7 @@ def _parse_port(data: object, base: Path) -> SourcePort:
         original_checks = OriginalJarChecks(jar_name, report, cases)
     return SourcePort(legacy, archive, source, root, ids, neoforge, tuple(dependencies), artifact, tasks,
                       game_report, minimum, features, limitations, status == "preview", target_property, imports, asset_map,
-                      locale_imports, original_checks, merge_locale_keys)
+                      locale_imports, original_checks, require_asset_coverage)
 
 
 def _resource_dest(dest: str, asset: str) -> bool:
@@ -407,7 +407,7 @@ def _original_jar_evidence(workspace: Path, check: OriginalJarChecks, checksum: 
 
 
 def _import_locales(source: ModInput, workspace: Path, port: SourcePort) -> tuple[dict, list]:
-    """Convert UTF-8 key=value files, optionally filling missing keys in authored native locales."""
+    """Convert original UTF-8 key=value files that lack an authored JSON locale; never guess key aliases."""
     adapted, evidence = {}, []
     generated = set()
     for prefix, directory in sorted(port.locale_imports.items()):
@@ -421,28 +421,16 @@ def _import_locales(source: ModInput, workspace: Path, port: SourcePort) -> tupl
             dest = workspace / directory / leaf
             if dest in generated:
                 raise InputError(f"More than one legacy locale would generate {leaf!r}")
-            authored = dest.exists()
-            if authored and not port.merge_locale_keys:
-                continue
+            if dest.exists():
+                continue  # Start with the authored native translation if there is one.
             pairs, skipped = _read_lang(source.text(member))
             values = dict(pairs)  # As in the legacy language registry, the last duplicate wins.
             duplicates = len(pairs) - len(values)
             if not values or (not port.preview and (skipped or duplicates)):
                 raise InputError(f"Locale {member!r} needs review: {skipped} unsupported lines, {duplicates} duplicate entries")
-            missing, kept = len(values), 0
-            if authored:
-                try:
-                    native = _object(json.loads(_project_output(workspace, directory + "/" + leaf, 2 * 1024 * 1024)
-                                               .read_text(encoding="utf-8-sig"), object_pairs_hook=_unique))
-                except (ValueError, RecursionError) as exc:
-                    raise InputError(f"Invalid authored locale {leaf!r}: {exc}") from exc
-                if not all(isinstance(value, str) for value in native.values()):
-                    raise InputError(f"Authored locale values must be strings in {leaf!r}")
-                missing, kept = len(values.keys() - native.keys()), len(native)
-                values.update(native)
             data = (json.dumps(values, ensure_ascii=False, sort_keys=True, indent=2) + "\n").encode("utf-8")
             dest.parent.mkdir(parents=True, exist_ok=True)
-            with dest.open("wb" if authored else "xb") as stream:
+            with dest.open("xb") as stream:
                 stream.write(data)
             output = prefix + "/" + leaf
             checksum = hashlib.sha256(data).hexdigest()
@@ -451,7 +439,6 @@ def _import_locales(source: ModInput, workspace: Path, port: SourcePort) -> tupl
             adapted[member] = (output, checksum)
             generated.add(dest)
             evidence.append({"original": member, "path": output, "keys": len(values), "sha256": checksum,
-                             "added_legacy_keys": missing, "preserved_authored_keys": kept,
                              "unsupported_lines": skipped, "duplicate_entries": duplicates})
     return adapted, evidence
 
@@ -512,7 +499,7 @@ def _asset_evidence(original: Path, modern: Path, port: SourcePort, converted: d
         for name in before.files.keys() & after.files.keys():
             if name.endswith(".class") and before.read(name, CLASS_LIMIT) == after.read(name, CLASS_LIMIT):
                 raise InputError(f"Produced JAR contains unchanged legacy bytecode: {name}")
-    if unverified and not port.preview:
+    if unverified and (port.require_asset_coverage or not port.preview):
         examples = ", ".join(item["original"] for item in unverified[:5])
         raise InputError(f"{len(unverified)} legacy asset path(s) missing or changed without a reviewed mapping: {examples}")
     return {"original_count": len(old_assets), "retained": counts["retained"], "adapted": counts["adapted"],

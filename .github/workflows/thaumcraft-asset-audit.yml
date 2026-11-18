@@ -1,4 +1,4 @@
-name: Audit exact Thaumcraft legacy assets
+name: Audit exact Thaumcraft and Tinkerer legacy assets
 
 on:
   workflow_dispatch:
@@ -7,6 +7,8 @@ on:
       - '.github/workflows/thaumcraft-asset-audit.yml'
       - 'tests/thaumcraft_asset_probe.py'
       - 'examples/thaumcraft4-reload-preview.json'
+      - 'examples/port-patches/thaumic-tinkerer/**'
+      - 'tests/prepare_tinkerer_preview.py'
 
 permissions:
   contents: read
@@ -33,3 +35,26 @@ jobs:
             https://edge.forgecdn.net/files/2227/552/Thaumcraft-1.7.10-4.2.3.5.jar
           curl "${opts[@]}" --max-filesize 100000000 -o "$scratch/source.zip" "$(jq -er '.ports[0].source_url' "$recipe")"
           PYTHONPATH=.:tests python -m thaumcraft_asset_probe "$scratch/original.jar" "$scratch/source.zip" "$recipe" --annotations --require-coverage
+
+  tinkerer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.11'
+      - name: Check the add-on migration table against the exact original JAR
+        shell: bash
+        run: |
+          scratch=$(mktemp -d "$RUNNER_TEMP/tinkerer-assets.XXXXXX")
+          trap 'rm -rf -- "$scratch"' EXIT
+          opts=(--proto '=https' --proto-redir '=https' --fail --silent --show-error --location --retry 2 --max-time 90)
+          curl "${opts[@]}" --max-filesize 8388608 -o "$scratch/original.jar" \
+            https://github.com/GTNewHorizons/ThaumicTinkerer/releases/download/2.13.0/ThaumicTinkerer-2.13.0.jar
+          curl "${opts[@]}" --max-filesize 8388608 -o "$scratch/source.zip" \
+            https://codeload.github.com/acak1221/Thaumic-Tinkerer-1.21.1/zip/c2e67665446ffada85ec9342384f578875cabb12
+          recipe=$(PYTHONPATH=.:tests python -m prepare_tinkerer_preview "$scratch/source.zip" "$scratch/pair")
+          PYTHONPATH=.:tests python -m thaumcraft_asset_probe "$scratch/original.jar" "$scratch/pair/tinkerer-neoforge-source.zip" "$recipe" --annotations
