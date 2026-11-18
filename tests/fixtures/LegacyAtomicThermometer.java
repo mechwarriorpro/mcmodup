@@ -40,7 +40,7 @@ public final class LegacyAtomicThermometer {
         Method get = tile.getMethod("getThershold"), set = tile.getMethod("setThreshold", int.class);
         Class<?> playerType = type("entity.player.EntityPlayer");
         Object player = Class.forName("net.minecraftforge.common.FakePlayerFactory")
-            .getMethod("get", type("world.WorldServer"), String.class).invoke(null, world, "[mcmodup thermometer]");
+            .getMethod("get", worldType, String.class).invoke(null, world, "[mcmodup thermometer]");
         Method crouch = type("entity.Entity").getMethod("func_70095_a", boolean.class);
         Method use = tile.getDeclaredMethod("use", playerType, int.class, vector);
         Method configure = tile.getDeclaredMethod("configure", playerType, int.class, vector);

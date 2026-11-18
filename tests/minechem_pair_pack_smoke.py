@@ -43,14 +43,16 @@ def check(root: Path) -> None:
     for label in selected:
         command.extend(("--mod", label))
     code, unapproved = run(*command, "--output-pack", out)
-    assert code == 1 and not out.exists() and any("--allow-preview-ports" in issue for issue in unapproved["problems"]), unapproved
+    assert code == 1 and not out.exists() and any("--allow-preview-ports" in issue for issue in unapproved["problems"]), unapproved["problems"]
     allowed = ["--allow-preview-ports", "--output-pack", str(out)]
     proc = subprocess.run([sys.executable, "-m", "mcmodup", *command, *allowed, "--build-timeout", "420", "--json"],
                           text=True, capture_output=True, timeout=1050)
-    assert proc.returncode == 0, proc.stderr or proc.stdout
+    if proc.returncode:
+        problems = json.loads(proc.stdout)["problems"] if not proc.stderr and proc.stdout.startswith("{") else []
+        raise AssertionError("Combined staging failed: " + ("\n".join(problems) or proc.stderr or proc.stdout)[:2200])
     report = json.loads((out / REPORT_NAME).read_text())
-    assert report["staged"] and report["ready"] and not report["parity_verified"] and not report["connector_required"], report
-    assert report["selected"] == selected and report["build_order"] == selected, report
+    assert report["staged"] and report["ready"] and not report["parity_verified"] and not report["connector_required"], report["problems"]
+    assert report["selected"] == selected and report["build_order"] == selected, (selected, report["selected"], report["build_order"])
     [split] = report["legacy_identity_splits"]
     assert split["id"] == "minechem" and not report["legacy_selection_conflicts"], split
     assert [row["archive"] for row in split["archives"]] == labels, split
@@ -88,8 +90,8 @@ def check(root: Path) -> None:
     for entry in ORIGINALS:
         full.extend(("--mod", entry.label))
     code, report = run(*full)
-    assert code == 1 and not report["ready"] and not delta.exists() and not report["native_builds"], report
-    assert not report["legacy_selection_conflicts"] and report["legacy_identity_splits"], report
+    assert code == 1 and not report["ready"] and not delta.exists() and not report["native_builds"], report["problems"]
+    assert not report["legacy_selection_conflicts"] and report["legacy_identity_splits"], report["legacy_selection_conflicts"]
     note("Combined native previews booted", "Both exact Minechem previews and the ICBM plate reached dedicated server ready with unchanged Multipart and CCL. Six source and 13 staged-JAR tests passed. All eight still block without writing a pack.")
     summary(["## Combined native previews", "",
              "The two Minechem previews and the Voltz ICBM glass pressure plate built in one updater invocation and staged in a new NeoForge "
