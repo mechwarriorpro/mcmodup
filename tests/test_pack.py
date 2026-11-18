@@ -1,4 +1,5 @@
 import json
+import os
 from pathlib import Path
 import shutil
 import struct
@@ -214,6 +215,27 @@ print('simulated decompiler output')
         self.assertEqual((out / "sources/provider/Widget.java").read_text(), "package provider; public class Widget {}")
         self.assertEqual(json.loads((out / "decompile-report.json").read_text())["staged_class_count"], 2)
         self.assertIn("*", (out / ".gitignore").read_text())
+
+    @unittest.skipUnless(os.environ.get("MCMODUP_VINEFLOWER_JAR") and shutil.which("javac"),
+                         "set MCMODUP_VINEFLOWER_JAR and install a full JDK for this integration test")
+    def test_real_vineflower_reads_only_a_dependency(self):
+        provider = self.root / "Widget.java"
+        provider.write_text("package provider; public class Widget { public static int version() { return 42; } "
+                            "public static class Nested {} }")
+        consumer = self.root / "Main.java"
+        consumer.write_text("package consumer; public class Main { public int read() { return provider.Widget.version(); } }")
+        classes = self.root / "classes"
+        subprocess.run(["javac", "-d", str(classes), str(provider), str(consumer)], check=True, timeout=30)
+        jar(self.library, **{path.relative_to(classes).as_posix(): path.read_bytes()
+                             for path in (classes / "provider").glob("*.class")})
+        jar(self.mods / "Consumer.jar", **{"consumer/Main.class": (classes / "consumer/Main.class").read_bytes()})
+        out = self.root / "references"
+        result = run_cli("decompile-deps", self.pack, "--mod", "Consumer.jar", "--class", "provider.Widget",
+                         "--vineflower", os.environ["MCMODUP_VINEFLOWER_JAR"], "-o", out)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("return 42;", (out / "sources/provider/Widget.java").read_text())
+        self.assertEqual(json.loads((out / "decompile-report.json").read_text())["staged_class_count"], 2)
+        self.assertFalse((out / "sources/consumer").exists())
 
     def test_decompile_rejects_mod_jar_as_executable(self):
         consumer = self.consumer(refs=("provider/Widget",))

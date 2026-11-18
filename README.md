@@ -98,7 +98,7 @@ If you only have a compiled JAR, check for an existing 1.21.1 port or obtain aut
 
 ## Build reviewed changes with GitHub Actions
 
-Add `--github-actions` to `port` to generate `.github/workflows/build.yml` inside the new workspace. After you review the workspace and confirm redistribution rights, commit only authorized source and assets to your chosen branch in a repository you control. A push or pull request runs `./gradlew build` with JDK 21 and uploads the built mod JAR under **Actions**. The workflow does not commit, push, or release files for you. This repository's CI also runs the Python tests and builds the included demo project, not any user's pack.
+Add `--github-actions` to `port` to generate `.github/workflows/build.yml` inside the new workspace. After you review the workspace and confirm redistribution rights, commit only authorized source and assets to your chosen branch in a repository you control. A push or pull request runs `./gradlew build` with JDK 21 and uploads the built mod JAR under **Actions**. The workflow does not commit, push, or release files for you. This repository's CI runs the Python tests, verifies Vineflower against a synthetic dependency, and builds the included demo project, not any user's pack.
 
 ## Development
 
