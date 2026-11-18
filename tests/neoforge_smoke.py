@@ -11,6 +11,17 @@ from mcmodup.audit import ModMetadata
 from mcmodup.port import _build_gradle, _metadata, write_workspace
 
 
+def empty_test_structure() -> bytes:
+    """Minimal, empty 1x1x1 structure in named NBT for registry and gameplay checks."""
+    nbt = (b"\x0a\x00\x00"                         # root compound
+           b"\x03\x00\x0bDataVersion" + struct.pack(">i", 3955)
+           + b"\x09\x00\x04size\x03" + struct.pack(">4i", 3, 1, 1, 1)
+           + b"\x09\x00\x07palette\x0a\x00\x00\x00\x01\x08\x00\x04Name\x00\x0dminecraft:air\x00"
+           + b"\x09\x00\x06blocks\x0a\x00\x00\x00\x00"
+           + b"\x09\x00\x08entities\x0a\x00\x00\x00\x00\x00")
+    return gzip.compress(nbt, mtime=0)
+
+
 def check_recipes_in_game(project: Path, outputs: list[Path]) -> None:
     namespace = "mcmodup_smoke"
     # Load the separately built JARs as runtime mods, not as source sets.
@@ -23,14 +34,6 @@ neoForge.runs.create('gameTestServer') {{
     systemProperty 'neoforge.enabledGameTestNamespaces', '{namespace}'
 }}
 """
-    # Minimal, empty 1x1x1 structure in named NBT. GameTest requires a template even when
-    # the test only exercises registries and recipes.
-    nbt = (b"\x0a\x00\x00"                         # root compound
-           b"\x03\x00\x0bDataVersion" + struct.pack(">i", 3955)
-           + b"\x09\x00\x04size\x03" + struct.pack(">4i", 3, 1, 1, 1)
-           + b"\x09\x00\x07palette\x0a\x00\x00\x00\x01\x08\x00\x04Name\x00\x0dminecraft:air\x00"
-           + b"\x09\x00\x06blocks\x0a\x00\x00\x00\x00"
-           + b"\x09\x00\x08entities\x0a\x00\x00\x00\x00\x00")
     with zipfile.ZipFile(outputs[0]) as minechem:
         catalog = json.loads(minechem.read("data/minechem_chemistry/mcmodup/catalog.json"))
     synth = [recipe["id"] for recipe in catalog["machine_recipes"] if recipe["machine"] == "synthesizer"]
@@ -43,7 +46,7 @@ neoForge.runs.create('gameTestServer') {{
         "gradle.properties": "org.gradle.jvmargs=-Xmx2G\n",
         "src/main/java/mcmodup/test/CatalogSmoke.java": fixture,
         "src/main/resources/META-INF/neoforge.mods.toml": _metadata(ModMetadata(""), namespace, "Catalog smoke tests", "1.0.0", "Unlicense"),
-        f"src/main/resources/data/{namespace}/structure/empty.nbt": gzip.compress(nbt, mtime=0),
+        f"src/main/resources/data/{namespace}/structure/empty.nbt": empty_test_structure(),
         **inputs,
     })
     run = subprocess.run(["./gradlew", "--no-daemon", "--console=plain", "runGameTestServer"],
