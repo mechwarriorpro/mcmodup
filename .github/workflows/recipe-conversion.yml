@@ -8,6 +8,8 @@ on:
       - 'tests/recipe_conversion_smoke.py'
       - 'tests/fixtures/*Recipe*Smoke.java'
       - 'mcmodup/recipe*.py'
+      - 'mcmodup/classfiles.py'
+      - 'mcmodup/native_pack.py'
 
 permissions:
   contents: read
@@ -23,63 +25,61 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.11'
-      - name: Inspect pinned original releases without running their code
+      - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Fetch exact originals and install the empty target
         shell: bash
         run: |
-          mkdir -p "$RUNNER_TEMP/recipe-originals"
-          cd "$RUNNER_TEMP/recipe-originals"
+          root="$RUNNER_TEMP/recipe-conversion"
+          mkdir -p "$root/target/mods"
+          cd "$root"
+          for version in 1.5.2 1.6.4 1.7.10; do mkdir -p "legacy/$version"/{bin,mods}; done
           download() {
-            curl --proto '=https' --proto-redir '=https' --fail --location --silent --show-error \
-              --retry 2 --max-time 60 --max-filesize 1500000 --output "$1" "$2" &&
-              printf '%s  %s\n' "$3" "$1" | sha1sum --check
+            if ! curl --proto '=https' --proto-redir '=https' --fail --location --silent --show-error \
+              --retry 2 --max-time 100 --max-filesize 32000000 --output "$1" "$2"; then
+              echo "::error title=Recipe fixture download failed::$1"
+              return 1
+            fi
+            printf '%s  %s\n' "$4" "$1" | "$3" --check
           }
-          download XtraRecipes_v2.1.1__1.5.2_.zip https://edge.forgecdn.net/files/711/105/XtraRecipes_v2.1.1__1.5.2_.zip 1632cde94e42c54099db63bf5f988bd4e3b7b2ca
-          download CBR_1.0.zip https://edge.forgecdn.net/files/713/755/CBR_1.0.zip 353289623195f43a7b5bc2e06066e831d4362728
-          download Saddle_Recipe.jar https://edge.forgecdn.net/files/772/757/Saddle_Recipe.jar f4b6441696eb58e8d42747fe1909ba43edd936c7
-          download ZombieLeather.zip https://edge.forgecdn.net/files/756/031/ZombieLeather.zip dd5e6a111e4e36e70c8788a1ca026e8eb0e295bc
-          download 'Craftable Saddles mc 1.7.10.jar' https://edge.forgecdn.net/files/2336/175/Craftable%20Saddles%20mc%201.7.10.jar 939434ba9ff8e7788839dd5ecf01a74909d60f2a
-          # Optional historical single-purpose release. Only the author's normal download and exact digest.
-          if curl --proto '=https' --proto-redir '=https' --fail --location --silent --show-error --max-time 30 \
-            'https://www.mediafire.com/file/ebse2afvwh2bh8x/RottenFlesh-to-Leather-v1.2.2.zip/file' -o mediafire.html; then
-            link=$(python - <<'PY'
+          download legacy/1.5.2/bin/minecraft.jar https://launcher.mojang.com/v1/objects/465378c9dc2f779ae1d6e8046ebc46fb53a57968/client.jar sha1sum 465378c9dc2f779ae1d6e8046ebc46fb53a57968
+          download legacy/1.6.4/bin/minecraft.jar https://launcher.mojang.com/v1/objects/1703704407101cf72bd88e68579e3696ce733ecd/client.jar sha1sum 1703704407101cf72bd88e68579e3696ce733ecd
+          download legacy/1.7.10/bin/minecraft.jar https://piston-data.mojang.com/v1/objects/e80d9b3bf5085002218d4be59e668bac718abbc6/client.jar sha1sum e80d9b3bf5085002218d4be59e668bac718abbc6
+          download legacy/1.5.2/bin/modpack.jar https://maven.minecraftforge.net/net/minecraftforge/forge/1.5.2-7.8.1.738/forge-1.5.2-7.8.1.738-universal.zip sha1sum 76223709288287a6a8d22ab16b43a6ab2a284a0d
+          download legacy/1.6.4/bin/modpack.jar https://maven.minecraftforge.net/net/minecraftforge/forge/1.6.4-9.11.1.1345/forge-1.6.4-9.11.1.1345-universal.jar sha1sum eb9d954c8d057fa1768acaa40a35b864ad05c58b
+          download legacy/1.7.10/bin/modpack.jar https://maven.minecraftforge.net/net/minecraftforge/forge/1.7.10-10.13.4.1614-1.7.10/forge-1.7.10-10.13.4.1614-1.7.10-universal.jar sha1sum 25fd97f72beca728112256938e03e8105b1b78cc
+          download legacy/1.6.4/mods/ZombieLeather.zip https://edge.forgecdn.net/files/756/031/ZombieLeather.zip sha1sum dd5e6a111e4e36e70c8788a1ca026e8eb0e295bc
+          download 'legacy/1.7.10/mods/Craftable Saddles mc 1.7.10.jar' https://edge.forgecdn.net/files/2336/175/Craftable%20Saddles%20mc%201.7.10.jar sha1sum 939434ba9ff8e7788839dd5ecf01a74909d60f2a
+          # This originally shipped on MediaFire, not CurseForge. Resolve its normal download button,
+          # allow only the file's HTTPS hostname/path shape, and verify the published SHA-256.
+          curl --proto '=https' --proto-redir '=https' --fail --location --silent --show-error --retry 2 --max-time 60 \
+            'https://www.mediafire.com/file/ebse2afvwh2bh8x/RottenFlesh-to-Leather-v1.2.2.zip/file' -o mediafire.html
+          link=$(python - <<'PY'
           import html
           import re
           text = open('mediafire.html').read()
           print(next((html.unescape(link) for link in re.findall(r'href="(https://download[0-9]+\.mediafire\.com/[^"\s]+)"', text)
-                      if 'ebse2afvwh2bh8x' in link), ''))
+                      if '/ebse2afvwh2bh8x/' in link), ''))
           PY
-            )
-            if [ -n "$link" ]; then
-              curl --proto '=https' --proto-redir '=https' --fail --location --silent --show-error --max-time 30 \
-                --max-filesize 1161 --output RottenFlesh.zip "$link" &&
-                echo '50efe6ed2c2d0dc6061cf90e08e1fb1fd4b339eda9c53847a0351d6ef517067e  RottenFlesh.zip' | sha256sum --check || rm -f RottenFlesh.zip
-            fi
-            rm mediafire.html
-          fi
-          cd "$GITHUB_WORKSPACE"
-          python - "$RUNNER_TEMP/recipe-originals" <<'PY'
-          from pathlib import Path
-          import re
-          import subprocess
+          )
+          test -n "$link"
+          download legacy/1.5.2/mods/RottenFlesh-to-Leather-v1.2.2.zip "$link" sha256sum 50efe6ed2c2d0dc6061cf90e08e1fb1fd4b339eda9c53847a0351d6ef517067e
+          download installer.jar https://maven.neoforged.net/releases/net/neoforged/neoforge/21.1.267/neoforge-21.1.267-installer.jar sha256sum 25bbe66e82205abeccdfd23bdac61e6a8e9ff1333885f3c9f31d392a5ec97e60
+          java -jar installer.jar --installServer target > install.log 2>&1 || { tail -75 install.log; exit 1; }
+      - name: Convert the originals and start NeoForge without replacements
+        shell: bash
+        run: |
+          log="$RUNNER_TEMP/recipe-conversion/result.log"
+          if ! PYTHONPATH=.:tests python -m recipe_conversion_smoke "$RUNNER_TEMP/recipe-conversion" > "$log" 2>&1; then
+            python - "$log" <<'PY'
+          import pathlib
           import sys
-          from mcmodup.inputs import open_input
-          from mcmodup.classfiles import CLASS_LIMIT, class_entries, read_class
-
-          for path in sorted(Path(sys.argv[1]).iterdir()):
-              with open_input(path) as archive:
-                  summary = ['entries: ' + ', '.join(archive.files)[:700]]
-                  for owner, entry in class_entries(archive.files).items():
-                      cls = read_class(archive.read(entry, CLASS_LIMIT))
-                      summary += [f'{owner} {cls.parents} {cls.legacy_mod!r}', 'members: ' + ', '.join(
-                          name + ':' + descriptor for name, descriptor in cls.members)]
-                      calls = sorted(s.key for s in cls.references if s.kind == 'method')
-                      summary.append('calls: ' + ', '.join(calls)[:1500])
-                      fields = sorted(s.key for s in cls.references if s.kind == 'field' and s.owner != owner)
-                      summary.append('external fields: ' + ', '.join(fields)[:2500])
-                      dump = subprocess.check_output(['javap', '-p', '-c', '-v', '-classpath', str(path), owner.replace('/', '.')], text=True)
-                      ops = sorted(set(re.findall(r'^\s+\d+:\s+(\w+)', dump, re.M)))
-                      summary.append('instruction set: ' + ', '.join(ops))
-                      summary.append('annotations: ' + ', '.join(line.strip() for line in dump.splitlines()
-                          if line.lstrip().startswith(('cpw.mods.fml', 'clientSideRequired=', 'serverSideRequired=', 'acceptableRemoteVersions=')))[:500])
-                  print(f'::notice title={path.name}::' + '\n'.join(summary)[:8000].replace('%', '%25').replace('\n', '%0A'))
+          detail = pathlib.Path(sys.argv[1]).read_text(errors="replace")[-7000:]
+          print("::error title=Original recipe conversion failed::" + detail.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A"))
           PY
+            cat "$log"
+            exit 1
+          fi
+          cat "$log"

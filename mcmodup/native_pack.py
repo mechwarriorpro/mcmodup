@@ -11,7 +11,7 @@ import tomllib
 from zipfile import BadZipFile, ZipFile
 import zlib
 
-from . import MINECRAFT_VERSION
+from . import MINECRAFT_VERSION, SOURCE_VERSIONS
 from .catalogs import PROFILES
 from .classfiles import CLASS_LIMIT, class_entries, read_class
 from .inputs import InputError, TEXT_LIMIT, open_input
@@ -19,6 +19,7 @@ from .legacy_dependencies import LegacyDependencies, legacy_conflicts
 from .native_resolution import Resolution, dependency_report, resolve
 from .pack import PackMod, _load
 from .private_libraries import PRIVATE_ROOT, PrivateLibrary, inspect as inspect_private_libraries
+from .recipe_conversion import RecipeConversion, analyze as analyze_recipes
 from .runtime import ARCHIVE_EXTENSIONS, InstanceRuntime, Platform, discover, instance_runtime, local_files
 from .source_ports import BuildOptions, Dependency, MOD_ID, SHA256, SourcePort, build, load_ports, require_jdk
 from .source_ports import digest as _digest, safe_component as _safe_filename
@@ -53,6 +54,7 @@ class NativeMod:
     private_libraries: tuple[PrivateLibrary, ...] = ()
     private_references: frozenset[str] = frozenset()
     embedded: tuple[str, ...] = ()
+    conversion: RecipeConversion | None = None
 
 
 def _main_manifest(text: str) -> dict[str, str]:
@@ -70,8 +72,6 @@ def _native(path: Path, label: str, neoforge: str, installed: bool = False) -> N
             return None
         if path.suffix.lower() != ".jar" or not _safe_filename(path.name) or jar.warnings:
             raise InputError("A native update must be a readable .jar without duplicate or unsafe entries")
-        if not any(name.endswith(".class") for name in entries):
-            raise InputError("No compiled mod code in this native JAR")
         manifest = (_main_manifest(jar.text("META-INF/MANIFEST.MF")) if "META-INF/MANIFEST.MF" in entries else {})
         if {"fmlcoreplugin", "fmlat", "tweakclass"} & manifest.keys():
             raise InputError("Legacy launcher hooks are not native NeoForge code")
@@ -83,6 +83,11 @@ def _native(path: Path, label: str, neoforge: str, installed: bool = False) -> N
         mods = data.get("mods")
         if not isinstance(mods, list) or not mods or not isinstance(data.get("modLoader"), str):
             raise InputError("Missing NeoForge mod declarations")
+        if not any(name.endswith(".class") for name in entries):
+            # NeoForge's built-in low-code loader legitimately loads data-only mods.
+            if (data["modLoader"] != "lowcodefml" or "pack.mcmeta" not in entries or
+                    not any(name.startswith(("data/", "assets/")) for name in entries)):
+                raise InputError("No compiled mod code or low-code resources in this native JAR")
         for row in mods:
             mod_id = row.get("modId") if isinstance(row, dict) else None
             version = row.get("version", "") if isinstance(row, dict) else ""
@@ -227,6 +232,8 @@ class UpdateInventory:
     legacy_declarations: dict[str, list[dict]] = field(default_factory=dict)
     legacy_binary: dict[str, dict] = field(default_factory=dict)
     id_map: Path | None = None
+    conversions: dict[str, NativeMod] = field(default_factory=dict)
+    conversion_issues: dict[str, str] = field(default_factory=dict)
 
     def native_ids(self, item: LegacyEntry) -> set[str]:
         return {self.aliases.get(mod_id, mod_id) for mod_id in item.ids}
@@ -238,6 +245,7 @@ class UpdateInventory:
             ids = self.native_ids(item)
             supported = [p.name for p in PROFILES.values() if p.mod_id in item.ids and p.version == item.version]
             recipe = self.recipes.get(label)
+            conversion = self.conversions.get(label)
             if self.build_options is not None:
                 if recipe is None:
                     status, reason = "blocked", self.recipe_issues[label]
@@ -249,16 +257,22 @@ class UpdateInventory:
                 status, reason = "installed", "Native builds are already in the target mods folder."
             elif not item.problem and ids and all(self.providers.get(key) for key in ids):
                 status, reason = "available", "Matching local NeoForge builds found. Select to check dependencies and add-ons."
+            elif conversion:
+                count = len(conversion.conversion.recipes)
+                status, reason = "convertible", f"Convert {count} literal recipe{'s' if count != 1 else ''} from this original archive."
             elif not item.problem and supported:
                 status, reason = "partial", "Only a partial conversion profile exists here. It is not a replacement or add-on compatible."
             else:
                 missing = sorted(key for key in ids if not self.providers.get(key))
                 status, reason = "blocked", item.problem or ("No matching local NeoForge build for " + ", ".join(missing) + "." if missing else
                                                             "No recognizable legacy mod IDs; automatic matching is unavailable.")
+            if status == "blocked" and label in self.conversion_issues and self.build_options is None:
+                reason += " Automatic recipe conversion: " + self.conversion_issues[label]
             rows.append({"id": label, "name": item.name, "minecraft": item.version, "mods": list(item.ids),
                          "releases": {m.mod_id: m.version for m in item.audit.audit.mods if m.mod_id} if item.audit else {},
                          "native_ids": sorted(ids), "status": status, "reason": reason, "addons": len(self.addons.get(label, {})),
-                         **({"source_build": recipe.recipe.describe()} if recipe else {})})
+                         **({"source_build": recipe.recipe.describe()} if recipe else {}),
+                         **({"conversion": conversion.conversion.report()} if status == "convertible" else {})})
         return {"source": self.source.name, "target": self.target.name, "minecraft": MINECRAFT_VERSION,
                 "neoforge": self.target_platform.neoforge, "source_build_mode": self.build_options is not None,
                 "source_bin": self.source_platform.report(),
@@ -401,7 +415,31 @@ def inventory(source: Path, target: Path, build_options: BuildOptions | None = N
     state = UpdateInventory(source, target, src_bin, dst_bin, entries, edges, providers, installed,
                             target_legacy, passthrough, _aliases(map_path), warnings, issues,
                             legacy_declarations=declarations, legacy_binary=binary, id_map=id_map)
-    return with_source_ports(state, build_options, approved_sources=approved_sources) if build_options else state
+    return with_source_ports(state, build_options, approved_sources=approved_sources) if build_options else _with_recipe_conversions(state)
+
+
+def _with_recipe_conversions(state: UpdateInventory) -> UpdateInventory:
+    for label, item in state.entries.items():
+        ids = state.native_ids(item)
+        if (item.problem or not item.audit or item.audit.corrupt_classes or len(item.audit.classes) != 1 or
+                not label.startswith("mods/") or len(ids) != 1 or any(key in state.providers for key in ids)):
+            continue
+        runtime_version = state.source_platform.legacy
+        if (item.version not in SOURCE_VERSIONS or (runtime_version and runtime_version != item.version) or
+                not any(e.version == item.version and e.kind in {"declared", "local runtime"}
+                        for e in item.audit.audit.version_evidence)):
+            state.conversion_issues[label] = "The exact original Minecraft version needs a local runtime or a mod declaration."
+            continue
+        try:
+            conversion = analyze_recipes(item.path, item.version)
+            if {conversion.mod_id} != ids:
+                raise InputError("a replacement ID alias cannot rename an automatic conversion")
+            state.conversions[label] = NativeMod(Path(conversion.filename), f"convert/{label}",
+                                                {conversion.mod_id: conversion.version}, (), False, True,
+                                                conversion.sha256, conversion=conversion)
+        except (InputError, OSError) as exc:
+            state.conversion_issues[label] = str(exc)
+    return state
 
 
 def with_source_ports(state: UpdateInventory, options: BuildOptions, *,
@@ -495,7 +533,9 @@ class UpdatePlan:
     def report(self) -> dict:
         requirements, binary = self._legacy_evidence()
         resolution = replace(self.resolution, mods=tuple(self.mods)) if self.resolution else Resolution(tuple(self.mods))
-        return {"schema_version": 1, "mode": "native-source-build" if self.inventory.build_options else "native-neoforge",
+        mode = ("native-source-build" if self.inventory.build_options else
+                "automatic-recipe-conversion" if any(mod.conversion for mod in self.mods) else "native-neoforge")
+        return {"schema_version": 1, "mode": mode,
                 "output_mode": "pack" if self.output_pack else "mods",
                 "instance_runtime": self.runtime.report() if self.runtime else None,
                 "connector_required": False, "native_builds": self.native_builds,
@@ -509,9 +549,11 @@ class UpdatePlan:
                 "native_dependencies": dependency_report(resolution, self.inventory.providers), "provider_pins": self.provider_pins,
                 "files": [{"file": f"mods/{mod.path.name}", "from": mod.label, "ids": mod.ids,
                            "sha256": None if mod.recipe and not self.native_builds else mod.sha256,
-                           "action": "build" if mod.recipe else "keep" if mod.installed and not self.output_pack else
-                                     "update" if self.roots.intersection(mod.ids) else "dependency",
+                           "action": ("build" if mod.recipe else "convert" if mod.conversion else
+                                      "keep" if mod.installed and not self.output_pack else
+                                      "update" if self.roots.intersection(mod.ids) else "dependency"),
                            **({"source_build": mod.recipe.describe()} if mod.recipe else {}),
+                           **({"conversion": mod.conversion.report()} if mod.conversion else {}),
                            "private_libraries": [lib.report() for lib in mod.private_libraries],
                            "jar_in_jar": list(mod.embedded),
                            "requires": [{"id": dep.mod_id, "range": dep.version} for dep in mod.dependencies if dep.kind == "required"]}
@@ -576,14 +618,19 @@ def plan(inventory: UpdateInventory, selections: list[str], *, output_pack: bool
             problems.append(f"{label!r}: {item.problem or 'no recognizable legacy mod ID to match'}")
         roots.update(ids)
         if inventory.build_options is not None:
-            recipe = inventory.recipes.get(label)
-            if recipe is None:
+            artifact = inventory.recipes.get(label)
+            if artifact is None:
                 problems.append(f"{label!r}: {inventory.recipe_issues[label]}")
                 continue
+        else:
+            artifact = inventory.conversions.get(label)
+            if artifact is None and label in inventory.conversion_issues and ids and not any(inventory.providers.get(key) for key in ids):
+                problems.append(f"{label!r}: automatic recipe conversion blocked: {inventory.conversion_issues[label]}")
+        if artifact is not None:
             for key in ids:
-                if key in forced and forced[key] is not recipe:
-                    problems.append(f"Multiple selected legacy archives would build native mod ID {key!r}.")
-                forced[key] = recipe
+                if key in forced and forced[key] is not artifact:
+                    problems.append(f"Multiple selected legacy archives would produce native mod ID {key!r}.")
+                forced[key] = artifact
     resolution = resolve(roots, inventory.installed, inventory.providers, forced, pins, keep_target=not output_pack,
                          artifact_errors=_artifact_conflicts)
     if resolution.problem:
@@ -654,6 +701,9 @@ def plan(inventory: UpdateInventory, selections: list[str], *, output_pack: bool
             if path.resolve() != path:
                 raise InputError("source archives must not be symbolic links")
             legacy_hashes[label] = _digest(path)
+            conversion = inventory.conversions.get(label)
+            if conversion and conversion.conversion.source_sha256 != legacy_hashes[label]:
+                raise InputError("original changed after recipe analysis; scan again")
         except (InputError, OSError) as exc:
             problems.append(f"Could not fingerprint legacy input {label!r}: {exc}")
     return UpdatePlan(inventory, selected, added, mods, roots, removed, list(dict.fromkeys(problems)), order,
@@ -753,12 +803,18 @@ def _write_stage(update: UpdatePlan, output: Path) -> None:
         mods = output / "mods"
         mods.mkdir()
         for mod in update.mods:
-            if mod.path.resolve() != mod.path:
-                raise InputError(f"{mod.label!r} became a symbolic link during staging. Scan and retry.")
             dest = mods / mod.path.name
-            shutil.copyfile(mod.path, dest)
+            if mod.conversion:
+                dest.write_bytes(mod.conversion.jar)
+                checked = _native(dest, mod.label, update.inventory.target_platform.neoforge)
+                if checked is None or checked.ids != mod.ids or not checked.target_evidence or checked.partial:
+                    raise InputError(f"Generated recipe JAR for {mod.label!r} did not match its NeoForge metadata.")
+            else:
+                if mod.path.resolve() != mod.path:
+                    raise InputError(f"{mod.label!r} became a symbolic link during staging. Scan and retry.")
+                shutil.copyfile(mod.path, dest)
             if _digest(dest) != mod.sha256:
-                raise InputError(f"{mod.label!r} changed during staging. Scan the pack and retry.")
+                raise InputError(f"{mod.label!r} changed during staging. Scan and retry.")
         for path in (() if update.output_pack else update.inventory.passthrough):
             dest = mods / path.relative_to(update.inventory.target / "mods")
             dest.parent.mkdir(parents=True, exist_ok=True)

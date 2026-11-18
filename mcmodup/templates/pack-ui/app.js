@@ -3,10 +3,10 @@ const $ = (id) => document.getElementById(id);
 const selected = new Set();
 let catalog, preview, ticket = 0, staging = false, completed = false;
 const statusLabels = {
-  available: 'Available', installed: 'In target', buildable: 'Source build', preview: 'Preview build',
+  available: 'Available', convertible: 'Convert original', installed: 'In target', buildable: 'Source build', preview: 'Preview build',
   partial: 'Partial only', blocked: 'Blocked', auto: 'Auto add-on',
 };
-const selectable = row => ['available', 'buildable'].includes(row.status) ||
+const selectable = row => ['available', 'convertible', 'buildable'].includes(row.status) ||
   (catalog?.output_pack && row.status === 'installed');
 function element(tag, className, text) {
   const node = document.createElement(tag);
@@ -121,7 +121,11 @@ function showPlan(loading = false) {
     for (const limitation of row.source_build.limitations) list.append(element('li', '', limitation));
     content.append(list);
   }
-  details(content, 'Local files to add', files.filter(row => !['keep', 'build'].includes(row.action)).map(row => ({
+  details(content, 'Convert from original archives', files.filter(row => row.action === 'convert').map(row => ({
+    name: Object.keys(row.ids).join(', '), action: 'convert',
+    detail: `${row.from.slice(8)} · ${Object.values(row.conversion.recipes).reduce((total, count) => total + count, 0)} recipes`,
+  })));
+  details(content, 'Local files to add', files.filter(row => !['keep', 'build', 'convert'].includes(row.action)).map(row => ({
     name: Object.keys(row.ids).join(', '), detail: row.from, action: row.action,
   })));
   details(content, 'Target files to replace', Object.entries(preview?.replaced_target_files || {}).map(([name, detail]) => ({ name, detail })));

@@ -57,6 +57,12 @@ class Instruction:
     value: str | int | float | Symbol | None = None
 
 
+@dataclass(frozen=True)
+class Annotation:
+    descriptor: str
+    values: dict[str, object]
+
+
 @dataclass
 class ClassFile:
     owner: str
@@ -66,6 +72,9 @@ class ClassFile:
     references: set[Symbol] = field(default_factory=set)
     legacy_mod: dict[str, str] | None = None
     initializer: tuple[Instruction, ...] | None = None
+    annotations: tuple[Annotation, ...] = ()
+    member_annotations: dict[tuple[str, str], tuple[Annotation, ...]] = field(default_factory=dict)
+    code: dict[tuple[str, str], tuple[Instruction, ...]] = field(default_factory=dict)
 
 
 class _Reader:
@@ -176,16 +185,21 @@ class _Pool:
         return refs
 
 
-def _annotations(payload: memoryview, pool: _Pool) -> dict[str, str] | None:
+def _annotations(payload: memoryview, pool: _Pool) -> tuple[Annotation, ...]:
     reader = _Reader(payload)
 
-    def element(depth: int) -> str | None:
+    def element(depth: int) -> object:
         if depth > 64:
             raise InputError("class annotation is nested too deeply")
         tag = chr(reader.u1())
         if tag == "s":
             return pool.utf(reader.u2())
-        if tag in "BCDFIJSZc":
+        if tag == "Z":
+            value = pool.get(reader.u2(), 3)
+            if value not in (0, 1):
+                raise InputError("invalid class annotation boolean")
+            return bool(value)
+        if tag in "BCDFIJSc":
             reader.u2()
         elif tag == "e":
             reader.take(4)
@@ -196,26 +210,72 @@ def _annotations(payload: memoryview, pool: _Pool) -> dict[str, str] | None:
                 element(depth + 1)
         else:
             raise InputError(f"invalid class annotation element tag {tag!r}")
+        # Most annotation values are not used by the audit. Keep the element name so
+        # narrow converters can reject options they don't understand.
         return None
 
-    def annotation(depth: int = 0) -> tuple[str, dict[str, str]]:
+    def annotation(depth: int = 0) -> Annotation:
         kind = pool.utf(reader.u2())
         values = {}
         for _ in range(reader.u2()):
             name = pool.utf(reader.u2())
-            value = element(depth)
-            if value is not None and kind == LEGACY_MOD_ANNOTATION:
-                values[name] = value
-        return kind, values
+            if name in values:
+                raise InputError("duplicate class annotation element")
+            values[name] = element(depth)
+        return Annotation(kind, values)
 
-    mod = None
-    for _ in range(reader.u2()):
-        kind, values = annotation()
-        if kind == LEGACY_MOD_ANNOTATION:
-            mod = values
+    result = tuple(annotation() for _ in range(reader.u2()))
     if not reader.end():
         raise InputError("trailing data in class annotations")
-    return mod
+    return result
+
+
+def _straight_line(code_attr: memoryview, pool: _Pool) -> tuple[Instruction, ...]:
+    """Decode only the JVM instructions supported by the recipe data evaluator."""
+    attr = _Reader(code_attr)
+    max_stack, max_locals, count = attr.u2(), attr.u2(), attr.u4()
+    if not 0 < count <= 32_768 or max_stack > 256 or max_locals > 16:
+        raise InputError("recipe method exceeds straight-line bytecode limits")
+    reader = _Reader(attr.take(count))
+    if attr.u2():
+        raise InputError("recipe methods cannot have exception handlers")
+    for _ in range(attr.u2()):
+        name = pool.utf(attr.u2())
+        if name not in {"LineNumberTable", "LocalVariableTable", "LocalVariableTypeTable"}:
+            raise InputError(f"unsupported recipe method code attribute {name!r}")
+        attr.take(attr.u4())
+    if not attr.end():
+        raise InputError("trailing data in recipe Code attribute")
+    ops = []
+    members = {0xB2: ("getstatic", 9), 0xB3: ("putstatic", 9), 0xB4: ("getfield", 9),
+               0xB6: ("invoke", 10), 0xB7: ("constructor", 10), 0xB8: ("static", 10)}
+    names = {0x2A: "this", 0x2B: "argument", 0x53: "aastore", 0x57: "pop", 0x59: "dup", 0xB1: "return"}
+    while not reader.end():
+        offset = reader.pos
+        op = reader.u1()
+        if op in names:
+            value = Instruction(names[op])
+        elif 0x02 <= op <= 0x08:
+            value = Instruction("const", op - 3)
+        elif 0x0B <= op <= 0x0D:
+            value = Instruction("float", float(op - 0x0B))
+        elif op in {0x10, 0x11}:
+            value = Instruction("const", int.from_bytes(reader.take(1 if op == 0x10 else 2), "big", signed=True))
+        elif op in {0x12, 0x13}:
+            value = pool.literal(reader.u1() if op == 0x12 else reader.u2())
+        elif op in members:
+            name, tag = members[op]
+            value = Instruction(name, pool.member(reader.u2(), tag))
+        elif op in {0xBB, 0xBD}:
+            value = Instruction("new" if op == 0xBB else "array", pool.owner(reader.u2()))
+        else:
+            raise InputError(f"unsupported recipe opcode 0x{op:02x} at byte {offset}")
+        if value.op == "other" or (value.op == "return" and not reader.end()):
+            raise InputError(f"unsupported constant or early return at byte {offset}")
+        ops.append(value)
+    if ops[-1].op != "return":
+        raise InputError("recipe method must end in a void return")
+    return tuple(ops)
 
 
 def _initializer(code_attr: memoryview, pool: _Pool) -> tuple[Instruction, ...]:
@@ -266,11 +326,14 @@ def _initializer(code_attr: memoryview, pool: _Pool) -> tuple[Instruction, ...]:
     return tuple(ops)
 
 
-def read_class(data: bytes, *, collect_references: bool = True, capture_initializer: bool = False) -> ClassFile:
+def read_class(data: bytes, *, collect_references: bool = True, capture_initializer: bool = False,
+               capture_program: bool = False) -> ClassFile:
     reader = _Reader(data)
     if reader.u4() != 0xCAFEBABE:
         raise InputError("not a JVM class file")
-    reader.take(4)  # Minor and major version. Unknown constant pool tags still fail explicitly.
+    minor, major = reader.u2(), reader.u2()
+    if capture_program and (minor != 0 or not 49 <= major <= 52):
+        raise InputError("recipe conversion requires ordinary Java 5 through 8 class files")
     try:
         pool = _Pool(reader)
     except UnicodeDecodeError as exc:
@@ -283,30 +346,51 @@ def read_class(data: bytes, *, collect_references: bool = True, capture_initiali
     parents = (pool.owner(superclass),) if superclass else ()
     parents += tuple(pool.owner(reader.u2()) for _ in range(reader.u2()))
 
-    members = {}
+    members, code, member_annotations = {}, {}, {}
     initializer = None
     for table in ("fields", "methods"):
         for _ in range(reader.u2()):
             flags, name, descriptor = reader.u2(), pool.utf(reader.u2()), pool.utf(reader.u2())
-            members[name, descriptor] = flags
+            key = name, descriptor
+            if capture_program and (key in members or not (METHOD_DESCRIPTOR if table == "methods" else FIELD_DESCRIPTOR).fullmatch(descriptor)):
+                raise InputError(f"invalid or duplicate recipe class member {name}{descriptor}")
+            members[key] = flags
             for _ in range(reader.u2()):
-                attribute = reader.u2()
+                attribute = pool.utf(reader.u2())
                 payload = reader.take(reader.u4())
-                if (capture_initializer and table == "methods" and name == "<clinit>" and descriptor == "()V"
-                        and pool.utf(attribute) == "Code"):
+                if capture_initializer and table == "methods" and key == ("<clinit>", "()V") and attribute == "Code":
                     if initializer is not None:
                         raise InputError("multiple class initializers")
                     initializer = _initializer(payload, pool)
+                if not capture_program:
+                    continue
+                if table == "methods" and attribute == "Code" and key not in code:
+                    try:
+                        code[key] = _straight_line(payload, pool)
+                    except InputError as exc:
+                        raise InputError(f"{owner}.{name}{descriptor}: {exc}") from exc
+                elif attribute == "RuntimeVisibleAnnotations" and key not in member_annotations:
+                    member_annotations[key] = _annotations(payload, pool)
+                else:
+                    raise InputError(f"unsupported or duplicate recipe class member attribute {attribute!r}")
 
-    mod = None
+    mod, annotations = None, None
     for _ in range(reader.u2()):
         name = pool.utf(reader.u2())
         payload = reader.take(reader.u4())
+        if capture_program:
+            if name == "RuntimeVisibleAnnotations" and annotations is None:
+                annotations = _annotations(payload, pool)
+            elif name not in {"SourceFile", "InnerClasses"}:
+                raise InputError(f"unsupported or duplicate recipe class attribute {name!r}")
         if collect_references and name in {"RuntimeVisibleAnnotations", "RuntimeInvisibleAnnotations"}:
-            mod = _annotations(payload, pool) or mod
+            for annotation in _annotations(payload, pool):
+                if annotation.descriptor == LEGACY_MOD_ANNOTATION:
+                    mod = {key: value for key, value in annotation.values.items() if isinstance(value, str)}
     if not reader.end():
         raise InputError("trailing data in class file")
-    return ClassFile(owner, access, parents, members, pool.refs() if collect_references else set(), mod, initializer)
+    return ClassFile(owner, access, parents, members, pool.refs() if collect_references else set(), mod, initializer,
+                     annotations or (), member_annotations, code)
 
 
 def class_entries(paths) -> dict[str, str]:
