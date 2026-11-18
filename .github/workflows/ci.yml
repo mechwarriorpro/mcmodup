@@ -58,7 +58,7 @@ jobs:
           printf '%s  %s\n' fd14166ff62e11701978c468976980f2 "$jar" | md5sum --check
           # Inspect/adapt data only. Do not run or upload the historical JAR or the adaptation.
           sha256sum "$jar"
-          python -m mcmodup convert-jar "$jar" --pack "$jar" --profile minechem-chemistry --allow-partial \
+          python -m mcmodup convert-jar "$jar" --pack "$RUNNER_TEMP/Voltz_Server_v3.0.0c.zip" --profile minechem-chemistry --allow-partial \
             -o "$RUNNER_TEMP/minechem-chemistry-test-only.jar"
           python - "$RUNNER_TEMP/minechem-chemistry-test-only.jar" <<'PY'
           import json

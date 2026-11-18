@@ -109,6 +109,7 @@ public final class ChemistryMachines {
         private int selected;
         private int remaining;
         private int status;
+        private boolean automatic;
         private String job = "";
 
         final ItemStackHandler inventory = new ItemStackHandler(SLOTS) {
@@ -127,6 +128,7 @@ public final class ChemistryMachines {
         private final class Power extends EnergyStorage {
             Power() { super(CAPACITY, 200, 0); }
             @Override public int receiveEnergy(int amount, boolean simulate) {
+                if (amount <= 0) return 0;
                 int received = super.receiveEnergy(amount, simulate);
                 if (!simulate && received > 0) setChanged();
                 return received;
@@ -149,11 +151,12 @@ public final class ChemistryMachines {
                         case 2 -> power.getEnergyStored();
                         case 3 -> status;
                         case 4 -> remaining;
+                        case 5 -> automatic ? 1 : 0;
                         default -> 0;
                     };
                 }
                 @Override public void set(int index, int value) {} // Server is authoritative.
-                @Override public int getCount() { return 5; }
+                @Override public int getCount() { return 6; }
             };
         }
 
@@ -161,6 +164,12 @@ public final class ChemistryMachines {
             if (!synthesis() || remaining > 0) return false;
             selected = Math.floorMod(selected + by, ChemistryRecipes.SYNTHESIZE.size());
             status = IDLE;
+            setChanged();
+            return true;
+        }
+
+        boolean toggleAutomatic() {
+            automatic = !automatic;
             setChanged();
             return true;
         }
@@ -224,7 +233,11 @@ public final class ChemistryMachines {
         }
 
         static void tick(Level level, BlockPos pos, BlockState state, Machine machine) {
-            if (machine.remaining <= 0) return;
+            if (machine.remaining <= 0) {
+                // Periodically retry with current hopper contents and FE. Stagger across positions.
+                if (machine.automatic && (level.getGameTime() + pos.hashCode()) % 5 == 0) machine.request();
+                return;
+            }
             machine.remaining--;
             if (machine.remaining == 0) machine.finish();
             machine.setChanged();
@@ -250,6 +263,7 @@ public final class ChemistryMachines {
             tag.putString("Selected", ChemistryRecipes.SYNTHESIZE.get(selected).id());
             tag.putString("Job", job);
             tag.putInt("Remaining", remaining);
+            tag.putBoolean("Automatic", automatic);
         }
 
         @Override
@@ -259,6 +273,7 @@ public final class ChemistryMachines {
             stored.putInt("Size", SLOTS);
             inventory.deserializeNBT(registries, stored);
             power.restore(tag.getInt("Energy"));
+            automatic = tag.getBoolean("Automatic");
             selected = ChemistryRecipes.indexOf(tag.getString("Selected"));
             job = tag.getString("Job");
             var recipe = (synthesis() ? ChemistryRecipes.BY_RESULT : ChemistryRecipes.DECOMPOSE).get(job);

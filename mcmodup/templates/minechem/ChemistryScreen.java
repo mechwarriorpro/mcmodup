@@ -3,6 +3,7 @@ package @PACKAGE@;
 import java.util.ArrayList;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.player.Inventory;
@@ -13,7 +14,7 @@ import net.neoforged.neoforge.client.event.RegisterMenuScreensEvent;
 
 @EventBusSubscriber(modid = CatalogPort.MOD_ID, bus = EventBusSubscriber.Bus.MOD, value = Dist.CLIENT)
 public final class ChemistryScreen extends AbstractContainerScreen<ChemistryMenu> {
-    private Button before, after, run;
+    private Button before, after, run, mode;
 
     ChemistryScreen(ChemistryMenu menu, Inventory player, Component title) {
         super(menu, player, title);
@@ -27,12 +28,15 @@ public final class ChemistryScreen extends AbstractContainerScreen<ChemistryMenu
     @Override
     protected void init() {
         super.init();
+        mode = addRenderableWidget(Button.builder(Component.empty(), button -> send(ChemistryMenu.TOGGLE_AUTO))
+            .bounds(leftPos + 28, topPos + 78, 49, 20)
+            .tooltip(Tooltip.create(Component.translatable("gui.@NAMESPACE@.auto_help"))).build());
         before = addRenderableWidget(Button.builder(Component.literal("<"), button -> send(hasShiftDown() ? ChemistryMenu.BACK_TEN : ChemistryMenu.PREVIOUS))
-            .bounds(leftPos + 46, topPos + 78, 20, 20).build());
+            .bounds(leftPos + 79, topPos + 78, 20, 20).build());
         after = addRenderableWidget(Button.builder(Component.literal(">"), button -> send(hasShiftDown() ? ChemistryMenu.FORWARD_TEN : ChemistryMenu.NEXT))
-            .bounds(leftPos + 68, topPos + 78, 20, 20).build());
+            .bounds(leftPos + 100, topPos + 78, 20, 20).build());
         run = addRenderableWidget(Button.builder(Component.translatable("gui.@NAMESPACE@.process"), button -> send(ChemistryMenu.RUN))
-            .bounds(leftPos + 111, topPos + 78, 57, 20).build());
+            .bounds(leftPos + 122, topPos + 78, 46, 20).build());
     }
 
     private void send(int button) {
@@ -41,6 +45,7 @@ public final class ChemistryScreen extends AbstractContainerScreen<ChemistryMenu
 
     @Override
     public void render(GuiGraphics gui, int mouseX, int mouseY, float delta) {
+        mode.setMessage(Component.translatable(menu.automatic() ? "gui.@NAMESPACE@.auto" : "gui.@NAMESPACE@.manual"));
         before.visible = after.visible = menu.synthesis();
         before.active = after.active = run.active = menu.remaining() == 0;
         super.render(gui, mouseX, mouseY, delta);

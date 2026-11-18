@@ -172,6 +172,43 @@ public final class CatalogSmoke {
     }
 
     @GameTest(template = "empty")
+    public static void automaticDecompositionResumes(GameTestHelper helper) {
+        var machine = placeMachine(helper, "decomposer", false);
+        var water = stack(helper, MINECHEM, "molecule_water");
+        helper.assertTrue(machine.output.insertItem(0, water.copy(), false).getCount() == 1, "Output accepted inserts");
+        helper.assertTrue(machine.menu.clickMenuButton(machine.user, 5), "Could not enable automation");
+        var level = helper.getLevel();
+        var snapshot = machine.entity.saveWithFullMetadata(level.registryAccess());
+        var pos = machine.entity.getBlockPos();
+        level.removeBlockEntity(pos);
+        level.setBlockAndUpdate(pos, Blocks.AIR.defaultBlockState());
+        var reloaded = placeMachine(helper, "decomposer", false);
+        reloaded.entity.loadWithComponents(snapshot, level.registryAccess());
+        put(helper, reloaded.input, 0, water.copyWithCount(2));
+        helper.runAfterDelay(12, () -> {
+            helper.assertTrue(reloaded.input.getStackInSlot(0).getCount() == 2 && reloaded.output.getStackInSlot(0).isEmpty(),
+                "Automation started without power");
+            charge(helper, reloaded.power, 40);
+            helper.runAfterDelay(18, () -> {
+                var hydrogen = reloaded.output.extractItem(0, 64, false);
+                var oxygen = reloaded.output.extractItem(1, 64, false);
+                helper.assertTrue(hydrogen.is(stack(helper, MINECHEM, "element_h").getItem()) && hydrogen.getCount() == 4
+                    && oxygen.is(stack(helper, MINECHEM, "element_o").getItem()) && oxygen.getCount() == 2,
+                    "Automation did not process two batches after power was supplied");
+                helper.assertTrue(reloaded.power.getEnergyStored() == 34 && reloaded.input.getStackInSlot(0).isEmpty(),
+                    "Automation did not account for both transactions");
+                helper.assertTrue(reloaded.menu.clickMenuButton(reloaded.user, 5), "Could not disable automation");
+                put(helper, reloaded.input, 0, water);
+                helper.runAfterDelay(10, () -> {
+                    helper.assertTrue(reloaded.input.getStackInSlot(0).getCount() == 1 && reloaded.output.getStackInSlot(0).isEmpty(),
+                        "Disabled automation still processed an input");
+                    helper.succeed();
+                });
+            });
+        });
+    }
+
+    @GameTest(template = "empty")
     public static void aspectFromComponents(GameTestHelper helper) {
         String ns = "thaumcraft_aspects";
         check(helper, CraftingInput.of(2, 1, List.of(stack(helper, ns, "aspect_ignis"), stack(helper, ns, "aspect_aer"))), ns, "aspect_lux");

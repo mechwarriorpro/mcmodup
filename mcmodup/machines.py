@@ -125,7 +125,9 @@ def machine_project(namespace: str, package: str, entries: list[CatalogEntry], r
              for name in JAVA_CLASSES if name != "ChemistryRecipes"}
     files[f"{java}/ChemistryRecipes.java"] = _java_recipes(package, namespace, entries, recipes)
     locales = {f"gui.{namespace}.{key}": label for key, label in {
-        "process": "Process", "decompose": "Insert one material to split", "charge": "Optional fuel: Redstone Dust (+500 FE when needed)",
+        "process": "Process", "auto": "Auto", "manual": "Manual",
+        "auto_help": "Toggle repeated processing using the current recipe, input and FE",
+        "decompose": "Insert one material to split", "charge": "Optional fuel: Redstone Dust (+500 FE when needed)",
         "requirement": "%s × %s", "recipe_help": "Recipe ingredients (hold Shift to skip 10 recipes)",
         "state_0": "Ready · %s FE", "state_1": "Working · %s FE", "state_2": "Need input · %s FE",
         "state_3": "Need power · %s FE", "state_4": "Output full · %s FE", "state_5": "Done · %s FE",

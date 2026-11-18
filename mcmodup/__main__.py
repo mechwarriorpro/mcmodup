@@ -77,7 +77,7 @@ def _parser() -> argparse.ArgumentParser:
     convert = commands.add_parser("convert-jar", help="build a partial NeoForge JAR for a supported legacy profile")
     convert.add_argument("input", type=Path, help="the original legacy mod JAR")
     convert.add_argument("--pack", required=True, type=Path, help="installed modpack folder or a .jar/.zip with embedded mods")
-    convert.add_argument("--profile", required=True, choices=tuple(PROFILES), help="which verified static catalog to convert")
+    convert.add_argument("--profile", required=True, choices=tuple(PROFILES), help="which legacy mod adaptation to build")
     convert.add_argument("--allow-partial", action="store_true", help="acknowledge that the result is not the complete original mod")
     convert.add_argument("--output", "-o", type=Path, required=True, help="new .jar path outside the legacy pack")
     convert.add_argument("--timeout", type=int, default=600, help="Gradle build timeout in seconds (default: 600)")
