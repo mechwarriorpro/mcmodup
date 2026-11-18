@@ -96,7 +96,7 @@ public final class LegacyRecipeSmoke {
         Object grid = inventory.getConstructor(type("inventory.Container"), int.class, int.class).newInstance(null, width, height);
         Object stacks = field(grid, "field_70466_a");
         String[] ids = c[7].split(",");
-        for (int i = 0; i < ids.length; i++) if (!ids[i].equals(".")) Array.set(stacks, stack17(ids[i]));
+        for (int i = 0; i < ids.length; i++) if (!ids[i].equals(".")) Array.set(stacks, i, stack17(ids[i]));
         boolean shouldMatch = c[2].equals("1");
         int count = Integer.parseInt(c[4]);
         Object recipe = mapped.get(c[1]);

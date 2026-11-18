@@ -12,6 +12,7 @@ from zipfile import BadZipFile, ZipFile
 import zlib
 
 from . import MINECRAFT_VERSION, SOURCE_VERSIONS
+from .audit import ModMetadata
 from .catalogs import PROFILES
 from .classfiles import CLASS_LIMIT, class_entries, read_class
 from .inputs import InputError, TEXT_LIMIT, open_input
@@ -410,19 +411,20 @@ def inventory(source: Path, target: Path, build_options: BuildOptions | None = N
     for mod in native:
         for mod_id in mod.ids:
             providers[mod_id].append(mod)
-    edges, declarations, binary = _legacy_graph(entries, libraries, runtime_owners)
     map_path = id_map.expanduser().resolve(strict=True) if id_map is not None else source / "mcmodup-updates.json"
-    state = UpdateInventory(source, target, src_bin, dst_bin, entries, edges, providers, installed,
-                            target_legacy, passthrough, _aliases(map_path), warnings, issues,
-                            legacy_declarations=declarations, legacy_binary=binary, id_map=id_map)
-    return with_source_ports(state, build_options, approved_sources=approved_sources) if build_options else _with_recipe_conversions(state)
+    state = UpdateInventory(source, target, src_bin, dst_bin, entries, {}, providers, installed,
+                            target_legacy, passthrough, _aliases(map_path), warnings, issues, id_map=id_map)
+    if build_options is None:
+        _with_recipe_conversions(state)
+    state.addons, state.legacy_declarations, state.legacy_binary = _legacy_graph(entries, libraries, runtime_owners)
+    return with_source_ports(state, build_options, approved_sources=approved_sources) if build_options else state
 
 
-def _with_recipe_conversions(state: UpdateInventory) -> UpdateInventory:
+def _with_recipe_conversions(state: UpdateInventory) -> None:
     for label, item in state.entries.items():
         ids = state.native_ids(item)
         if (item.problem or not item.audit or item.audit.corrupt_classes or len(item.audit.classes) != 1 or
-                not label.startswith("mods/") or len(ids) != 1 or any(key in state.providers for key in ids)):
+                not label.startswith("mods/") or not ids or all(state.providers.get(key) for key in ids)):
             continue
         runtime_version = state.source_platform.legacy
         if (item.version not in SOURCE_VERSIONS or (runtime_version and runtime_version != item.version) or
@@ -432,14 +434,23 @@ def _with_recipe_conversions(state: UpdateInventory) -> UpdateInventory:
             continue
         try:
             conversion = analyze_recipes(item.path, item.version)
-            if {conversion.mod_id} != ids:
+            if state.aliases.get(conversion.mod_id, conversion.mod_id) != conversion.mod_id:
                 raise InputError("a replacement ID alias cannot rename an automatic conversion")
+            if conversion.unbound_metadata_ids and runtime_version != item.version and not any(
+                    e.kind == "declared" and e.origin.endswith(" (@Mod)") for e in item.audit.audit.version_evidence):
+                raise InputError("unbound mcmod.info rows cannot establish the original release; supply the installed runtime")
+            # This archive's entire class/resource set was established above. Use
+            # the actual FML binding, not orphan metadata IDs or inactive edges.
+            item.audit.audit.mods = [ModMetadata(item.audit.classes[next(iter(item.audit.classes))], conversion.legacy_id,
+                                                conversion.name, conversion.version, item.version, conversion.description,
+                                                conversion.authors, conversion.license)]
+            if state.providers.get(conversion.mod_id):
+                continue
             state.conversions[label] = NativeMod(Path(conversion.filename), f"convert/{label}",
                                                 {conversion.mod_id: conversion.version}, (), False, True,
                                                 conversion.sha256, conversion=conversion)
         except (InputError, OSError) as exc:
             state.conversion_issues[label] = str(exc)
-    return state
 
 
 def with_source_ports(state: UpdateInventory, options: BuildOptions, *,

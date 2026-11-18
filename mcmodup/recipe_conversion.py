@@ -94,6 +94,8 @@ class RecipeConversion:
     legacy_network: tuple[tuple[str, bool], ...]
     ignored_log_calls: int
     documents: tuple[tuple[str, bytes], ...] = ()
+    unbound_metadata_ids: tuple[str, ...] = ()
+    inactive_metadata_dependencies: tuple[str, ...] = ()
 
     @property
     def filename(self) -> str:
@@ -106,6 +108,8 @@ class RecipeConversion:
         return {"profile": PROFILE, "source_minecraft": self.source_version, "source_sha256": self.source_sha256,
                 "source_mod_id": self.legacy_id, "recipes": dict(sorted(Counter(r.kind for r in self.recipes).items())),
                 "legacy_network_flags": dict(self.legacy_network), "ignored_diagnostic_calls": self.ignored_log_calls,
+                "unbound_metadata_ids": list(self.unbound_metadata_ids),
+                "inactive_metadata_dependencies": list(self.inactive_metadata_dependencies),
                 "verification": "static-literal-registrations"}
 
     def metadata(self) -> str:
@@ -438,20 +442,35 @@ def analyze(path: Path, version: str) -> RecipeConversion:
         if not MOD_ID.fullmatch(mod_id) or mod_id in RESERVED or not VERSION.fullmatch(release):
             raise InputError("legacy @Mod ID or version cannot be used in NeoForge metadata")
         meta = ModMetadata("")
+        unbound_ids, inactive_dependencies = (), ()
         if "mcmod.info" in files:
-            rows = _read_metadata(original.text("mcmod.info"), "mcmod.info")
-            # With @Mod.useMetadata at its default, the annotated version controls
-            # FML version binding, even if mcmod.info has a different display version.
-            if len(rows) != 1 or rows[0].mod_id.lower() != mod_id:
-                raise InputError("legacy mcmod.info declares a different mod ID or more than one mod")
-            if rows[0].dependencies:
-                raise InputError("legacy mcmod.info declares dependencies outside the standalone recipe subset")
-            if rows[0].minecraft not in {"", version}:
-                raise InputError(f"legacy mcmod.info declares Minecraft {rows[0].minecraft!r}, not {version}")
-            meta = rows[0]
+            text = original.text("mcmod.info")
+            rows = _read_metadata(text, "mcmod.info")
+            if any(not re.fullmatch(r"[a-zA-Z0-9_.|-]{1,128}", row.mod_id) for row in rows) or len(rows) != len({row.mod_id for row in rows}):
+                raise InputError("invalid or duplicate mod ID in mcmod.info")
+            raw_rows = json.loads(text)
+            if isinstance(raw_rows, dict):
+                raw_rows = raw_rows.get("modList", [raw_rows])
+            for raw, row in zip(raw_rows, rows):
+                for key in ("requiredMods", "dependencies", "dependants"):
+                    value = raw.get(key, [])
+                    if not isinstance(value, list) or any(not isinstance(dep, str) or not dep for dep in value):
+                        raise InputError(f"invalid metadata dependency list {key!r}")
+                # FML's metadata is keyed by the exact ID of a discovered mod
+                # class, not a second way to declare a mod. Stale template rows
+                # are not loaded. Metadata dependencies are opt-in for that row.
+                if row.mod_id == legacy_id:
+                    if raw.get("parent") or str(raw.get("useDependencyInformation", "")).casefold() not in {"", "false"}:
+                        raise InputError("legacy mcmod.info opts into metadata dependencies or a parent mod")
+                    if row.minecraft not in {"", version}:
+                        raise InputError(f"legacy mcmod.info declares Minecraft {row.minecraft!r}, not {version}")
+                    meta = row
+                    inactive_dependencies = tuple(row.dependencies)
+            unbound_ids = tuple(sorted(row.mod_id for row in rows if row.mod_id != legacy_id))
         evaluator = _lifecycle(cls, version, legacy_id)
     if digest(path) != before:
         raise InputError("original archive changed during recipe analysis")
-    return RecipeConversion(version, before, legacy_id, mod_id, release, values.get("name") or meta.name or mod_id,
+    return RecipeConversion(version, before, legacy_id, mod_id, release, meta.name or values.get("name") or mod_id,
                             meta.description, meta.authors, meta.license or "Original mod license applies (local conversion)",
-                            tuple(evaluator.recipes), tuple(sorted(network.items())), evaluator.ignored_log_calls, tuple(docs))
+                            tuple(evaluator.recipes), tuple(sorted(network.items())), evaluator.ignored_log_calls, tuple(docs),
+                            unbound_ids, inactive_dependencies)
