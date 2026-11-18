@@ -40,6 +40,7 @@ neoForge.runs.create('gameTestServer') {{
     if "All 1 required tests passed" not in log:
         raise AssertionError(log[-12000:])
     print(f"Thaumcraft preview: {base['gametests']['passed']} source GameTests; "
+          f"{len(base.get('converted_locales', []))} restored locale files; "
           f"asset audit: {base['legacy_assets']['retained']} retained, {base['legacy_assets']['adapted']} mapped adaptations, "
           f"{base['legacy_assets']['unmapped']} unverified of {base['legacy_assets']['original_count']} original paths.")
     print("Staged production Thaumcraft and Architectury passed the native NeoForge crucible smoke test without Connector.")

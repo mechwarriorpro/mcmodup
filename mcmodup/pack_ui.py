@@ -81,7 +81,8 @@ def handler(state: UpdateInventory, output: Path | None) -> type[BaseHTTPRequest
                     raise InputError("This workbench is read-only. Restart with -o NEW_DIR to stage an update.")
                 with build_lock:
                     # Re-read local files before writing, so a stale browser plan cannot stage changed inputs.
-                    update = plan(inventory(state.source, state.target, state.build_options), selections)
+                    refreshed = inventory(state.source, state.target, state.build_options, approved_sources=state.approved_sources)
+                    update = plan(refreshed, selections)
                     if update.problems:
                         self._json(HTTPStatus.CONFLICT, {"error": "The refreshed plan has blockers.", "plan": update.report})
                         return

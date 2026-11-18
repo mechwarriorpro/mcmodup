@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "mcmodup"
 version = "0.1.0"
-description = "Plan standalone NeoForge 1.21.1 modpack updates and analyze legacy Forge mods"
+description = "Plan and build standalone NeoForge 1.21.1 modpack updates"
 readme = "README.md"
 requires-python = ">=3.11"
 

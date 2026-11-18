@@ -186,6 +186,7 @@ $('stage').addEventListener('click', async () => {
       $('intro-copy').textContent = 'Build standalone NeoForge JARs from reviewed recipes for the legacy releases you select. Add-ons and dependencies are included in the plan.';
       $('stage-title').textContent = 'Build and stage mods';
       $('select-available').textContent = 'Select buildable';
+      $('footer-copy').textContent = 'Pinned sources and local mod dependencies · No Legacy Connector';
     }
     const sourceVersions = [...new Set(catalog.source_bin.minecraft.map(row => row.version))];
     $('source-detail').textContent = (sourceVersions.length ? `MC ${sourceVersions.join(', ')} · ` : '') + 'mods/';

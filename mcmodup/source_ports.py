@@ -17,7 +17,9 @@ import xml.etree.ElementTree as ET
 import zipfile
 import zlib
 
-from .inputs import InputError, MOD_ARCHIVE_LIMIT, open_input
+from .assets import LOCALE_FILENAME, _read_lang
+from .classfiles import CLASS_LIMIT
+from .inputs import InputError, MOD_ARCHIVE_LIMIT, ModInput, open_input
 
 MOD_ID = re.compile(r"[a-z][a-z0-9_]{1,63}")
 RESERVED = {"minecraft", "neoforge", "forge", "legacyconnector"}
@@ -93,6 +95,7 @@ class SourcePort:
     target_property: str | None
     imports: dict[str, str] = field(default_factory=dict)
     asset_map: dict[str, tuple[str, str | None]] = field(default_factory=dict)
+    locale_imports: dict[str, str] = field(default_factory=dict)
 
     def describe(self) -> dict:
         return {"original_sha256": self.legacy_sha256, "source_sha256": self.source_sha256,
@@ -104,7 +107,7 @@ def _parse_port(data: object, base: Path) -> SourcePort:
     row = _object(data)
     allowed = {"legacy_sha256", "source_sha256", "source_zip", "source_url", "source_root", "ids", "neoforge",
                "dependencies", "artifact", "tasks", "game_report", "minimum_tests", "features", "limitations",
-               "status", "target_property", "import_assets", "asset_map"}
+               "status", "target_property", "import_assets", "asset_map", "locale_imports"}
     if extra := set(row) - allowed:
         raise InputError(f"Unknown recipe fields: {', '.join(sorted(extra))}")
     legacy, source = row.get("legacy_sha256"), row.get("source_sha256")
@@ -180,13 +183,23 @@ def _parse_port(data: object, base: Path) -> SourcePort:
         _asset(old)
         dest = _relative(dest)
         new = asset_map.get(old, (old, None))[0]
-        if not dest.endswith("/src/main/resources/" + new) and dest != "src/main/resources/" + new:
+        if not _resource_dest(dest, new):
             raise InputError(f"Import destination for {old!r} must be its mapped path under src/main/resources/")
         if dest.casefold() in outputs:
             raise InputError(f"Duplicate asset import destination: {dest!r}")
         outputs.add(dest.casefold())
+    locale_imports = _object(row.get("locale_imports", {}))
+    for old, dest in locale_imports.items():
+        _asset(old)
+        if old.count("/") != 2 or not old.endswith("/lang") or not _resource_dest(_relative(dest), old):
+            raise InputError("locale_imports must map assets/<namespace>/lang to a module's matching src/main/resources directory")
     return SourcePort(legacy, archive, source, root, ids, neoforge, tuple(dependencies), artifact, tasks,
-                      game_report, minimum, features, limitations, status == "preview", target_property, imports, asset_map)
+                      game_report, minimum, features, limitations, status == "preview", target_property, imports, asset_map,
+                      locale_imports)
+
+
+def _resource_dest(dest: str, asset: str) -> bool:
+    return ("/" + dest).endswith("/src/main/resources/" + asset)
 
 
 def _asset(value: object) -> str:
@@ -210,7 +223,7 @@ def load_ports(options: BuildOptions) -> dict[str, SourcePort]:
         raise InputError("Specify a trusted local source-port JSON manifest (maximum 2 MiB)")
     try:
         data = _object(json.loads(manifest.read_text(encoding="utf-8-sig"), object_pairs_hook=_unique))
-        if set(data) != {"schema_version", "ports"} or data["schema_version"] != 1:
+        if set(data) != {"schema_version", "ports"} or type(data["schema_version"]) is not int or data["schema_version"] != 1:
             raise InputError("Expected a version 1 source port manifest")
         result = {}
         for index, row in enumerate(_list(data["ports"]), 1):
@@ -279,6 +292,8 @@ def _unzip(path: Path, dest: Path, root: str) -> None:
                 if set(part.casefold() for part in name.split("/")) & {".git", ".gradle"}:
                     raise InputError(f"Source ZIP must not contain Git files or Gradle caches: {name!r}")
                 if not member.is_dir():
+                    if name.lower().endswith((".class", ".jar")) and name != "gradle/wrapper/gradle-wrapper.jar":
+                        raise InputError(f"Source ZIP contains prebuilt output or bundled binaries: {name!r}")
                     target = dest / name
                     target.parent.mkdir(parents=True, exist_ok=True)
                     with archive.open(member) as src:
@@ -310,6 +325,8 @@ def _test_evidence(report: Path, port: SourcePort) -> dict:
                     ("failures", "errors", "skipped", "disabled")) or ("tests" in node.attrib and
                     int(node.attrib["tests"]) != sum(1 for _ in node.iter("testcase")))):
                 raise InputError("GameTest report has failures/skips or inaccurate case counts")
+        if len({(case.get("classname", ""), case.get("name", "")) for case in cases}) != len(cases):
+            raise InputError("GameTest report repeats a test identity")
         names = Counter(c.get("name", "") for c in cases)
         if len(cases) < port.minimum_tests or "" in names:
             raise InputError(f"Expected at least {port.minimum_tests} named NeoForge GameTests; found {len(cases)}")
@@ -322,15 +339,53 @@ def _test_evidence(report: Path, port: SourcePort) -> dict:
             "scope": "Source project's NeoForge GameTest run; not a client or full-pack test"}
 
 
-def _asset_evidence(original: Path, modern: Path, port: SourcePort) -> dict:
+def _import_locales(source: ModInput, workspace: Path, port: SourcePort) -> tuple[dict, list]:
+    """Convert original UTF-8 key=value files that lack an authored JSON locale; never guess key aliases."""
+    adapted, evidence = {}, []
+    generated = set()
+    for prefix, directory in sorted(port.locale_imports.items()):
+        for member in source.files:
+            if not member.startswith(prefix + "/"):
+                continue
+            match = LOCALE_FILENAME.fullmatch(member[len(prefix) + 1:])
+            if not match:
+                continue
+            leaf = match[1].lower() + ".json"
+            dest = workspace / directory / leaf
+            if dest in generated:
+                raise InputError(f"More than one legacy locale would generate {leaf!r}")
+            if dest.exists():
+                continue  # Start with the authored native translation if there is one.
+            pairs, skipped = _read_lang(source.text(member))
+            values = dict(pairs)  # As in the legacy language registry, the last duplicate wins.
+            duplicates = len(pairs) - len(values)
+            if not values or (not port.preview and (skipped or duplicates)):
+                raise InputError(f"Locale {member!r} needs review: {skipped} unsupported lines, {duplicates} duplicate entries")
+            data = (json.dumps(values, ensure_ascii=False, sort_keys=True, indent=2) + "\n").encode("utf-8")
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            with dest.open("xb") as stream:
+                stream.write(data)
+            output = prefix + "/" + leaf
+            checksum = hashlib.sha256(data).hexdigest()
+            if member in port.asset_map and port.asset_map[member] != (output, checksum):
+                raise InputError(f"Locale conversion differs from the reviewed asset mapping for {member!r}")
+            adapted[member] = (output, checksum)
+            generated.add(dest)
+            evidence.append({"original": member, "path": output, "keys": len(values), "sha256": checksum,
+                             "unsupported_lines": skipped, "duplicate_entries": duplicates})
+    return adapted, evidence
+
+
+def _asset_evidence(original: Path, modern: Path, port: SourcePort, converted: dict) -> dict:
     counts = Counter()
     unverified = []
     with open_input(original) as before, open_input(modern) as after:
         old_assets = {name for name in before.files if name.startswith("assets/") and name.count("/") >= 2}
         if absent := (port.asset_map.keys() | port.imports.keys()) - old_assets:
             raise InputError(f"Reviewed mappings expect missing original assets: {', '.join(sorted(absent)[:5])}")
+        mappings = port.asset_map | converted
         for name in sorted(old_assets):
-            new, expected = port.asset_map.get(name, (name, None))
+            new, expected = mappings.get(name, (name, None))
             old = hashlib.sha256(before.read(name, MOD_ARCHIVE_LIMIT)).hexdigest()
             actual = hashlib.sha256(after.read(new, MOD_ARCHIVE_LIMIT)).hexdigest() if new in after.files else None
             if expected and actual != expected:
@@ -343,8 +398,15 @@ def _asset_evidence(original: Path, modern: Path, port: SourcePort) -> dict:
                 counts["unmapped"] += 1
                 unverified.append({"original": name, "expected_path": new, "status": "missing" if actual is None else "changed"})
         # Reusing a namespace for new code is fine; shipping verbatim old bytecode isn't.
+        for name in after.files:
+            if name.endswith(".class") and not name.startswith("META-INF/versions/"):
+                if name.startswith(("net/minecraft/", "net/minecraftforge/", "net/neoforged/")):
+                    raise InputError(f"Produced JAR bundles platform classes: {name}")
+                head = after.read(name, CLASS_LIMIT)[:8]
+                if len(head) != 8 or not head.startswith(b"\xca\xfe\xba\xbe") or not 45 <= int.from_bytes(head[6:], "big") <= 65:
+                    raise InputError(f"Class {name!r} is not supported by Java 21")
         for name in before.files.keys() & after.files.keys():
-            if name.endswith(".class") and before.read(name) == after.read(name):
+            if name.endswith(".class") and before.read(name, CLASS_LIMIT) == after.read(name, CLASS_LIMIT):
                 raise InputError(f"Produced JAR contains unchanged legacy bytecode: {name}")
     if unverified and not port.preview:
         examples = ", ".join(item["original"] for item in unverified[:5])
@@ -429,6 +491,7 @@ def build(port: SourcePort, original: Path, task_dir: Path, dependencies: list[t
             target.parent.mkdir(parents=True, exist_ok=True)
             with target.open("xb") as handle:
                 handle.write(source.read(member, MOD_ARCHIVE_LIMIT))
+        converted, locales = _import_locales(source, workspace, port)
     deps.mkdir()
     copied = {}
     for path, checksum in dependencies:
@@ -438,9 +501,11 @@ def build(port: SourcePort, original: Path, task_dir: Path, dependencies: list[t
             raise InputError(f"Native dependency {path.name!r} changed during the build")
         copied[path.name] = checksum
     _gradle(port, workspace, java, deps, neoforge, timeout)
+    if digest(orig) != port.legacy_sha256 or any(digest(deps / name) != checksum for name, checksum in copied.items()):
+        raise InputError("Build changed the supplied legacy or dependency input copies")
     output = _project_output(workspace, port.artifact, MOD_ARCHIVE_LIMIT)
     evidence = {**port.describe(), "archive": str(port.archive) if isinstance(port.archive, str) else port.archive.name,
-                "dependencies_sha256": copied, "imports": len(port.imports),
+                "dependencies_sha256": copied, "imports": len(port.imports), "converted_locales": locales,
                 "gametests": _test_evidence(_project_output(workspace, port.game_report, 8 * 1024 * 1024), port),
-                "legacy_assets": _asset_evidence(orig, output, port)}
+                "legacy_assets": _asset_evidence(orig, output, port, converted)}
     return output, evidence

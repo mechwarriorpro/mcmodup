@@ -1,6 +1,6 @@
 # Porting examples: Minechem, Thaumcraft, Atomic Science, and ICBM
 
-**Current capability:** `convert-jar` builds partial NeoForge 1.21.1 JARs for Minechem and Thaumcraft. Atomic Science and ICBM have verified legacy input and dependency examples only. There is no complete port for any of these mods.
+**Current capability:** `convert-jar` builds partial NeoForge 1.21.1 JARs for Minechem and Thaumcraft. Atomic Science and ICBM have legacy input and dependency examples only. The [source-build mode](source-port-builds.md#first-real-mod-recipe-thaumcraft-4-reload-preview) also builds a separate, broader Thaumcraft 4 preview. None of these is a verified full port with all assets and add-ons.
 
 Run the examples from the mcmodup checkout with Python 3.11+. Put your local inputs under `.mcmodup/` (ignored by Git). You can substitute an installed pack folder for either pack archive. A `.jar` or `.zip` pack must contain the actual mod files under `mods/` or `coremods/` (an enclosing instance folder is fine), or at the archive root. If a launcher export has only a download manifest, point to the installed instance instead.
 

@@ -1,5 +1,6 @@
 package mcmodup.thaumcraftcheck;
 
+import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
@@ -24,8 +25,9 @@ public final class ThaumcraftPackSmoke {
             "The staged release did not register a thaumometer");
         var crucible = ResourceLocation.parse("thaumcraft:crucible");
         helper.assertTrue(BuiltInRegistries.BLOCK.containsKey(crucible), "The staged release did not register a crucible");
-        helper.setBlock(0, 0, 0, BuiltInRegistries.BLOCK.get(crucible));
-        helper.assertTrue(helper.getBlockEntity(new net.minecraft.core.BlockPos(0, 0, 0)) != null,
+        BlockPos pos = helper.absolutePos(BlockPos.ZERO);
+        helper.getLevel().setBlockAndUpdate(pos, BuiltInRegistries.BLOCK.get(crucible).defaultBlockState());
+        helper.assertTrue(helper.getLevel().getBlockEntity(pos) != null,
             "A placed crucible did not create a block entity");
         helper.succeed();
     }

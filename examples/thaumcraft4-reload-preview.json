@@ -28,10 +28,11 @@
         "Outer Lands": "outerlandsgeneratesthelabyrinthoftheeldritchring",
         "Taint spread": "taintblockspreserveoriginalspreadlootandfallingcustody"
       },
+      "locale_imports": {"assets/thaumcraft/lang": "common/src/main/resources/assets/thaumcraft/lang"},
       "status": "preview",
       "limitations": [
         "Thaumcraft 4 Reload alpha.24 is an unofficial source port. Keep this a personal local build; the port license does not relicense Azanor's original code or assets.",
-        "Asset differences are reported, not considered verified. Client visuals, survival progression, and NeoForge multiplayer parity are not established.",
+        "Original extra locales are converted from local files with legacy keys. New key coverage, rendering, survival progression, and NeoForge multiplayer parity are not established.",
         "Original Thaumcraft add-on binaries and worlds do not work as-is. Each detected add-on needs its own exact source recipe. The native port has integrated accessory slots."
       ]
     }

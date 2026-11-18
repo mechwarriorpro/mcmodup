@@ -1,6 +1,6 @@
 # mcmodup
 
-Prepare standalone **Minecraft 1.21.1 / NeoForge** modpack updates from installed files. Analyze legacy Forge mods, match available native builds, or generate a native port of supported features. This is not a general-purpose converter for arbitrary binaries.
+Prepare standalone **Minecraft 1.21.1 / NeoForge** modpack updates from installed files. Analyze legacy Forge mods, stage compatible native builds, or compile standalone ports from reviewed source recipes. This is not a general-purpose converter for arbitrary binaries.
 
 ## Choose updates with checkboxes
 
@@ -10,6 +10,12 @@ python3 -m mcmodup pack-ui /path/to/LegacyPack --target /path/to/NeoForgePack \
 ```
 
 Open the local URL to select legacy mods under `mods/`. mcmodup reads platform evidence from `bin/`, looks for compatible local native JARs, includes related add-ons, and pulls required dependencies from the pack folders. It stages a new `mods/` folder without changing either input. **No Legacy Connector in the output or required at launch.** Missing native builds and dependencies are reported as blockers, never replaced by relabeled legacy code. See the [folder layout, CLI commands and limitations](docs/native-pack-updates.md).
+
+## Build native mods and add-ons from reviewed source
+
+Add `--source-ports TRUSTED.json` to `update-pack` or `pack-ui`. The updater matches the exact legacy archives, builds the selected mods and detected add-ons in dependency order, checks legacy assets and NeoForge GameTests, and stages only after the checks pass. It uses available pack-local native dependency JARs and does not run Legacy Connector. A mod with no exact source recipe is blocked in this mode, not replaced by a prebuilt approximation.
+
+The [source-build guide](docs/source-port-builds.md) includes an opt-in **Thaumcraft 4.2.3.5 preview** that compiles the pinned native Thaumcraft 4 Reload source. It does **not** certify full asset, gameplay or add-on parity. Minechem, Atomic Science and ICBM still need complete native implementations.
 
 ## Build a new JAR from a supported part of a legacy mod
 

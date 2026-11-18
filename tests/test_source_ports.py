@@ -1,3 +1,4 @@
+import hashlib
 import json
 from pathlib import Path
 import stat
@@ -148,6 +149,33 @@ class SourcePortTests(unittest.TestCase):
                     with self.assertRaisesRegex(InputError, error):
                         stage(plan(self._list(), ["mods/OldBase.jar"]), self.output)
                 self.assertFalse(self.output.exists())
+
+    def test_converts_missing_locales_without_overwriting_authored_files(self):
+        asset_root = "assets/techbase/lang"
+        resources = "src/main/resources/"
+        existing = b'{"item.techbase.gear":"Authored gear"}'
+        with zipfile.ZipFile(self.old_base, "a") as archive:
+            archive.writestr(f"{asset_root}/en_US.lang", "item.techbase.gear=Gear\n")
+            archive.writestr(f"{asset_root}/de_DE.lang", "# German\nitem.techbase.gear=Zahnrad\ntooltip.techbase.gear=Größe = klein\n")
+        with zipfile.ZipFile(self.base_src, "a") as project:
+            project.writestr(f"{resources}{asset_root}/en_us.json", existing)
+        row = {**self.base, "legacy_sha256": digest(self.old_base), "source_sha256": digest(self.base_src),
+               "locale_imports": {asset_root: resources + asset_root}, "asset_map": {
+                   f"{asset_root}/en_US.lang": {"path": f"{asset_root}/en_us.json",
+                       "sha256": hashlib.sha256(existing).hexdigest()}}}
+        write_manifest(self.manifest, row)
+        with patch("mcmodup.native_pack.require_jdk", return_value="unused"), patch(
+                "mcmodup.source_ports._gradle", self._fake_gradle):
+            stage(plan(self._list(), ["mods/OldBase.jar"]), self.output)
+        report = json.loads((self.output / REPORT_NAME).read_text())["native_builds"]["techbase.jar"]
+        [locale] = report["converted_locales"]
+        self.assertEqual(locale["path"], f"{asset_root}/de_de.json")
+        self.assertEqual(locale["unsupported_lines"], 0)
+        self.assertEqual(report["legacy_assets"]["adapted"], 2)
+        with zipfile.ZipFile(self.output / "mods/techbase.jar") as archive:
+            self.assertEqual(archive.read(f"{asset_root}/en_us.json"), existing)
+            self.assertEqual(json.loads(archive.read(locale["path"])),
+                             {"item.techbase.gear": "Zahnrad", "tooltip.techbase.gear": "Größe = klein"})
 
     def test_plan_is_read_only_and_rejects_option_like_tasks(self):
         write_manifest(self.manifest, self.base)

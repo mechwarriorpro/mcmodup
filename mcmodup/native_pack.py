@@ -1,4 +1,4 @@
-"""Plan and stage standalone NeoForge updates from two installed modpacks."""
+"""Plan, build, and stage standalone NeoForge updates from installed modpacks."""
 
 from collections import defaultdict, deque
 from dataclasses import dataclass, field, replace
@@ -226,7 +226,7 @@ def _native(path: Path, label: str, neoforge: str, installed: bool = False) -> N
                 if name == "legacyconnector":
                     raise InputError(f"{mod_id} declares a dependency on Legacy Connector")
                 kind = row.get("type", "required" if row.get("mandatory", True) else "optional")
-                if kind not in {"incompatible", "required", "optional", "discouraged"}:
+                if kind not in ("incompatible", "required", "optional", "discouraged"):
                     raise InputError(f"Unknown NeoForge dependency type in {mod_id}")
                 if name in platform or name in ids:
                     actual = platform[name] if name in platform else ids[name]
@@ -328,6 +328,7 @@ class UpdateInventory:
     build_options: BuildOptions | None = None
     recipes: dict[str, NativeMod] = field(default_factory=dict)
     recipe_issues: dict[str, str] = field(default_factory=dict)
+    approved_sources: dict[str, SourcePort] = field(default_factory=dict)
 
     def native_ids(self, item: LegacyEntry) -> set[str]:
         return {self.aliases.get(mod_id, mod_id) for mod_id in item.ids}
@@ -340,9 +341,12 @@ class UpdateInventory:
             supported = [p.name for p in PROFILES.values() if p.mod_id in item.ids and p.version == item.version]
             recipe = self.recipes.get(label)
             if self.build_options is not None:
-                status, reason = (("preview", "Builds from reviewed source, with documented gaps.") if recipe.recipe.preview else
-                                  ("buildable", "Exact source recipe found. Builds and runs NeoForge GameTests.")) if recipe else (
-                                  "blocked", self.recipe_issues[label])
+                if recipe is None:
+                    status, reason = "blocked", self.recipe_issues[label]
+                elif recipe.recipe.preview:
+                    status, reason = "preview", "Builds from reviewed source, with documented gaps."
+                else:
+                    status, reason = "buildable", "Exact source recipe found. Builds and runs NeoForge GameTests."
             elif not item.problem and ids and ids <= present:
                 status, reason = "installed", "Native builds are already in the target mods folder."
             elif not item.problem and ids and all(self.providers.get(key) for key in ids):
@@ -427,9 +431,10 @@ def _aliases(path: Path | None) -> dict[str, str]:
     return {key.casefold(): value for key, value in data.items()}
 
 
-def inventory(source: Path, target: Path, build_options: BuildOptions | None = None) -> UpdateInventory:
+def inventory(source: Path, target: Path, build_options: BuildOptions | None = None, *,
+              approved_sources: dict[str, SourcePort] | None = None) -> UpdateInventory:
     source, target = (path.expanduser().resolve() for path in (source, target))
-    source_ports = load_ports(build_options) if build_options is not None else {}
+    source_ports = {} if build_options is None else load_ports(build_options) if approved_sources is None else approved_sources
     for root in (source, target):
         if not root.is_dir() or not (root / "mods").is_dir():
             raise InputError(f"Expected an installed instance with a mods/ folder: {root}")
@@ -495,7 +500,7 @@ def inventory(source: Path, target: Path, build_options: BuildOptions | None = N
             providers[mod_id].append(mod)
     state = UpdateInventory(source, target, src_bin, dst_bin, entries, _addon_edges(entries), providers, installed,
                             target_legacy, passthrough, _aliases(source / "mcmodup-updates.json"), warnings, issues,
-                            build_options)
+                            build_options, approved_sources=source_ports)
     if build_options is not None:
         for label, item in entries.items():
             ids = state.native_ids(item)
@@ -518,7 +523,7 @@ def inventory(source: Path, target: Path, build_options: BuildOptions | None = N
             elif isinstance(recipe.archive, Path) and not recipe.archive.is_file():
                 issue = f"Local source ZIP not found: {recipe.archive.name!r}."
             else:
-                predicted = NativeMod(Path(Path(recipe.artifact).name), f"build/{label}", recipe.ids, recipe.dependencies,
+                predicted = NativeMod(Path(recipe.artifact.rsplit("/", 1)[-1]), f"build/{label}", recipe.ids, recipe.dependencies,
                                       False, True, f"source:{recipe.legacy_sha256}", recipe=recipe, original=item.path)
                 state.recipes[label] = predicted
                 for mod_id in ids:
@@ -609,7 +614,7 @@ def plan(inventory: UpdateInventory, selections: list[str]) -> UpdatePlan:
             current = active[key]
             if forced.get(key, False) is None:
                 continue  # Detailed exact-recipe blocker already recorded for this legacy archive.
-            if (len(current) == 1 and not (key in roots and current[0].partial) and
+            if (len(current) == 1 and not current[0].partial and
                     (key not in forced or current[0] is forced[key]) and
                     all(matches(current[0].ids[key], spec) for spec in specs)):
                 continue
@@ -792,13 +797,15 @@ def _write_stage(update: UpdatePlan, output: Path) -> None:
         for file in report["files"]:
             file["sha256"] = sha256[Path(file["file"]).name]
         (output / REPORT_NAME).write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+        preview_note = ("This output contains preview builds with known parity gaps. See update-report.json.\n"
+                        if any(row["status"] == "preview" for row in update.native_builds.values()) else "")
         (output / "INSTALL.txt").write_text(
             f"Standalone mods for Minecraft {MINECRAFT_VERSION} / NeoForge {update.inventory.target_platform.neoforge}.\n"
             "Close the target game, back up its mods/ directory, and replace that directory with this mods/ directory (do not merge).\n"
             "The target bin/, launcher, configs and saves were not changed. Use a new world to test first.\n"
             "See update-report.json for asset checks and server GameTests for any mods built from source.\n"
             "These checks do not certify full-pack gameplay, client rendering, or old save compatibility.\n"
-            "Keep this local unless you have redistribution rights for every file.\n", encoding="utf-8")
+            f"{preview_note}Keep this local unless you have redistribution rights for every file.\n", encoding="utf-8")
     except BaseException:
         shutil.rmtree(output, ignore_errors=True)
         raise
