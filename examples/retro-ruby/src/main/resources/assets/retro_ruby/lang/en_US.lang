@@ -1,0 +1,2 @@
+# The migration keeps old keys and adds a modern alias for opt-in plain items.
+item.ruby.name=Retro Ruby

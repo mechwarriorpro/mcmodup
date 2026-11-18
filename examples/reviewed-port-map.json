@@ -1,0 +1,16 @@
+{
+  "from_version": "1.7.10",
+  "to_version": "1.21.1",
+  "entries": [
+    {
+      "from": "cpw/mods/fml/common/Mod",
+      "to": "net/neoforged/fml/common/Mod",
+      "note": "Entrypoints must be rewritten: migrate the old annotation properties to neoforge.mods.toml and use a NeoForge constructor. This is not a drop-in replacement."
+    },
+    {
+      "from": "net/minecraft/tileentity/TileEntity",
+      "to": "net/minecraft/world/level/block/entity/BlockEntity",
+      "note": "Rewrite creation, type registration, ticking, save/load, and networking. Review save compatibility independently."
+    }
+  ]
+}

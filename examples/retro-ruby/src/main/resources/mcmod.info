@@ -1,0 +1,9 @@
+[
+  {
+    "modid": "retro_ruby",
+    "name": "Retro Ruby",
+    "description": "A tiny example of a basic item from a legacy Forge mod.",
+    "version": "1.0.0",
+    "mcversion": "1.7.10"
+  }
+]

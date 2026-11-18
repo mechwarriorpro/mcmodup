@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mcmodup"
+version = "0.1.0"
+description = "Prepare legacy Forge mods for a source port to NeoForge 1.21.1"
+readme = "README.md"
+requires-python = ">=3.11"
+
+[project.scripts]
+mcmodup = "mcmodup.__main__:main"
+
+[tool.setuptools]
+packages = ["mcmodup"]
+
+[tool.setuptools.package-data]
+mcmodup = ["templates/*", "templates/gradle/*", "templates/gradle/wrapper/*"]

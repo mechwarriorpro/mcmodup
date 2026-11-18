@@ -1,0 +1,3 @@
+mcmodup/templates/gradlew text eol=lf
+mcmodup/templates/gradlew.bat text eol=crlf
+*.jar binary
