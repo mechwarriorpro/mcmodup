@@ -34,12 +34,11 @@ def _aspects(text: str) -> str:
 
 
 def _node(text: str) -> str:
-    text = _edit(text, "import java.util.UUID;\n", "")
     text = _edit(text, "import thaumcraft.common.lib.world.NodeStabilizerRules;\n", """import thaumcraft.common.lib.world.NodeStabilizerRules;
 import thaumcraft.common.lib.world.OuterLandsProvider;
 import thaumcraft.common.lib.world.OuterLandsRules;
 """)
-    text = _edit(text, "private String scanId = UUID.randomUUID().toString();", "private String scanId;")
+    text = _edit(text, "private String scanId = UUID.randomUUID().toString();", "private String scanId, detachedId;")
     start = text.index("    /**\n     * Original {@code TileNode:98-101}: the identity of the node.")
     stop = text.index("    @Override public NodeType getNodeType()", start)
     text = _edit(text, text[start:stop], """    @Override public String getId() { return getScanId(); }
@@ -47,10 +46,12 @@ import thaumcraft.common.lib.world.OuterLandsRules;
     /** TC4 generates the identity once from its initial dimension and position. */
     public String getScanId() {
         if (scanId != null) return scanId;
-        String coords = ":" + worldPosition.getX() + ":" + worldPosition.getY() + ":" + worldPosition.getZ();
-        // Detached block entities do not have a dimension yet. Don't persist a
-        // guess; wait for attachment or an identity restored from a jar/save.
-        if (level == null) return "0" + coords;
+        // Maintain the native detached API's temporary ID, but do not store
+        // it in NBT or let it become the in-world scan ID when attached.
+        if (level == null) {
+            if (detachedId == null) detachedId = UUID.randomUUID().toString();
+            return detachedId;
+        }
         var key = level.dimension();
         String dimension;
         if (key.equals(Level.OVERWORLD)) dimension = "0";
@@ -59,7 +60,7 @@ import thaumcraft.common.lib.world.OuterLandsRules;
         else if (key.equals(OuterLandsProvider.DIMENSION)) dimension = Integer.toString(OuterLandsRules.DIMENSION_ID);
         // Other namespaced dimensions have no agreed historical numeric ID.
         else dimension = key.location().toString();
-        scanId = dimension + coords;
+        scanId = dimension + ":" + worldPosition.getX() + ":" + worldPosition.getY() + ":" + worldPosition.getZ();
         return scanId;
     }
 """)

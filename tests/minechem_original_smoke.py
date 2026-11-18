@@ -63,8 +63,15 @@ def original(root: Path, version: str) -> None:
         shutil.copyfile(root / COFH, server / "mods" / COFH)
         compile_probe(root, server, forge, java8("javac"))
         command = legacy_command("1.7.10", options)
-    evidence = run_server(server, command, legacy=True, success_marker="MCMODUP_MINECHEM_ORIGINAL_PASS",
-                          failure_marker="MCMODUP_MINECHEM_ORIGINAL_FAIL")
+    try:
+        evidence = run_server(server, command, legacy=True, success_marker="MCMODUP_MINECHEM_ORIGINAL_PASS",
+                              failure_marker="MCMODUP_MINECHEM_ORIGINAL_FAIL")
+    except AssertionError as exc:
+        reports = sorted((server / "crash-reports").glob("*.txt"))
+        if reports:
+            head = reports[-1].read_text(errors="replace").split("A detailed walkthrough", 1)[0]
+            raise AssertionError(f"{head[:2200]}\n{exc}") from None
+        raise
     assert file_digest(server / "mods" / name) == checksum
     note(f"Original Minechem decomposer on Forge {version}", evidence)
 
