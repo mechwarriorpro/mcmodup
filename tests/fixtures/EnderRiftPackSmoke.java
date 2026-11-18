@@ -37,7 +37,7 @@ import thaumcraft.api.wands.WandHelper;
 public final class EnderRiftPackSmoke {
     private static final ResourceLocation FOCUS = ResourceLocation.parse("thaumictinkerer:focus_ender_chest");
 
-    @GameTest(template = "rift_room")
+    @GameTest(template = "test_room")
     public static void unlinkedEnderRiftOpensVanillaAndUsesTheRightResearchPage(GameTestHelper test) {
         String page = ModList.get().isLoaded("enderstorage") ? "ES" : "0";
         var entry = ResearchCategories.getResearch("FOCUS_ENDER_CHEST");

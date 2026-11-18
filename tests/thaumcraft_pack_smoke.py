@@ -131,7 +131,7 @@ neoForge.runs.create('gameTestServer') {{
     if with_tinkerer:
         files[f"{java}/TinkererPackSmoke.java"] = (FIXTURES / "TinkererPackSmoke.java").read_bytes()
         files[f"{java}/EnderRiftPackSmoke.java"] = (FIXTURES / "EnderRiftPackSmoke.java").read_bytes()
-        files[f"src/main/resources/data/{SERVER_ID}/structure/rift_room.nbt"] = empty_test_structure(8)
+        files[f"src/main/resources/data/{SERVER_ID}/structure/test_room.nbt"] = empty_test_structure(8)
         gradle += "\ndependencies { compileOnly fileTree(dir: 'run/mods', include: ['*.jar']) }\n"
     if with_ender_storage:
         files[f"{java}/EnderStoragePackSmoke.java"] = (FIXTURES / "EnderStoragePackSmoke.java").read_bytes()

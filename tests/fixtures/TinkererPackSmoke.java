@@ -7,6 +7,7 @@ import java.util.Map;
 import java.util.Random;
 import java.util.Set;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.gametest.framework.GameTest;
@@ -16,7 +17,9 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.level.GameRules;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.FireBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.levelgen.LegacyRandomSource;
 import net.neoforged.fml.ModList;
@@ -24,6 +27,7 @@ import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 import thaumcraft.api.ThaumcraftApi;
 import thaumcraft.api.crafting.InfusionRecipe;
+import thaumic.tinkerer.common.block.fire.BlockFireBase;
 import thaumic.tinkerer.common.core.handler.ConfigHandler;
 import thaumic.tinkerer.common.dim.EnumOreFrequency;
 import thaumic.tinkerer.common.dim.OreClusterGenerator;
@@ -49,17 +53,31 @@ public final class TinkererPackSmoke {
         helper.succeed();
     }
 
-    @GameTest(template = "empty")
+    @GameTest(template = "test_room")
     public static void imbuedFireUsesTheModdedBlocksFaceSensitiveFlammability(GameTestHelper helper) {
         var level = helper.getLevel();
-        var pos = helper.absolutePos(new BlockPos(1, 2, 1));
+        var pos = helper.absolutePos(new BlockPos(3, 2, 3));
         var fuel = ThaumcraftPackSmoke.DIRECTIONAL_FUEL.get();
         level.setBlockAndUpdate(pos.below(), Blocks.STONE.defaultBlockState());
         level.setBlockAndUpdate(pos.east(), fuel.defaultBlockState());
         level.setBlockAndUpdate(pos.west(), fuel.defaultBlockState());
-        var fire = BuiltInRegistries.BLOCK.get(ResourceLocation.parse("thaumictinkerer:fire_order"));
-        level.setBlockAndUpdate(pos, fire.defaultBlockState());
-        level.getBlockState(pos).tick(level, pos, new LegacyRandomSource(751));
+        var fire = (BlockFireBase) BuiltInRegistries.BLOCK.get(ResourceLocation.parse("thaumictinkerer:fire_order"));
+        level.setBlockAndUpdate(pos, fire.defaultBlockState().setValue(FireBlock.AGE, 0));
+        var state = level.getBlockState(pos);
+        helper.assertTrue(state.is(fire) && ConfigHandler.enableFire && ConfigHandler.enableFireMechanics && !level.isRaining(),
+                "an enabled, dry Imbued Fire source is placed: " + state);
+        helper.assertTrue(fire.getBlockFlammability(level, pos.east(), Direction.EAST) == 300
+                && fire.getBlockFlammability(level, pos.west(), Direction.WEST) == 0,
+                "the two sides report the block's NeoForge burn chances");
+        // GameTest worlds can disable fire spread. Run the real tick with it enabled, then restore the world rule.
+        var fireTick = level.getGameRules().getRule(GameRules.RULE_DOFIRETICK);
+        boolean previous = fireTick.get();
+        fireTick.set(true, level.getServer());
+        try {
+            state.tick(level, pos, new LegacyRandomSource(751));
+        } finally {
+            fireTick.set(previous, level.getServer());
+        }
         helper.assertTrue(!level.getBlockState(pos.east()).is(fuel), "Fire must use the modded block's burn chance on the original spread side");
         helper.assertTrue(level.getBlockState(pos.west()).is(fuel), "The other side of the same modded block must not burn");
         helper.succeed();

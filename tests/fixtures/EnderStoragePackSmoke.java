@@ -27,7 +27,7 @@ import static mcmodup.thaumcraftcheck.EnderRiftPackSmoke.*;
 @GameTestHolder(ThaumcraftPackSmoke.ID)
 @PrefixGameTestTemplate(false)
 public final class EnderStoragePackSmoke {
-    @GameTest(template = "rift_room")
+    @GameTest(template = "test_room")
     public static void enderRiftLinksAnOwnerFrequencyAndResetsForFree(GameTestHelper test) {
         var pos = new BlockPos(4, 2, 3);
         test.setBlock(pos, EnderStorageModContent.ENDER_CHEST_BLOCK.get());
