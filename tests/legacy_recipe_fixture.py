@@ -100,7 +100,8 @@ def prepare(root: Path, source: Path, version: str) -> Path:
     return forge
 
 
-def run_server(root: Path, command: list[str], *, marker: bool = True, legacy: bool = False) -> str:
+def run_server(root: Path, command: list[str], *, marker: bool = True, legacy: bool = False,
+               success_marker: str = SUCCESS, failure_marker: str = FAILURE) -> str:
     # All test servers are scratch instances and listen only inside the runner.
     (root / "eula.txt").write_text("eula=true\n")
     (root / "server.properties").write_text("server-ip=127.0.0.1\nserver-port=0\nonline-mode=false\nview-distance=3\n"
@@ -118,10 +119,10 @@ def run_server(root: Path, command: list[str], *, marker: bool = True, legacy: b
                 if "Caused by:" in line and len(causes) < 8:
                     causes.append(line.strip())
                 ready |= "Done (" in line and "For help" in line
-                if SUCCESS in line:
-                    verified, result_summary = True, line.partition(SUCCESS)[2].strip()
-                if FAILURE in line:
-                    verified, failure_line = False, line.partition(FAILURE)[2].strip()
+                if success_marker in line:
+                    verified, result_summary = True, line.partition(success_marker)[2].strip()
+                if failure_marker in line:
+                    verified, failure_line = False, line.partition(failure_marker)[2].strip()
                 if (ready and verified) or failure_line:
                     try:
                         process.stdin.write("stop\n")

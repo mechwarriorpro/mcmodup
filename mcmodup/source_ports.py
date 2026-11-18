@@ -20,6 +20,7 @@ import zlib
 from .assets import LOCALE_FILENAME, _read_lang
 from .classfiles import CLASS_LIMIT
 from .inputs import InputError, MOD_ARCHIVE_LIMIT, ModInput, open_input
+from . import method_ports
 
 MOD_ID = re.compile(r"[a-z][a-z0-9_]{1,63}")
 RESERVED = {"minecraft", "neoforge", "forge", "legacyconnector"}
@@ -110,6 +111,8 @@ class SourcePort:
     locale_imports: dict[str, str] = field(default_factory=dict)
     original_jar_checks: OriginalJarChecks | None = None
     require_asset_coverage: bool = False
+    legacy_ids: dict[str, str | None] | None = None
+    method_imports: tuple[method_ports.MethodPort, ...] = ()
 
     def describe(self) -> dict:
         result = {"original_sha256": self.legacy_sha256, "source_sha256": self.source_sha256,
@@ -117,6 +120,10 @@ class SourcePort:
                   "required_gametests": self.features, "limitations": list(self.limitations)}
         if self.original_jar_checks:
             result["required_original_jar_checks"] = list(self.original_jar_checks.cases)
+        if self.legacy_ids is not None:
+            result["legacy_ids"] = self.legacy_ids
+        if self.method_imports:
+            result["required_method_imports"] = [method.key for group in self.method_imports for method in sorted(group.methods)]
         return result
 
 
@@ -125,7 +132,7 @@ def _parse_port(data: object, base: Path) -> SourcePort:
     allowed = {"legacy_sha256", "source_sha256", "source_zip", "source_url", "source_root", "ids", "neoforge",
                "dependencies", "artifact", "tasks", "game_report", "minimum_tests", "features", "limitations",
                "status", "target_property", "import_assets", "asset_map", "locale_imports", "original_jar_checks",
-               "require_asset_coverage"}
+               "require_asset_coverage", "legacy_ids", "method_imports"}
     if extra := set(row) - allowed:
         raise InputError(f"Unknown recipe fields: {', '.join(sorted(extra))}")
     legacy, source = row.get("legacy_sha256"), row.get("source_sha256")
@@ -229,9 +236,23 @@ def _parse_port(data: object, base: Path) -> SourcePort:
                 or len(set(cases)) != len(cases)):
             raise InputError("Specify distinct nonempty case names for original_jar_checks")
         original_checks = OriginalJarChecks(jar_name, report, cases)
+    legacy_ids = None
+    if "legacy_ids" in row:
+        legacy_ids = _object(row["legacy_ids"])
+        if (not legacy_ids or any(not re.fullmatch(r"[a-z0-9_.|\-]{1,128}", key) or
+                                  (value is None and status != "preview") or
+                                  (value is not None and (not isinstance(value, str) or value not in ids))
+                                  for key, value in legacy_ids.items())):
+            raise InputError("legacy_ids must map original lowercase IDs to declared native IDs (null only for omitted preview modules)")
+        targets = [value for value in legacy_ids.values() if value is not None]
+        if len(targets) != len(ids) or set(targets) != ids.keys():
+            raise InputError("legacy_ids must cover each native ID exactly once; do not coalesce original modules")
+    method_imports = method_ports.parse_method_ports(row.get("method_imports", []), ids)
+    if method_imports and status != "preview":
+        raise InputError("Method-import ports require preview status; successful linkage is not gameplay parity")
     return SourcePort(legacy, archive, source, root, ids, neoforge, tuple(dependencies), artifact, tasks,
                       game_report, minimum, features, limitations, status == "preview", target_property, imports, asset_map,
-                      locale_imports, original_checks, require_asset_coverage)
+                      locale_imports, original_checks, require_asset_coverage, legacy_ids, method_imports)
 
 
 def _resource_dest(dest: str, asset: str) -> bool:
@@ -612,6 +633,17 @@ def build(port: SourcePort, original: Path, task_dir: Path, dependencies: list[t
             _copy_limited(src, workspace / original_checks.jar_name, MOD_ARCHIVE_LIMIT)
     with open_input(orig) as source:
         converted, locales = prepare_assets(source, workspace, port)
+        imported = method_ports.prepare(source, workspace, port.method_imports)
+    provenance, method_report = b"", []
+    if imported:
+        method_report = [group.report() for group in imported]
+        provenance = (json.dumps({"schema_version": 1, "original_sha256": port.legacy_sha256, "preview": True,
+                                  "parity_verified": False, "legacy_ids": port.legacy_ids, "limitations": port.limitations,
+                                  "imports": method_report}, indent=2) + "\n").encode("utf-8")
+        marker = workspace / "src/main/resources" / method_ports.PROVENANCE
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        with marker.open("xb") as stream:
+            stream.write(provenance)
     deps.mkdir()
     copied = {}
     for path, checksum in dependencies:
@@ -624,10 +656,17 @@ def build(port: SourcePort, original: Path, task_dir: Path, dependencies: list[t
     if digest(orig) != port.legacy_sha256 or any(digest(deps / name) != checksum for name, checksum in copied.items()):
         raise InputError("Build changed the supplied legacy or dependency input copies")
     output = _project_output(workspace, port.artifact, MOD_ARCHIVE_LIMIT)
+    if imported:
+        method_ports.verify(output, imported)
+        with open_input(output) as artifact:
+            if method_ports.PROVENANCE not in artifact.files or artifact.read(method_ports.PROVENANCE) != provenance:
+                raise InputError("Built JAR did not retain its method-import preview provenance")
     evidence = {**port.describe(), "archive": str(port.archive) if isinstance(port.archive, str) else port.archive.name,
                 "dependencies_sha256": copied, "imports": len(port.imports), "converted_locales": locales,
                 "gametests": _test_evidence(_project_output(workspace, port.game_report, TEST_REPORT_LIMIT), port),
                 "legacy_assets": _asset_evidence(orig, output, port, converted)}
     if original_checks:
         evidence["original_jar_checks"] = _original_jar_evidence(workspace, original_checks, port.legacy_sha256)
+    if method_report:
+        evidence["method_imports"] = method_report
     return output, evidence

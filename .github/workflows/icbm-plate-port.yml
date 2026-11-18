@@ -1,0 +1,73 @@
+name: Check the executable Voltz plate port
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/icbm-plate-port.yml'
+      - 'mcmodup/method_ports.py'
+      - 'mcmodup/icbm_plate.py'
+      - 'mcmodup/templates/icbm_plate/**'
+      - 'mcmodup/native_pack.py'
+      - 'mcmodup/source_ports.py'
+      - 'mcmodup/__main__.py'
+      - 'mcmodup/port.py'
+      - 'tests/icbm_plate_smoke.py'
+      - 'tests/fixtures/LegacyIcbmPlateSmoke.java'
+      - 'tests/fixtures/PlateMultipartSmoke.java'
+
+permissions:
+  contents: read
+
+jobs:
+  plate:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - side: legacy
+            java: '8'
+          - side: modern
+            java: '21'
+    name: Plate on ${{ matrix.side }} runtime
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    env:
+      PYTHONPATH: .:tests
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.11'
+      - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
+        with:
+          distribution: temurin
+          java-version: ${{ matrix.java }}
+      - name: Pin Voltz 3.0.0c original input
+        shell: bash
+        run: |
+          root="$RUNNER_TEMP/icbm-plate"
+          mkdir -p "$root"
+          curl --proto '=https' --proto-redir '=https' --fail --location --silent --show-error \
+            --retry 2 --max-time 120 --max-filesize 76658094 --output "$root/voltz.zip" \
+            https://raw.githubusercontent.com/TechnicPack/Technic/8c4e20f9225bcd6612fca4cb29c53366317d3e13/servers/voltz/Voltz_Server_v3.0.0c.zip
+          printf '%s  %s\n' 2eda607746a22edbf45612243adce37a876251e36d46c692a48344fe98eec84e "$root/voltz.zip" | sha256sum --check
+      - name: Install the stock target and unchanged native Multipart JARs
+        if: matrix.side == 'modern'
+        shell: bash
+        run: |
+          cd "$RUNNER_TEMP/icbm-plate"
+          mkdir -p target/mods
+          download() {
+            curl --proto '=https' --proto-redir '=https' --fail --location --silent --show-error \
+              --retry 2 --max-time 90 --max-filesize 12000000 --output "$1" "$2"
+            printf '%s  %s\n' "$4" "$1" | "$3" --check
+          }
+          download installer.jar https://maven.neoforged.net/releases/net/neoforged/neoforge/21.1.267/neoforge-21.1.267-installer.jar sha256sum 25bbe66e82205abeccdfd23bdac61e6a8e9ff1333885f3c9f31d392a5ec97e60
+          java -jar installer.jar --installServer target > installer.log 2>&1 || { tail -75 installer.log; exit 1; }
+          download target/mods/CBMultipart-1.21.1-3.5.0.155.jar https://cdn.modrinth.com/data/LmvnWWSV/versions/mhteXGK9/CBMultipart-1.21.1-3.5.0.155.jar sha512sum 43ba1480586db6fac554e4cf5ade2f006a789a509a32f0824277e35310831d3dc7b90cee08d7baf228bb74132174dd4e41d2b1ac9dd23f9877b0969b718fa303
+          download target/mods/CodeChickenLib-1.21.1-4.6.1.526.jar https://cdn.modrinth.com/data/2gq0ALnz/versions/gQ1srSKh/CodeChickenLib-1.21.1-4.6.1.526.jar sha512sum 2d4efdc64531d5bb8133a247bc22a0728ab99dbcb2842ad0303b2242afd0ddc1b90cd43f8ed8562f651d8d9e228c95d15d73b4b63b3980286450de2df9c0e5ef
+      - name: Measure original or staged plate behavior (no checked JARs uploaded)
+        run: python -m icbm_plate_smoke "$RUNNER_TEMP/icbm-plate" '${{ matrix.side }}'

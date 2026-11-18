@@ -17,6 +17,7 @@ from .catalogs import PROFILES
 from .classfiles import CLASS_LIMIT, class_entries, read_class
 from .inputs import InputError, TEXT_LIMIT, open_input
 from .legacy_dependencies import LegacyDependencies, legacy_conflicts
+from .method_ports import PROVENANCE as METHOD_PROVENANCE
 from .native_resolution import Resolution, dependency_report, resolve
 from .pack import PackMod, _load
 from .private_libraries import PRIVATE_ROOT, PrivateLibrary, inspect as inspect_private_libraries
@@ -56,6 +57,7 @@ class NativeMod:
     private_references: frozenset[str] = frozenset()
     embedded: tuple[str, ...] = ()
     conversion: RecipeConversion | None = None
+    resource_namespaces: frozenset[str] = frozenset()
 
 
 def _main_manifest(text: str) -> dict[str, str]:
@@ -100,7 +102,7 @@ def _native(path: Path, label: str, neoforge: str, installed: bool = False) -> N
         requirements = set()
         platform = {"minecraft": MINECRAFT_VERSION, "neoforge": neoforge}
         evidence = False
-        partial = bool({"META-INF/MCModUp-NOTICE.txt", RECIPE_PROVENANCE}.intersection(entries))
+        partial = bool({"META-INF/MCModUp-NOTICE.txt", RECIPE_PROVENANCE, METHOD_PROVENANCE}.intersection(entries))
         deps = data.get("dependencies", {})
         if not isinstance(deps, dict):
             raise InputError("Invalid NeoForge dependencies table")
@@ -136,9 +138,12 @@ def _native(path: Path, label: str, neoforge: str, installed: bool = False) -> N
         refs: set[str] = set()
         embedded = _check_code(entries, jar.read, private_refs=refs)
         private = inspect_private_libraries(jar, ids, {dep.mod_id for dep in requirements})
+        namespaces = frozenset(parts[1] for name in entries if name.startswith(("assets/", "data/"))
+                               and len(parts := name.split("/", 2)) == 3)
         return NativeMod(path, label, ids, tuple(sorted(requirements, key=lambda d: (d.mod_id, d.version, d.kind))),
                          installed, evidence, checksum, partial, classes=frozenset(class_entries(entries)),
-                         private_libraries=private, private_references=frozenset(refs), embedded=embedded)
+                         private_libraries=private, private_references=frozenset(refs), embedded=embedded,
+                         resource_namespaces=namespaces)
 
 
 def _check_code(entries, read, *, nested: bool = False, private_refs: set[str] | None = None) -> tuple[str, ...]:
@@ -238,7 +243,16 @@ class UpdateInventory:
     allow_recipe_preview: bool = False
 
     def native_ids(self, item: LegacyEntry) -> set[str]:
+        candidate = self.recipes.get(item.label)
+        if candidate and candidate.recipe.legacy_ids is not None:
+            return set(candidate.ids)
         return {self.aliases.get(mod_id, mod_id) for mod_id in item.ids}
+
+    def native_binding_id(self, label: str, legacy_id: str) -> str | None:
+        candidate = self.recipes.get(label)
+        if candidate and candidate.recipe.legacy_ids is not None and legacy_id in candidate.recipe.legacy_ids:
+            return candidate.recipe.legacy_ids[legacy_id]
+        return self.aliases.get(legacy_id, legacy_id)
 
     def catalog(self) -> dict:
         rows = []
@@ -494,7 +508,9 @@ def with_source_ports(state: UpdateInventory, options: BuildOptions, *,
             continue
         if recipe is None:
             issue = "No source recipe for this exact legacy archive (SHA-256)."
-        elif recipe.ids.keys() != ids:
+        elif recipe.legacy_ids is not None and recipe.legacy_ids.keys() != set(item.ids):
+            issue = "The SHA-bound legacy_ids map must account for every original mod ID."
+        elif recipe.legacy_ids is None and recipe.ids.keys() != ids:
             issue = "The source recipe's native IDs do not match. Review mcmodup-updates.json for renamed IDs."
         elif recipe.preview and not options.allow_preview:
             issue = "Only a preview source recipe exists. It does not meet full parity; requires --allow-preview-ports."
@@ -506,7 +522,7 @@ def with_source_ports(state: UpdateInventory, options: BuildOptions, *,
             predicted = NativeMod(Path(recipe.artifact.rsplit("/", 1)[-1]), f"build/{label}", recipe.ids, recipe.dependencies,
                                   False, True, f"source:{recipe.legacy_sha256}", recipe=recipe, original=item.path)
             state.recipes[label] = predicted
-            for mod_id in ids:
+            for mod_id in predicted.ids:
                 providers[mod_id].append(predicted)
             continue
         state.recipe_issues[label] = issue
@@ -530,6 +546,7 @@ class UpdatePlan:
     provider_pins: dict[str, str] = field(default_factory=dict)
     legacy_hashes: dict[str, str] = field(default_factory=dict)
     legacy_selection_conflicts: list[dict] = field(default_factory=list)
+    legacy_identity_splits: list[dict] = field(default_factory=list)
     include_native: tuple[str, ...] = ()
 
     def _legacy_evidence(self) -> tuple[list[dict], dict[str, dict]]:
@@ -541,10 +558,17 @@ class UpdatePlan:
             consumers = {active[key] for key in ids if key in active}
             for row in state.legacy_declarations.get(label, ()):
                 key = row["id"].casefold()
-                native_id = state.aliases.get(key, key)
+                provider = row["provider"]
+                # Bind a peer's renamed ID through its actual legacy provider,
+                # not another release with the same ID. Intra-archive modules
+                # are already unambiguous even when a module was left out.
+                identity = label if key in state.entries[label].ids else provider["archive"] if provider else ""
+                native_id = state.native_binding_id(identity, key)
                 binding = {"id": native_id, "status": "integration_not_established"}
                 if row["status"] == "loader":
                     binding["status"] = "platform_rewrite"
+                elif native_id is None:
+                    binding["status"] = "omitted_preview_module"
                 elif private := next((lib for mod in consumers for lib in mod.private_libraries
                                       if lib.id == native_id and lib.consumer in ids), None):
                     binding |= {"status": "private_native_library", "namespace": private.namespace, "version": private.version}
@@ -553,7 +577,6 @@ class UpdatePlan:
                                                      matches(candidate.ids[native_id], dep.version)
                                                      for mod in consumers for dep in mod.dependencies):
                         binding |= {"status": "native_metadata", "archive": candidate.label, "version": candidate.ids[native_id]}
-                provider = row["provider"]
                 requirements.append({**row, "consumer": label, "provider": self._legacy_hash(provider) if provider else None,
                                      "candidates": [self._legacy_hash(candidate) for candidate in row["candidates"]],
                                      "native_binding": binding})
@@ -583,7 +606,7 @@ class UpdatePlan:
                 "problems": self.problems, "warnings": self.inventory.warnings, "replaced_target_files": self.removed,
                 "legacy_requirements": requirements, "legacy_class_providers": binary,
                 "legacy_version_conflicts": legacy_conflicts(requirements), "legacy_archive_sha256": self.legacy_hashes,
-                "legacy_selection_conflicts": self.legacy_selection_conflicts,
+                "legacy_selection_conflicts": self.legacy_selection_conflicts, "legacy_identity_splits": self.legacy_identity_splits,
                 "native_dependencies": dependency_report(resolution, self.inventory.providers), "provider_pins": self.provider_pins,
                 "files": [{"file": f"mods/{mod.path.name}", "from": mod.label, "ids": mod.ids,
                            "sha256": None if mod.recipe and not self.native_builds else mod.sha256,
@@ -641,19 +664,31 @@ def parse_pins(rows: list[str]) -> dict[str, str]:
     return pins
 
 
-def _selected_id_conflicts(inventory: UpdateInventory, closure: set[str], hashes: dict[str, str]) -> list[dict]:
-    # Distinct originals deliberately selected as roots/add-ons cannot be counted
-    # as two updates just because their legacy IDs map to one modern provider.
-    # This does not forbid two unselected legacy dependencies sharing one native
-    # implementation when their native consumers declare compatible ranges.
+def _selected_id_conflicts(inventory: UpdateInventory, closure: set[str], hashes: dict[str, str],
+                           output_pack: bool) -> tuple[list[dict], list[dict]]:
+    # Filenames and a global ID alias cannot distinguish two originals. Only a
+    # SHA-bound recipe for *each* input, with disjoint outputs, can opt into a split.
     by_id = defaultdict(list)
     for label in sorted(closure & hashes.keys()):
         item = inventory.entries[label]
         for key in item.ids:
             versions = sorted({m.version for m in item.audit.audit.mods if m.mod_id.casefold() == key and m.version})
             by_id[key].append({"archive": label, "minecraft": item.version, "releases": versions, "sha256": hashes[label]})
-    return [{"id": key, "status": "distinct_selected_originals", "archives": archives}
-            for key, archives in sorted(by_id.items()) if len({row["sha256"] for row in archives}) > 1]
+    conflicts, splits = [], []
+    for key, archives in sorted(by_id.items()):
+        digests = {row["sha256"] for row in archives}
+        if len(digests) < 2:
+            continue
+        candidates = [inventory.recipes.get(row["archive"]) for row in archives]
+        isolated = (output_pack and len(digests) == len(archives) and
+                    all(m and m.recipe.legacy_sha256 == row["sha256"] and (m.recipe.legacy_ids or {}).get(key)
+                        for row, m in zip(archives, candidates)))
+        if isolated and len({target for m in candidates for target in m.ids}) == sum(len(m.ids) for m in candidates):
+            splits.append({"id": key, "status": "separate_source_recipes",
+                           "archives": [row | {"native_id": m.recipe.legacy_ids[key]} for row, m in zip(archives, candidates)]})
+        else:
+            conflicts.append({"id": key, "status": "distinct_selected_originals", "archives": archives})
+    return conflicts, splits
 
 
 def plan(inventory: UpdateInventory, selections: list[str], *, output_pack: bool = False,
@@ -697,6 +732,8 @@ def plan(inventory: UpdateInventory, selections: list[str], *, output_pack: bool
             if artifact is None:
                 problems.append(f"{label!r}: {inventory.recipe_issues[label]}")
                 continue
+            if not output_pack and (artifact.recipe.method_imports or None in (artifact.recipe.legacy_ids or {}).values()):
+                problems.append(f"{label!r}: this executable preview must be built into a fresh --output-pack.")
         else:
             artifact = inventory.conversions.get(label)
             if artifact is not None:
@@ -786,7 +823,7 @@ def plan(inventory: UpdateInventory, selections: list[str], *, output_pack: bool
                 raise InputError("original changed after recipe analysis; scan again")
         except (InputError, OSError) as exc:
             problems.append(f"Could not fingerprint legacy input {label!r}: {exc}")
-    conflicts = _selected_id_conflicts(inventory, closure, legacy_hashes)
+    conflicts, splits = _selected_id_conflicts(inventory, closure, legacy_hashes, output_pack)
     for conflict in conflicts:
         archives = ", ".join(f"{row['archive']!r} (Minecraft {row['minecraft'] or 'unknown'})" for row in conflict["archives"])
         problems.append(f"Distinct selected originals share mod ID {conflict['id']!r}: {archives}. "
@@ -794,7 +831,7 @@ def plan(inventory: UpdateInventory, selections: list[str], *, output_pack: bool
                         "classes and registry namespaces, or a verified combined port.")
     return UpdatePlan(inventory, selected, added, mods, roots, removed, list(dict.fromkeys(problems)), order,
                       resolution=resolution, runtime=runtime, output_pack=output_pack, provider_pins=pins, legacy_hashes=legacy_hashes,
-                      legacy_selection_conflicts=conflicts, include_native=included)
+                      legacy_selection_conflicts=conflicts, legacy_identity_splits=splits, include_native=included)
 
 
 def _dependencies(mod: NativeMod, providers: dict[str, NativeMod]) -> set[NativeMod]:
@@ -839,9 +876,11 @@ def _materialize(update: UpdatePlan, scratch: Path) -> UpdatePlan:
             used = [(mod.path, mod.sha256) for mod in deps]
             jar, checked = build(expected.recipe, expected.original, scratch / f"port-{index + 1}", used, neoforge, java, timeout)
             verified = _native(jar, expected.label, neoforge)
-            if (verified is None or verified.partial or not verified.target_evidence or verified.ids != expected.ids or
-                    set(verified.dependencies) != set(expected.dependencies)):
-                raise InputError("Compiled JAR did not match the recipe's exact native IDs, versions, and dependencies")
+            if (verified is None or not verified.target_evidence or verified.ids != expected.ids or
+                    set(verified.dependencies) != set(expected.dependencies) or
+                    (verified.partial and not expected.recipe.preview) or
+                    (expected.recipe.method_imports and not verified.partial)):
+                raise InputError("Compiled JAR did not match the recipe's native IDs, versions, dependencies, or preview status")
             actual[expected] = replace(verified, recipe=expected.recipe)
             evidence[verified.path.name] = {**checked, "jar_sha256": verified.sha256}
         except (InputError, OSError) as exc:
@@ -849,7 +888,24 @@ def _materialize(update: UpdatePlan, scratch: Path) -> UpdatePlan:
     mods = [actual.get(mod, mod) for mod in update.mods]
     if conflicts := _artifact_conflicts(mods):
         raise InputError("Built artifacts cannot share the pack: " + " ".join(conflicts))
+    _check_split_namespaces(update.legacy_identity_splits, {mod.label: mod for mod in mods})
     return replace(update, mods=mods, native_builds=evidence)
+
+
+def _check_split_namespaces(splits: list[dict], artifacts: dict[str, NativeMod]) -> None:
+    for split in splits:
+        packages, resources = set(), set()
+        for row in split["archives"]:
+            mod = artifacts[f"build/{row['archive']}"]
+            if mod.embedded:
+                raise InputError(f"Split legacy ID {split['id']!r} cannot have embedded JARs; use separately declared native libraries.")
+            occupied = {name.rpartition('/')[0] for name in mod.classes}
+            if shared := sorted(occupied & packages):
+                raise InputError(f"Split legacy ID {split['id']!r} shares native Java package {shared[0]!r}.")
+            if shared := sorted(mod.resource_namespaces & resources):
+                raise InputError(f"Split legacy ID {split['id']!r} shares a native asset/data namespace {shared[0]!r}.")
+            packages.update(occupied)
+            resources.update(mod.resource_namespaces)
 
 
 def _parents(path: str) -> list[str]:

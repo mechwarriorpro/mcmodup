@@ -1,10 +1,12 @@
 """Generate an isolated NeoForge 1.21.1 workspace, not a relabeled legacy mod."""
 
 from dataclasses import dataclass
+import gzip
 import json
 from pathlib import Path
 import re
 import shutil
+import struct
 
 from . import JAVA_VERSION, MINECRAFT_VERSION, MODDEV_VERSION, NEOFORGE_VERSION, SOURCE_VERSIONS
 from .assets import ResourcePlan, plan_resources
@@ -226,6 +228,17 @@ def generate_port(source: ModInput, result: Audit, options: PortOptions) -> Path
 
     write_workspace(output, files)
     return output
+
+
+def empty_test_structure(size: int = 1) -> bytes:
+    """Minimal, empty cubic structure in named NBT for registry and gameplay checks."""
+    nbt = (b"\x0a\x00\x00"                         # root compound
+           b"\x03\x00\x0bDataVersion" + struct.pack(">i", 3955)
+           + b"\x09\x00\x04size\x03" + struct.pack(">4i", 3, size, size, size)
+           + b"\x09\x00\x07palette\x0a\x00\x00\x00\x01\x08\x00\x04Name\x00\x0dminecraft:air\x00"
+           + b"\x09\x00\x06blocks\x0a\x00\x00\x00\x00"
+           + b"\x09\x00\x08entities\x0a\x00\x00\x00\x00\x00")
+    return gzip.compress(nbt, mtime=0)
 
 
 def write_workspace(output: Path, files: dict[str, str | bytes]) -> None:
