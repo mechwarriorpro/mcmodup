@@ -136,7 +136,7 @@ final class ChemistryRecipes {{
 
 
 def machine_project(namespace: str, package: str, entries: list[CatalogEntry], recipes: list[MachineRecipe], *,
-                    mode: DecomposerMode) -> tuple[dict[str, str], dict[str, str]]:
+                    mode: DecomposerMode, linked_decomposer: bool = False) -> tuple[dict[str, str], dict[str, str]]:
     def document(value: dict) -> str:
         return json.dumps(value, indent=2) + "\n"
 
@@ -145,10 +145,16 @@ def machine_project(namespace: str, package: str, entries: list[CatalogEntry], r
     assets = f"{source}/assets/{namespace}"
     data = f"{source}/data"
     prepaid = mode == DecomposerMode.RELEASE_394
+    if linked_decomposer and mode == DecomposerMode.BATCH:
+        raise InputError("Linked decomposer methods require an exact Minechem release")
+    bridge = f"mcmodup_kernel.{namespace}.DecomposerAccess"
+    jam_test = f"{bridge}.canUnjam(outputs)" if linked_decomposer and not prepaid else "hasEmptyFinalOutput()"
+    compact = f"{bridge}.compact(outputs)" if linked_decomposer and prepaid else "compactPrepaidOutputs()"
     files = {f"{java}/{name}.java": (TEMPLATES / f"{name}.java").read_text(encoding="utf-8")
              .replace("@PACKAGE@", package).replace("@NAMESPACE@", namespace)
              .replace("@BUFFERED_DECOMPOSER@", str(mode != DecomposerMode.BATCH).lower())
              .replace("@PREPAID_DECOMPOSER@", str(prepaid).lower())
+             .replace("@FINAL_CAN_UNJAM@", jam_test).replace("@COMPACT_PREPAID@", compact)
              for name in machine_classes(mode) if name != "ChemistryRecipes"}
     files[f"{java}/ChemistryRecipes.java"] = _java_recipes(package, namespace, entries, recipes)
     locales = {f"gui.{namespace}.{key}": label for key, label in {

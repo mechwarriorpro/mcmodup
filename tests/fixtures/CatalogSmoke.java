@@ -57,7 +57,7 @@ public final class CatalogSmoke {
         return new ItemStack(BuiltInRegistries.ITEM.get(id));
     }
 
-    private static void check(GameTestHelper helper, CraftingInput input, String namespace, String result) {
+    static void check(GameTestHelper helper, CraftingInput input, String namespace, String result) {
         var level = helper.getLevel();
         var recipes = level.getRecipeManager();
         var match = recipes.getRecipeFor(RecipeType.CRAFTING, input, level);
@@ -446,13 +446,6 @@ public final class CatalogSmoke {
             actor.discard();
             channel.finishAndReleaseAll();
         }
-    }
-
-    @GameTest(template = "empty")
-    public static void aspectFromComponents(GameTestHelper helper) {
-        String ns = "thaumcraft_aspects";
-        check(helper, CraftingInput.of(2, 1, List.of(stack(helper, ns, "aspect_ignis"), stack(helper, ns, "aspect_aer"))), ns, "aspect_lux");
-        helper.succeed();
     }
 
     @GameTest(template = "empty")

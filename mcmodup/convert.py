@@ -150,15 +150,30 @@ def _decomposer_mode(profile: Profile, digest: str) -> DecomposerMode | None:
     return None
 
 
+def _catalog_entries(profile: Profile, locations: list[ClassLocation]) -> list[CatalogEntry]:
+    classes = {}
+    for location in locations:
+        with open_input(location.file) as artifact:
+            classes[location.owner] = read_class(artifact.read(location.entry, CLASS_LIMIT), collect_references=False,
+                                                capture_initializer=True)
+    return recover_catalog(profile, classes)
+
+
+def _icon_paths(namespace: str, originals) -> dict[str, str]:
+    return {name: f"assets/{namespace}/textures/item/catalog/{i}.png" for i, name in enumerate(sorted(originals))}
+
+
 def _project_files(profile: Profile, entries: list[CatalogEntry], textures: dict[str, bytes],
-                   digest: str, dependency_summary: dict, locations: list[ClassLocation]) -> tuple[dict[str, str | bytes], int]:
+                   digest: str, dependency_summary: dict, locations: list[ClassLocation], *,
+                   linked_decomposer: bool = False, project_version: str | None = None) -> tuple[dict[str, str | bytes], int]:
     namespace = profile.namespace
     package = f"mcmodup.generated.{namespace}"
     mode = _decomposer_mode(profile, digest)
-    version = {DecomposerMode.FINAL: "1.3.0-partial", DecomposerMode.BATCH: "1.2.0-partial"}.get(mode, "1.0.0-partial")
+    version = project_version or {DecomposerMode.FINAL: "1.3.0-partial", DecomposerMode.BATCH: "1.2.0-partial"}.get(mode, "1.0.0-partial")
     machine_rules = machine_recipes(namespace, entries, mode=mode) if mode else []
     if mode:
-        recipe_files, extra_locales = machine_project(namespace, package, entries, machine_rules, mode=mode)
+        recipe_files, extra_locales = machine_project(namespace, package, entries, machine_rules, mode=mode,
+                                                      linked_decomposer=linked_decomposer)
         count = len(machine_rules)
         if mode == DecomposerMode.RELEASE_394:
             recipe_status = {entry.path: "catalog_only" for entry in entries}
@@ -175,6 +190,8 @@ def _project_files(profile: Profile, entries: list[CatalogEntry], textures: dict
         count = len(recipe_files)
         features = "Recovered aspect items and crafting-table combinations. This is not the original research system."
     description = f"Partial mod with new IDs. {features} Not ported: {profile.not_ported}"
+    code_notice = ("Includes only selected, rewritten legacy method bodies; no original classes or legacy dependencies are bundled."
+                   if linked_decomposer else "This JAR contains no legacy JVM classes or dependencies.")
     notice = f"""PARTIAL PORT — NOT A REPLACEMENT FOR THE ORIGINAL MOD.
 
 Legacy mod: {profile.mod_id} (Minecraft {profile.version}, binary SHA-256 {digest})
@@ -185,7 +202,7 @@ Not ported: {profile.not_ported}
 Original data and icons: {profile.attribution}
 License: {profile.license}.
 Review the original license and authorization before distributing. Do not distribute Thaumcraft
-adaptations without the owner's permission. This JAR contains no legacy JVM classes or dependencies.
+adaptations without the owner's permission. {code_notice}
 """
     src = "src/main/resources"
     prefix = f"{src}/assets/{namespace}"
@@ -212,10 +229,9 @@ adaptations without the owner's permission. This JAR contains no legacy JVM clas
         }),
     }
     icon_ids = {}
-    for i, (path, data) in enumerate(sorted(textures.items())):
-        name = f"catalog/{i}"
-        icon_ids[path] = f"{namespace}:item/{name}"
-        files[f"{prefix}/textures/item/{name}.png"] = data
+    for path, new in _icon_paths(namespace, textures).items():
+        icon_ids[path] = f"{namespace}:item/catalog/{Path(new).stem}"
+        files[f"{src}/{new}"] = textures[path]
     strings = {f"itemGroup.{namespace}.catalog": profile.title, **extra_locales}
     for entry in entries:
         key = f"item.{namespace}.{entry.path}"
@@ -288,12 +304,7 @@ def convert_catalog(pack: ModPack, mod: PackMod, profile: Profile, output: Path,
         digest = hashlib.file_digest(stream, "sha256").hexdigest()
     _decomposer_mode(profile, digest)  # Reject an unpinned input before recovering any declarations.
     locations = [_location(pack, mod, owner) for owner in profile.owners]
-    classes = {}
-    for location in locations:
-        with open_input(location.file) as artifact:
-            classes[location.owner] = read_class(artifact.read(location.entry, CLASS_LIMIT), collect_references=False,
-                                                capture_initializer=True)
-    entries = recover_catalog(profile, classes)
+    entries = _catalog_entries(profile, locations)
     textures = _textures(entries, mod, locations)
     report = pack.report(mod.archive)["archives"][0]
     observed = {

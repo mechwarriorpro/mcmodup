@@ -162,6 +162,10 @@ def _parser() -> argparse.ArgumentParser:
 
     plate = commands.add_parser("prepare-icbm-plate", help="prepare the local source recipe for the exact Voltz ICBM glass plate preview")
     plate.add_argument("--output", "-o", required=True, type=Path, help="new directory for a reviewable source ZIP and recipe")
+    pair = commands.add_parser("prepare-minechem-pair", help="prepare local preview recipes for both exact Minechem releases")
+    pair.add_argument("final", type=Path, help="original Minechem 1.6.4 5.0.5 FINAL JAR")
+    pair.add_argument("release394", type=Path, help="original Minechem 1.7.10 5.0.5.394 JAR")
+    pair.add_argument("--output", "-o", required=True, type=Path, help="new directory for the local source ZIPs and recipe")
     return parser
 
 
@@ -183,6 +187,11 @@ def main(argv: list[str] | None = None) -> int:
 
             manifest = prepare(args.output)
             print(f"Prepared {manifest}. Review the recipe; use update-pack --source-ports with --allow-preview-ports and --output-pack.")
+        elif args.command == "prepare-minechem-pair":
+            from .minechem_pair import prepare
+
+            manifest = prepare(args.final, args.release394, args.output)
+            print(f"Prepared {manifest}. Local previews only; use update-pack --source-ports with --allow-preview-ports and --output-pack.")
         elif args.command == "build-jars":
             from .builtin_ports import build_jars
             from .native_pack import REPORT_NAME

@@ -287,7 +287,7 @@ public final class ChemistryMachines {
                 inventory.extractItem(0, 1, false);
                 if (PREPAID_DECOMPOSER) {
                     power.restore(energy - recipe.energy());
-                    compactPrepaidOutputs();
+                    @COMPACT_PREPAID@;
                 }
                 status = WORKING;
                 setChanged();
@@ -297,12 +297,7 @@ public final class ChemistryMachines {
             if (!PREPAID_DECOMPOSER && status == OUTPUT_FULL) {
                 // FINAL only clears a jam with power and an empty slot, even if
                 // an occupied matching stack could otherwise accept an item.
-                if (energy <= 0) return;
-                boolean hasEmptySlot = false;
-                for (int slot = FIRST_OUTPUT; slot < end; slot++) {
-                    if (inventory.getStackInSlot(slot).isEmpty()) { hasEmptySlot = true; break; }
-                }
-                if (!hasEmptySlot) return;
+                if (energy <= 0 || !(@FINAL_CAN_UNJAM@)) return;
             }
             ItemStack next = decompositionBuffer.getFirst();
             int destination = -1;
@@ -329,6 +324,13 @@ public final class ChemistryMachines {
             if (!PREPAID_DECOMPOSER) power.restore(Math.max(0, energy - 1));
             status = WORKING;
             setChanged();
+        }
+
+        private boolean hasEmptyFinalOutput() {
+            for (int slot = FIRST_OUTPUT; slot < FIRST_OUTPUT + BUFFERED_OUTPUTS; slot++) {
+                if (inventory.getStackInSlot(slot).isEmpty()) return true;
+            }
+            return false;
         }
 
         // .394 compacts stacks already in the output inventory at intake,

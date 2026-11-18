@@ -37,6 +37,8 @@ def check_minechem_artifacts(final: Path, release394: Path) -> None:
 def check_recipes_in_game(project: Path, outputs: list[Path], *, minechem_394: Path | None = None,
                           multipart_control: list[Path] | None = None) -> None:
     namespace = "mcmodup_smoke"
+    assert len(outputs) in (1, 2), "Supply the FINAL-based (or fixture) JAR with an optional aspect JAR"
+    include_aspects = len(outputs) == 2
     jars = [*outputs, minechem_394] if minechem_394 else outputs
     # Load the separately built production JARs as runtime mods, not as source sets.
     inputs = {f"fixtures/{i}.jar": path.read_bytes() for i, path in enumerate(jars)}
@@ -64,6 +66,8 @@ neoForge.runs.create('gameTestServer') {{
     assert buffered == (catalog["source_sha256"] == FINAL_LEGACY_SHA256), "The buffered machine is bound to the exact original"
     fixture = fixture.replace("@WATER_INDEX@", str(water_index)).replace("@BUFFERED_DECOMPOSER@", str(buffered).lower())
     tests = {"src/main/java/mcmodup/test/CatalogSmoke.java": fixture}
+    if include_aspects:
+        tests["src/main/java/mcmodup/test/CatalogAspectSmoke.java"] = (FIXTURES / "CatalogAspectSmoke.java").read_bytes()
     if minechem_394:
         assert buffered, "The paired tests require the actual FINAL-based build"
         check_minechem_artifacts(outputs[0], minechem_394)
@@ -93,7 +97,7 @@ neoForge.runs.create('gameTestServer') {{
     })
     run = subprocess.run(["./gradlew", "--no-daemon", "--console=plain", "runGameTestServer"],
                          cwd=project, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=420)
-    count = 8 + (2 if minechem_394 else 0) + bool(controls)
+    count = 7 + include_aspects + (2 if minechem_394 else 0) + bool(controls)
     if run.returncode or f"All {count} required tests passed" not in run.stdout:
         raise AssertionError(run.stdout[-8000:])
     parsing_errors = [line for line in run.stdout.splitlines() if "Parsing error loading recipe" in line

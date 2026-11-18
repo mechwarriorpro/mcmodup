@@ -14,7 +14,17 @@ on:
       - 'mcmodup/native_pack.py'
       - 'mcmodup/legacy_dependencies.py'
       - 'mcmodup/__main__.py'
+      - 'mcmodup/convert.py'
+      - 'mcmodup/machines.py'
+      - 'mcmodup/method_ports.py'
+      - 'mcmodup/minechem_pair.py'
+      - 'mcmodup/source_ports.py'
+      - 'mcmodup/templates/minechem/**'
       - 'tests/mixed_legacy_pack_smoke.py'
+      - 'tests/minechem_pair_pack_smoke.py'
+      - 'tests/neoforge_smoke.py'
+      - 'tests/fixtures/CatalogSmoke.java'
+      - 'tests/fixtures/MinechemPairChecks.java'
       - 'tests/fixtures/MultipartControlSmoke.java'
 
 permissions:
@@ -82,6 +92,9 @@ jobs:
       - name: Run the unchanged Multipart and CodeChickenLib control separately
         if: ${{ !cancelled() && steps.target.outcome == 'success' && (inputs.connector_oracle == '' || inputs.connector_oracle == 'none') }}
         run: python -m mixed_legacy_pack_smoke "$RUNNER_TEMP/mixed-legacy-pack" control
+      - name: Stage both linked Minechem previews and run the staged JARs
+        if: ${{ inputs.connector_oracle == '' || inputs.connector_oracle == 'none' }}
+        run: python -m minechem_pair_pack_smoke "$RUNNER_TEMP/mixed-legacy-pack"
       - name: Run the exact-input Legacy Connector oracle (not a native pack)
         if: ${{ inputs.connector_oracle == 'mixed' || inputs.connector_oracle == 'mimicry' }}
         env:
