@@ -1,4 +1,3 @@
-import gzip
 import hashlib
 import json
 import os
@@ -18,8 +17,7 @@ from mcmodup.classfiles import read_class
 from mcmodup.convert import _recipe_files, convert_catalog
 from mcmodup.inputs import InputError
 from mcmodup.pack import open_pack
-from mcmodup.audit import ModMetadata
-from mcmodup.port import _build_gradle, _metadata, write_workspace
+from neoforge_smoke import check_recipes_in_game
 from test_cli import PNG, ROOT, run_cli
 from test_pack import fixture_class, jar, u2
 
@@ -286,7 +284,7 @@ public class Aspect {
         subprocess.run(["javac", "--release", "8", "-d", str(classes), *to_compile], check=True, timeout=30)
         library = jar(self.root / "pack.jar", **{"mods/dep.jar": jar(self.root / "dep.jar", **{
             "fake/Dep.class": fixture_class("fake/Dep")}).read_bytes()})
-        outputs = {}
+        outputs = []
         for profile in PROFILES.values():
             with self.subTest(profile=profile.name):
                 entries = {path.relative_to(classes).as_posix(): path.read_bytes()
@@ -308,41 +306,6 @@ public class Aspect {
                     self.assertEqual(len(raw["entries"]), 3)
                     self.assertEqual(raw["entries"][-1]["recipe_status"], "crafting_shapeless")
                     self.assertTrue(built.read("META-INF/MCModUp-NOTICE.txt").startswith(b"PARTIAL PORT"))
-                outputs[profile.namespace] = output
+                outputs.append(output)
         if len(outputs) == len(PROFILES):
-            self.check_recipes_in_game(outputs)
-
-    def check_recipes_in_game(self, outputs):
-        namespace = "mcmodup_smoke"
-        project = self.root / "smoke"
-        # Register the separately built JARs as runtime mods, not as source sets.
-        runtime = ", ".join(f"'fixtures/{path.name}'" for path in outputs.values())
-        gradle = _build_gradle(namespace, "mcmodup.test", "1.0.0") + f"""
-dependencies {{ runtimeOnly files({runtime}) }}
-neoForge.runs.create('gameTestServer') {{
-    type = 'gameTestServer'
-    systemProperty 'neoforge.enabledGameTestNamespaces', '{namespace}'
-}}
-"""
-        # Minimal, empty 1x1x1 structure in named NBT. GameTest requires a template even when
-        # the test only exercises registries and recipes.
-        nbt = (b"\x0a\x00\x00"                         # root compound
-               b"\x03\x00\x0bDataVersion" + struct.pack(">i", 3955)
-               + b"\x09\x00\x04size\x03" + struct.pack(">4i", 3, 1, 1, 1)
-               + b"\x09\x00\x07palette\x0a\x00\x00\x00\x01\x08\x00\x04Name\x00\x0dminecraft:air\x00"
-               + b"\x09\x00\x06blocks\x0a\x00\x00\x00\x00"
-               + b"\x09\x00\x08entities\x0a\x00\x00\x00\x00\x00")
-        fixture = (Path(__file__).with_name("fixtures") / "CatalogSmoke.java").read_bytes()
-        write_workspace(project, {
-            "settings.gradle": "rootProject.name = 'catalog-smoke'\n",
-            "build.gradle": gradle,
-            "gradle.properties": "org.gradle.jvmargs=-Xmx2G\n",
-            "src/main/java/mcmodup/test/CatalogSmoke.java": fixture,
-            "src/main/resources/META-INF/neoforge.mods.toml": _metadata(ModMetadata(""), namespace, "Catalog smoke tests", "1.0.0", "Unlicense"),
-            f"src/main/resources/data/{namespace}/structure/empty.nbt": gzip.compress(nbt, mtime=0),
-            **{f"fixtures/{path.name}": path.read_bytes() for path in outputs.values()},
-        })
-        run = subprocess.run(["./gradlew", "--no-daemon", "--console=plain", "runGameTestServer"],
-                             cwd=project, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=420)
-        self.assertEqual(run.returncode, 0, run.stdout[-8000:])
-        self.assertIn("All 2 required tests passed", run.stdout, run.stdout[-8000:])
+            check_recipes_in_game(self.root / "smoke", outputs)

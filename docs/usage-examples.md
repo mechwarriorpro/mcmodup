@@ -6,7 +6,7 @@ Run the examples from the mcmodup checkout with Python 3.11+. Put your local inp
 
 ## Automatically build the partial catalog JARs
 
-With **JDK 21** on `PATH` or in `JAVA_HOME`, and Gradle network access:
+With **JDK 21** on `PATH` or in `JAVA_HOME`, and Gradle network access. These examples use the released [Minechem 5.0.5 FINAL JAR](https://github.com/iopleke/Minechem/releases/tag/1.6.4-5.0.5-FINAL) and [Thaumcraft 4.2.3.5 JAR](https://www.curseforge.com/minecraft/mc-mods/thaumcraft/files/2227552).
 
 ```sh
 python3 -m mcmodup convert-jar .mcmodup/Minechem-1.6.4-5.0.5.FINAL.jar \
