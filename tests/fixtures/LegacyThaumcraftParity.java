@@ -41,7 +41,8 @@ public final class LegacyThaumcraftParity {
             Object aspects = manager.getMethod("getObjectTags", stack).invoke(null, crafted);
             require(aspects != null, "Original enchanted apple has no aspect tags");
             Map<String, Integer> tags = tags(aspects);
-            require(tags.containsKey("sano") && tags.get("sano") >= 8, "Unexpected original health aspects");
+            require(tags.toString().equals("{lucrum=64, messis=1, metallum=64, praecantatio=4, sano=8}"),
+                    "Unexpected original enchanted golden apple aspect tags: " + tags);
 
             Class<?> nodeType = Class.forName("thaumcraft.common.tiles.TileNode");
             Object node = nodeType.newInstance();
@@ -51,12 +52,21 @@ public final class LegacyThaumcraftParity {
             String first = id(node);
             set(node, 14, 65, -15);
             String moved = id(node);
+            Class<?> compound = type("nbt.NBTTagCompound");
+            Object data = compound.newInstance();
+            tile.getMethod("func_145841_b", compound).invoke(node, data);
+            Object restored = nodeType.newInstance();
+            tile.getMethod("func_145834_a", worldType).invoke(restored, world);
+            tile.getMethod("func_145839_a", compound).invoke(restored, data);
+            String saved = id(restored);
             Object fresh = nodeType.newInstance();
             tile.getMethod("func_145834_a", worldType).invoke(fresh, world);
             set(fresh, 14, 65, -15);
             String next = id(fresh);
-            require(first.equals("0:12:64:-13") && next.equals("0:14:65:-15"), "Original node identities were not derived from coordinates");
-            System.out.println("MCMODUP_TC4_ORIGINAL_PASS enchanted_golden_apple=" + tags + "; node_first=" + first + "; node_moved=" + moved + "; node_fresh=" + next);
+            require(first.equals("0:12:64:-13") && first.equals(moved) && first.equals(saved) && next.equals("0:14:65:-15"),
+                    "Unexpected coordinate generation, caching or NBT load: " + first + "/" + moved + "/" + saved + "/" + next + "; NBT " + data);
+            System.out.println("MCMODUP_TC4_ORIGINAL_PASS enchanted_golden_apple=" + tags + "; node_first=" + first
+                    + "; node_moved=" + moved + "; node_restored=" + saved + "; node_fresh=" + next + "; NBT " + data);
         } catch (Throwable error) {
             System.err.println("MCMODUP_TC4_ORIGINAL_FAIL " + error);
             error.printStackTrace();
