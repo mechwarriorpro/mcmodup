@@ -32,6 +32,10 @@ jobs:
         run: |
           scratch=$(mktemp -d "$RUNNER_TEMP/tc4-preview.XXXXXX")
           trap 'rm -rf -- "$scratch"' EXIT
+          export scratch
+          log="$scratch/run.log"
+          set +e
+          bash -euo pipefail >"$log" 2>&1 <<'BUILD'
           cd "$GITHUB_WORKSPACE"
           old="$scratch/old"
           target="$scratch/target"
@@ -52,3 +56,15 @@ jobs:
             --source-ports examples/thaumcraft4-reload-preview.json --allow-preview-ports -o "$scratch/staged"
           PYTHONPATH=.:tests python -m thaumcraft_pack_smoke "$scratch/staged"
           echo '::notice title=Native Thaumcraft preview verified::Source GameTests and staged-JAR server smoke passed. This is a preview, not full parity or add-on compatibility.'
+          BUILD
+          result=$?
+          cat "$log"
+          if [ "$result" -ne 0 ]; then
+            python - "$log" <<'PY'
+          import pathlib
+          import sys
+          log = pathlib.Path(sys.argv[1]).read_text(errors="replace")[-5000:]
+          print("::error title=Native source preview failed::" + log.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A"))
+          PY
+            exit "$result"
+          fi
