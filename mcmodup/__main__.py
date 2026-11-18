@@ -38,7 +38,7 @@ def _mod_selection(command: argparse.ArgumentParser, *, required: bool = False) 
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="mcmodup", description=f"Analyze legacy Forge mods and build supported partial ports for NeoForge {MINECRAFT_VERSION}.")
+        prog="mcmodup", description=f"Inspect legacy mods and prepare native modpack updates for Minecraft {MINECRAFT_VERSION} / NeoForge.")
     commands = parser.add_subparsers(dest="command", required=True)
     inspect = commands.add_parser("inspect", help="audit a source directory, ZIP, or JAR without modifying it")
     inspect.add_argument("--json", action="store_true", help="emit a machine-readable audit")
@@ -82,6 +82,18 @@ def _parser() -> argparse.ArgumentParser:
     convert.add_argument("--output", "-o", type=Path, required=True, help="new .jar path outside the legacy pack")
     convert.add_argument("--timeout", type=int, default=600, help="Gradle build timeout in seconds (default: 600)")
     _pack_arguments(convert, positional=False)
+
+    updater = commands.add_parser("update-pack", help="list, plan or stage standalone 1.21.1 mod updates using local pack files")
+    ui = commands.add_parser("pack-ui", help="open the native modpack updater with checkboxes")
+    for command in (updater, ui):
+        command.add_argument("input", type=Path, help="installed pack with the legacy mods under mods/")
+        command.add_argument("--target", type=Path, help="installed NeoForge 1.21.1 pack (defaults to input); platform files under bin/")
+        command.add_argument("--output", "-o", type=Path, help="new directory outside both packs for the staged mods/ folder")
+    updater.add_argument("--mod", action="append", default=[], metavar="ARCHIVE",
+                         help="select a legacy archive by its relative path (repeatable); omit to list")
+    updater.add_argument("--json", action="store_true", help="show the catalog or plan as JSON")
+    ui.add_argument("--host", default="127.0.0.1", help="interface for the local workbench (default: 127.0.0.1)")
+    ui.add_argument("--port", type=int, default=8765, help="local HTTP port (default: 8765)")
     return parser
 
 
@@ -98,7 +110,47 @@ def _pack_context(args: argparse.Namespace) -> ApiContext:
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     try:
-        if args.command == "convert-jar":
+        if args.command in {"update-pack", "pack-ui"}:
+            from . import native_pack
+
+            state = native_pack.inventory(args.input, args.target or args.input)
+            if args.command == "pack-ui":
+                from .pack_ui import serve
+
+                serve(state, args.output, args.host, args.port)
+            elif not args.mod:
+                if args.output:
+                    raise InputError("Select at least one archive with --mod before staging updates.")
+                catalog = state.catalog()
+                if args.json:
+                    print(json.dumps(catalog, indent=2))
+                else:
+                    print(f"Native updates for Minecraft {MINECRAFT_VERSION} / NeoForge {catalog['neoforge']}")
+                    for item in catalog["rows"]:
+                        print(f"{item['status']:>10}  {item['id']!r} — {item['reason']}")
+                    for issue in catalog["target_issues"]:
+                        print(f"Target issue: {issue}")
+                    print("Use pack-ui for checkboxes, or --mod ARCHIVE to plan a selection.")
+            else:
+                update = native_pack.plan(state, args.mod)
+                report = update.report
+                if report["ready"] and args.output:
+                    report["output"] = str(native_pack.stage(update, args.output))
+                if args.json:
+                    print(json.dumps(report, indent=2))
+                else:
+                    for path, related in report["auto_addons"].items():
+                        print(f"Add-on {path!r}: {related['reason']}")
+                    for item in report["files"]:
+                        print(f"{item['action']:>10}  {item['file']!r} ← {item['from']!r}")
+                    for issue in report["problems"]:
+                        print(f"Blocked: {issue}")
+                    if "output" in report:
+                        print(f"Staged standalone mods: {report['output']}. See INSTALL.txt. Neither input pack was modified.")
+                    elif report["ready"]:
+                        print("Plan ready. Give -o NEW_DIR to stage it. Launch and test gameplay in a fresh world.")
+                return int(not report["ready"])
+        elif args.command == "convert-jar":
             if not args.allow_partial:
                 raise InputError("Full automatic conversion is not supported. These profiles build partial JARs; "
                                  "use --allow-partial only if that is what you want. No JAR was written.")

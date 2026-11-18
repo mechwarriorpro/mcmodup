@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "mcmodup"
 version = "0.1.0"
-description = "Analyze legacy Forge mods and build supported partial ports for NeoForge 1.21.1"
+description = "Plan standalone NeoForge 1.21.1 modpack updates and analyze legacy Forge mods"
 readme = "README.md"
 requires-python = ">=3.11"
 
@@ -16,4 +16,4 @@ mcmodup = "mcmodup.__main__:main"
 packages = ["mcmodup"]
 
 [tool.setuptools.package-data]
-mcmodup = ["templates/*", "templates/minechem/*.java", "templates/gradle/*", "templates/gradle/wrapper/*"]
+mcmodup = ["templates/*", "templates/minechem/*.java", "templates/pack-ui/*", "templates/gradle/*", "templates/gradle/wrapper/*"]

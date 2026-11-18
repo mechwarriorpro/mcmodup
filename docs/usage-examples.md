@@ -4,7 +4,7 @@
 
 Run the examples from the mcmodup checkout with Python 3.11+. Put your local inputs under `.mcmodup/` (ignored by Git). You can substitute an installed pack folder for either pack archive. A `.jar` or `.zip` pack must contain the actual mod files under `mods/` or `coremods/` (an enclosing instance folder is fine), or at the archive root. If a launcher export has only a download manifest, point to the installed instance instead.
 
-Want to run the original mods rather than build a native JAR? See the [Legacy Connector evaluation](legacy-connector.md) for the published gameplay results, exact dependency checks, and how to test a new instance.
+Updating a full pack? Use the [native updater](native-pack-updates.md) to select mods and resolve local native dependencies. The [Legacy Connector evaluation](legacy-connector.md) is separate gameplay and translation evidence, not a requirement for native outputs.
 
 ## Build the partial Minechem and Thaumcraft JARs
 

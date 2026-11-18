@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>mcmodup · Pack updater</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <header class="masthead">
+    <div class="wrap brandline">
+      <div class="brand"><span class="brand-icon" aria-hidden="true"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3 8 4.5V16L12 21l-8-5V7.5L12 3Z"/><path d="m4 7.5 8 5 8-5M12 12.5V21M8 5.2l8 4.8"/></svg></span>mcmodup <span class="brand-divider"></span><span class="brand-context">Pack updater</span></div>
+      <span class="tag native"><i></i> Standalone NeoForge</span>
+    </div>
+  </header>
+  <main class="wrap">
+    <section class="intro" aria-labelledby="title">
+      <div class="eyebrow">MODPACK WORKBENCH</div>
+      <h1 id="title">Update your modpack</h1>
+      <p>Choose the legacy mods you want to update. Matching native builds and their local dependencies go into a new mods folder.</p>
+    </section>
+    <section class="routes" aria-label="Source and target instances">
+      <div class="route"><span class="route-label">SOURCE PACK</span><strong id="source">Loading…</strong><span class="mono route-detail" id="source-detail">Legacy mods · mods/</span></div>
+      <span class="route-arrow" aria-hidden="true">→</span>
+      <div class="route"><span class="route-label">TARGET PACK</span><strong id="target">Loading…</strong><span class="mono route-detail" id="target-detail">Minecraft 1.21.1</span></div>
+    </section>
+    <div id="notice" class="notice" role="status" hidden></div>
+    <div class="workspace">
+      <section class="card modes" aria-labelledby="mods-title">
+        <div class="card-head"><div><h2 id="mods-title">Mods to update <span id="total" class="count">0</span></h2><p>Check the mods to include in this update.</p></div><button type="button" class="quiet" id="select-available" disabled>Select available</button></div>
+        <div class="list-tools"><label class="search"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.5 15.5 4 4"/></svg><span class="sr-only">Filter mods</span><input id="search" type="search" placeholder="Find a mod or file…"></label><span id="checked" class="subtle">0 selected</span></div>
+        <div class="columns" aria-hidden="true"><span>MOD / ARCHIVE</span><span>STATUS</span></div>
+        <div id="mod-list" class="mod-list"><p class="empty">Reading the installed modpacks…</p></div>
+      </section>
+      <aside class="card plan" aria-labelledby="plan-title">
+        <div class="card-head"><div><div class="eyebrow">REVIEW</div><h2 id="plan-title">Update plan</h2></div><button type="button" class="quiet" id="clear" disabled>Clear</button></div>
+        <div class="stats"><div><strong id="stat-selected">0</strong><span>Selected</span></div><div><strong id="stat-addons">0</strong><span>Add-ons</span></div><div><strong id="stat-deps">0</strong><span>Dependencies</span></div></div>
+        <div class="plan-body" aria-live="polite"><div id="plan-content"><p class="plan-empty">Select a mod to see what will be added or replaced.</p></div></div>
+        <div class="plan-footer"><button type="button" class="primary" id="stage" disabled>Stage updated mods <span aria-hidden="true">→</span></button><p id="stage-hint">A new folder is written. Your original packs are left alone.</p></div>
+      </aside>
+    </div>
+    <footer><span>mcmodup</span><span>Local files only · No Legacy Connector in the output</span></footer>
+  </main>
+</body>
+</html>

@@ -119,6 +119,11 @@ jobs:
       - name: Build the NeoForge 1.21.1 demo
         working-directory: ports/retro-ruby
         run: ./gradlew --no-daemon build
+      - name: Play a staged native base and add-on without Legacy Connector
+        shell: bash
+        run: |
+          PYTHONPATH=.:tests python -m native_pack_smoke ports/retro-ruby/build/libs/*.jar
+          echo '::notice title=Native updater runtime passed::The staged base, add-on and auto-selected library passed GameTest with no Legacy Connector.'
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: neoforge-1.21.1-retro-ruby-demo

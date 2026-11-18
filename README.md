@@ -1,6 +1,15 @@
 # mcmodup
 
-Analyze legacy Forge mods for **Minecraft 1.5.2, 1.6.4, or 1.7.10** and prepare ports for **Minecraft 1.21.1 on NeoForge**. Use the dependency and API reports, generate a source workspace, or build a new JAR from a supported subset. This is not a general-purpose converter for entire mods.
+Prepare standalone **Minecraft 1.21.1 / NeoForge** modpack updates from installed files. Analyze legacy Forge mods, match available native builds, or generate a native port of supported features. This is not a general-purpose converter for arbitrary binaries.
+
+## Choose updates with checkboxes
+
+```sh
+python3 -m mcmodup pack-ui /path/to/LegacyPack --target /path/to/NeoForgePack \
+  -o .mcmodup/staged-1.21.1
+```
+
+Open the local URL to select legacy mods under `mods/`. mcmodup reads platform evidence from `bin/`, looks for compatible local native JARs, includes related add-ons, and pulls required dependencies from the pack folders. It stages a new `mods/` folder without changing either input. **No Legacy Connector in the output or required at launch.** Missing native builds and dependencies are reported as blockers, never replaced by relabeled legacy code. See the [folder layout, CLI commands and limitations](docs/native-pack-updates.md).
 
 ## Build a new JAR from a supported part of a legacy mod
 
@@ -13,7 +22,7 @@ python3 -m mcmodup convert-jar Minechem-1.6.4-5.0.5.FINAL.jar --pack MyPack.zip 
 
 The command refuses to build without `--allow-partial`. It matches known bytecode declarations rather than executing legacy code. A class may be recovered from an unambiguous pack dependency if the primary JAR references it. Other dependencies are inventoried, not bundled or ported. A missing or mismatched input, unknown declaration shape, or failed Gradle build leaves no new output JAR. First-run Gradle downloads need internet access. See [example commands and coverage](docs/usage-examples.md) for scope and licensing before using private assets.
 
-If your goal is to **play original legacy mods** rather than build a standalone port, see the [Legacy Connector evaluation](docs/legacy-connector.md). It covers runtime translation, the evidence for our four examples, and why a Connector cache is not a native port.
+The [Legacy Connector evaluation](docs/legacy-connector.md) is a separate reference for mappings, original behavior and compatibility gaps. Its runtime and cached JARs are not inputs to `update-pack` or `pack-ui`.
 
 ## Try it
 
