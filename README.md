@@ -13,6 +13,8 @@ python3 -m mcmodup convert-jar Minechem-1.6.4-5.0.5.FINAL.jar --pack MyPack.zip 
 
 The command refuses to build without `--allow-partial`. It matches known bytecode declarations rather than executing legacy code. A class may be recovered from an unambiguous pack dependency if the primary JAR references it. Other dependencies are inventoried, not bundled or ported. A missing or mismatched input, unknown declaration shape, or failed Gradle build leaves no new output JAR. First-run Gradle downloads need internet access. See [example commands and coverage](docs/usage-examples.md) for scope and licensing before using private assets.
 
+If your goal is to **play original legacy mods** rather than build a standalone port, see the [Legacy Connector evaluation](docs/legacy-connector.md). It covers runtime translation, the evidence for our four examples, and why a Connector cache is not a native port.
+
 ## Try it
 
 From this checkout, with **Python 3.11 or newer** (no Python dependencies):

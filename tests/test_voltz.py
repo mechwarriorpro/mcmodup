@@ -14,6 +14,9 @@ from test_cli import run_cli
 VOLTZ = os.environ.get("MCMODUP_VOLTZ_ARCHIVE")
 VINEFLOWER = os.environ.get("MCMODUP_VINEFLOWER_JAR")
 CORE = "mods/calclavia-core-development-1.2.0.6-main.jar"
+UE = "mods/universal-electricity-3.1.0.74-core.jar"
+VECTOR_TRANSLATE = ("universalelectricity/api/vector/Vector3#translate(Lnet/minecraftforge/common/ForgeDirection;)"
+                    "Luniversalelectricity/api/vector/Vector3;")
 MODS = (
     ("mods/atomicscience.jar", {"AtomicScience"}, "calclavia/lib/prefab/tile/TileElectricalInventory"),
     ("mods/icbm-1.4.1.344.jar", {"ICBM", "ICBM|Explosion", "ICBM|Sentry"}, "universalelectricity/api/vector/EulerAngle"),
@@ -29,11 +32,14 @@ class VoltzExampleTests(unittest.TestCase):
                              "2eda607746a22edbf45612243adce37a876251e36d46c692a48344fe98eec84e")
         with tempfile.TemporaryDirectory(prefix="mcmodup-voltz-test-") as scratch, zipfile.ZipFile(archive) as pack:
             scratch = Path(scratch)
+            ue = scratch / Path(UE).name
+            ue.write_bytes(pack.read(UE))
             for member, mod_ids, example_class in MODS:
                 with self.subTest(member=member):
                     selected = scratch / Path(member).name
                     selected.write_bytes(pack.read(member))
-                    proc = run_cli("scan-pack", archive, "--mod-jar", selected, "--source-version", "1.6.4", "--json")
+                    proc = run_cli("scan-pack", archive, "--mod-jar", selected, "--source-version", "1.6.4",
+                                   "--legacy-api", ue, "--json")
                     self.assertEqual(proc.returncode, 0, proc.stderr)
                     report = json.loads(proc.stdout)
                     self.assertEqual(report["archives_indexed"], 36)
@@ -48,6 +54,14 @@ class VoltzExampleTests(unittest.TestCase):
                     self.assertFalse(any(c.startswith("net/minecraft/") for names in deps.values() for c in names))
                     self.assertTrue(any(c["guidance"] and "universal_electricity" in {r["area"] for r in c["guidance"]}
                                         for c in result["api_checks"]))
+                    # A provider with the right class name but a different overload can still
+                    # fail at runtime (as in upstream's Minechem/UE 3.0.0.1-dev report).
+                    lookup, = [check["legacy_lookup"] for check in result["api_checks"]
+                               if check["symbol"] == VECTOR_TRANSLATE]
+                    self.assertEqual(lookup["status"], "found")
+                    self.assertEqual(lookup["access"], "public")
+                    self.assertFalse(lookup["static"])
+                    self.assertEqual(Path(lookup["artifact"]), ue.resolve())
                     if VINEFLOWER:
                         out = scratch / f"references-{selected.stem}"
                         decompile = run_cli("decompile-deps", archive, "--mod-jar", selected, "--source-version", "1.6.4",
