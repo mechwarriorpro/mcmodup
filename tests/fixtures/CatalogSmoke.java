@@ -45,7 +45,6 @@ public final class CatalogSmoke {
         var output = match.orElseThrow().value().assemble(input, level.registryAccess());
         helper.assertTrue(ItemStack.isSameItem(output, stack(helper, namespace, result)) && output.getCount() == 1,
                 "Unexpected result " + output + " for " + match.orElseThrow().id());
-        helper.succeed();
     }
 
     private static final String MINECHEM = "minechem_chemistry";
@@ -156,17 +155,27 @@ public final class CatalogSmoke {
         reloaded.entity.loadWithComponents(snapshot, level.registryAccess());
         helper.assertTrue(reloaded.power.getEnergyStored() == 600 && reloaded.input.getStackInSlot(0).getCount() == 2,
             "NBT did not restore inventory and energy");
-        var out = (IItemHandlerModifiable) reloaded.output;
-        for (int i = 0; i < out.getSlots(); i++) out.setStackInSlot(i, new ItemStack(Items.STONE, 64));
         helper.runAfterDelay(22, () -> {
-            helper.assertTrue(reloaded.power.getEnergyStored() == 600 && reloaded.input.getStackInSlot(0).getCount() == 2,
-                "A blocked output consumed power or inputs");
-            out.setStackInSlot(0, ItemStack.EMPTY);
-            helper.assertTrue(reloaded.menu.clickMenuButton(reloaded.user, 0), "Couldn't retry restored recipe");
+            var water = stack(helper, MINECHEM, "molecule_water");
+            helper.assertTrue(ItemStack.isSameItem(reloaded.output.extractItem(0, 64, false), water)
+                && reloaded.power.getEnergyStored() == 100 && reloaded.input.getStackInSlot(0).isEmpty(),
+                "The in-flight job did not resume after reload");
+            loadIngredients(helper, reloaded);
+            charge(helper, reloaded.power, 500);
+            helper.assertTrue(reloaded.menu.clickMenuButton(reloaded.user, 0), "Couldn't start another job");
+            // Make the output fill while a job is active to exercise the commit-time check.
+            var out = (IItemHandlerModifiable) reloaded.output;
+            for (int i = 0; i < out.getSlots(); i++) out.setStackInSlot(i, new ItemStack(Items.STONE, 64));
             helper.runAfterDelay(22, () -> {
-                helper.assertTrue(ItemStack.isSameItem(out.getStackInSlot(0), stack(helper, MINECHEM, "molecule_water"))
-                    && reloaded.power.getEnergyStored() == 100, "Restored selection could not complete synthesis");
-                helper.succeed();
+                helper.assertTrue(reloaded.power.getEnergyStored() == 600 && reloaded.input.getStackInSlot(0).getCount() == 2,
+                    "A blocked output consumed power or inputs");
+                out.setStackInSlot(0, ItemStack.EMPTY);
+                helper.assertTrue(reloaded.menu.clickMenuButton(reloaded.user, 0), "Couldn't retry the blocked recipe");
+                helper.runAfterDelay(22, () -> {
+                    helper.assertTrue(ItemStack.isSameItem(out.getStackInSlot(0), water) && reloaded.power.getEnergyStored() == 100,
+                        "The machine could not recover after an output jam");
+                    helper.succeed();
+                });
             });
         });
     }
@@ -212,5 +221,17 @@ public final class CatalogSmoke {
     public static void aspectFromComponents(GameTestHelper helper) {
         String ns = "thaumcraft_aspects";
         check(helper, CraftingInput.of(2, 1, List.of(stack(helper, ns, "aspect_ignis"), stack(helper, ns, "aspect_aer"))), ns, "aspect_lux");
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty")
+    public static void machinesCanBeCraftedInSurvival(GameTestHelper helper) {
+        var iron = new ItemStack(Items.IRON_INGOT);
+        var piston = new ItemStack(Items.PISTON);
+        var dust = new ItemStack(Items.REDSTONE);
+        var diamond = new ItemStack(Items.DIAMOND);
+        check(helper, CraftingInput.of(3, 3, List.of(iron, iron, iron, iron, piston, iron, iron, dust, iron)), MINECHEM, "decomposer");
+        check(helper, CraftingInput.of(3, 3, List.of(iron, dust, iron, iron, piston, iron, iron, diamond, iron)), MINECHEM, "synthesizer");
+        helper.succeed();
     }
 }
