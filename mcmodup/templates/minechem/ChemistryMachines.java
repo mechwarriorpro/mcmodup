@@ -102,7 +102,7 @@ public final class ChemistryMachines {
     }
 
     static final class Machine extends BlockEntity implements MenuProvider {
-        static final int CHARGE = 18, FIRST_OUTPUT = 19, SLOTS = 37;
+        static final int CHARGE = 18, FIRST_OUTPUT = 19, JOURNAL = 37, SLOTS = JOURNAL + 1;
         static final int CAPACITY = 10_000, DUST_FE = 500;
         static final int IDLE = 0, WORKING = 1, NEED_INPUT = 2, NEED_POWER = 3, OUTPUT_FULL = 4, DONE = 5;
 
@@ -113,16 +113,28 @@ public final class ChemistryMachines {
         private String job = "";
 
         final ItemStackHandler inventory = new ItemStackHandler(SLOTS) {
-            @Override protected void onContentsChanged(int slot) { setChanged(); }
+            @Override protected void onContentsChanged(int slot) {
+                if (slot == JOURNAL && synthesis() && remaining == 0 && ChemistryResearch.isJournal(getStackInSlot(JOURNAL))) {
+                    String recipe = ChemistryResearch.active(getStackInSlot(JOURNAL));
+                    if (ChemistryRecipes.BY_RESULT.containsKey(recipe)) {
+                        selected = ChemistryRecipes.indexOf(recipe);
+                        status = IDLE;
+                    }
+                }
+                setChanged();
+            }
+            @Override public int getSlotLimit(int slot) { return slot == JOURNAL ? 1 : super.getSlotLimit(slot); }
             @Override public boolean isItemValid(int slot, ItemStack stack) {
-                if (stack.isEmpty() || slot >= FIRST_OUTPUT) return false;
+                if (stack.isEmpty()) return false;
+                if (slot == JOURNAL) return synthesis() && remaining == 0 && ChemistryResearch.isJournal(stack);
+                if (slot >= FIRST_OUTPUT) return false;
                 if (slot == CHARGE) return stack.is(Items.REDSTONE);
                 String key = BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
                 return synthesis() ? ChemistryRecipes.CHEMICALS.contains(key) : slot == 0 && ChemistryRecipes.DECOMPOSE.containsKey(key);
             }
         };
         final RangedWrapper inputs = new RangedWrapper(inventory, 0, FIRST_OUTPUT);
-        final RangedWrapper outputs = new RangedWrapper(inventory, FIRST_OUTPUT, SLOTS);
+        final RangedWrapper outputs = new RangedWrapper(inventory, FIRST_OUTPUT, JOURNAL);
         private final Power power = new Power();
 
         private final class Power extends EnergyStorage {
@@ -196,8 +208,9 @@ public final class ChemistryMachines {
 
         /** Simulate every decrement and output insertion before touching any real slot or FE. */
         private Plan plan(ChemistryRecipes.Recipe recipe) {
-            ItemStack[] stacks = new ItemStack[SLOTS];
-            for (int i = 0; i < SLOTS; i++) stacks[i] = inventory.getStackInSlot(i).copy();
+            // The journal only selects a recipe; it never participates in processing.
+            ItemStack[] stacks = new ItemStack[JOURNAL];
+            for (int i = 0; i < stacks.length; i++) stacks[i] = inventory.getStackInSlot(i).copy();
             for (var part : recipe.inputs()) {
                 int count = part.count();
                 for (int i = 0; count > 0 && i < (synthesis() ? CHARGE : 1); i++) {
@@ -211,7 +224,7 @@ public final class ChemistryMachines {
             for (var part : recipe.outputs()) {
                 int count = part.count();
                 ItemStack output = new ItemStack(part.item());
-                for (int i = FIRST_OUTPUT; count > 0 && i < SLOTS; i++) {
+                for (int i = FIRST_OUTPUT; count > 0 && i < stacks.length; i++) {
                     ItemStack current = stacks[i];
                     if (!current.isEmpty() && !ItemStack.isSameItemSameComponents(current, output)) continue;
                     int put = Math.min(count, output.getMaxStackSize() - current.getCount());
@@ -250,7 +263,7 @@ public final class ChemistryMachines {
             Plan plan = plan(recipe);
             status = plan.status();
             if (status != WORKING) return; // Inventory changed during the run: no items or energy were consumed.
-            for (int i = 0; i < SLOTS; i++) inventory.setStackInSlot(i, plan.stacks()[i]);
+            for (int i = 0; i < plan.stacks().length; i++) inventory.setStackInSlot(i, plan.stacks()[i]);
             power.restore(plan.energy());
             status = DONE;
         }

@@ -53,7 +53,11 @@ public final class ChemistryScreen extends AbstractContainerScreen<ChemistryMenu
         if (isHovering(8, 80, 16, 16, mouseX, mouseY) && !menu.getSlot(ChemistryMachines.Machine.CHARGE).hasItem()) {
             gui.renderTooltip(font, Component.translatable("gui.@NAMESPACE@.charge"), mouseX, mouseY);
         }
-        if (menu.synthesis() && isHovering(8, 21, 160, 10, mouseX, mouseY)) {
+        if (menu.synthesis() && isHovering(152, 16, 16, 16, mouseX, mouseY)
+                && !menu.getSlot(ChemistryMachines.Machine.JOURNAL).hasItem()) {
+            gui.renderTooltip(font, Component.translatable("gui.@NAMESPACE@.load_journal"), mouseX, mouseY);
+        }
+        if (menu.synthesis() && isHovering(8, 21, 140, 10, mouseX, mouseY)) {
             var recipe = ChemistryRecipes.SYNTHESIZE.get(menu.selected());
             var requirements = new ArrayList<Component>();
             requirements.add(Component.translatable("gui.@NAMESPACE@.recipe_help"));
@@ -83,7 +87,7 @@ public final class ChemistryScreen extends AbstractContainerScreen<ChemistryMenu
             var recipe = ChemistryRecipes.SYNTHESIZE.get(menu.selected());
             line = recipe.outputs().getFirst().item().getDescription().getString();
         } else line = Component.translatable("gui.@NAMESPACE@.decompose").getString();
-        gui.drawString(font, font.plainSubstrByWidth(line, 160), 8, 21, 0x404040, false);
+        gui.drawString(font, font.plainSubstrByWidth(line, menu.synthesis() ? 140 : 160), 8, 21, 0x404040, false);
         gui.drawString(font, Component.translatable("gui.@NAMESPACE@.state_" + menu.status(), menu.energy()), 8, 102, 0x404040, false);
     }
 }

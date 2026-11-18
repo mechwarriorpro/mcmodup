@@ -1,14 +1,29 @@
 package mcmodup.test;
 
+import com.mojang.authlib.GameProfile;
+import io.netty.channel.embedded.EmbeddedChannel;
 import java.util.List;
+import java.util.UUID;
+import java.util.function.Consumer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.Tag;
+import net.minecraft.network.Connection;
+import net.minecraft.network.protocol.PacketFlow;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.level.ClientInformation;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.server.network.CommonListenerCookie;
+import net.minecraft.world.InteractionHand;
 import net.minecraft.world.MenuProvider;
+import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.inventory.ClickType;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.entity.player.Player;
@@ -24,6 +39,9 @@ import net.minecraft.world.item.crafting.RecipeType;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
+import net.neoforged.neoforge.network.registration.NetworkRegistry;
+import net.minecraft.world.item.component.CustomData;
+import net.minecraft.world.phys.AABB;
 
 @Mod(CatalogSmoke.ID)
 @GameTestHolder(CatalogSmoke.ID)
@@ -217,6 +235,139 @@ public final class CatalogSmoke {
         });
     }
 
+    private static BlockEntity placeMicroscope(GameTestHelper test, BlockPos pos) {
+        var id = ResourceLocation.fromNamespaceAndPath(MINECHEM, "microscope");
+        test.assertTrue(BuiltInRegistries.BLOCK.containsKey(id), "Missing microscope registration");
+        test.getLevel().setBlockAndUpdate(pos, BuiltInRegistries.BLOCK.get(id).defaultBlockState());
+        var entity = test.getLevel().getBlockEntity(pos);
+        test.assertTrue(entity instanceof MenuProvider, "Missing microscope inventory/menu");
+        return entity;
+    }
+
+    private static AbstractContainerMenu microscopeMenu(BlockEntity entity, Player actor) {
+        return ((MenuProvider) entity).createMenu(0, actor.getInventory(), actor);
+    }
+
+    private static CompoundTag journalTag(ItemStack journal) {
+        return journal.getOrDefault(DataComponents.CUSTOM_DATA, CustomData.EMPTY).copyTag().getCompound("ChemistJournal");
+    }
+
+    private static List<String> discoveries(ItemStack journal) {
+        return journalTag(journal).getList("Discoveries", Tag.TAG_STRING).stream().map(Tag::getAsString).toList();
+    }
+
+    @GameTest(template = "empty")
+    public static void microscopeRecordsRecipesWithoutConsumingTheSample(GameTestHelper test) {
+        var level = test.getLevel();
+        var pos = test.absolutePos(BlockPos.ZERO);
+        var actor = test.makeMockPlayer(GameType.SURVIVAL);
+        actor.setPos(pos.getX() + .5, pos.getY(), pos.getZ() + .5);
+        var microscope = placeMicroscope(test, pos);
+        var menu = microscopeMenu(microscope, actor);
+        var water = stack(test, MINECHEM, "molecule_water");
+        var book = stack(test, MINECHEM, "chemist_journal");
+        test.assertTrue(!menu.getSlot(0).mayPlace(book) && !menu.getSlot(1).mayPlace(water), "Only the journal belongs in the journal slot");
+        actor.getInventory().setItem(0, water.copyWithCount(3));
+        menu.quickMoveStack(actor, 2 + 27);
+        test.assertTrue(menu.getSlot(0).getItem().is(water.getItem()) && menu.getSlot(0).getItem().getCount() == 1
+                && actor.getInventory().getItem(0).getCount() == 2, "Shift-inserting a stack takes exactly one sample");
+        actor.getInventory().setItem(1, book);
+        menu.quickMoveStack(actor, 2 + 27 + 1);
+        var recorded = menu.getSlot(1).getItem();
+        test.assertTrue(recorded.is(book.getItem()) && discoveries(recorded).equals(List.of(MINECHEM + ":molecule_water")),
+                "Inserting the journal after a supported sample discovers that recipe");
+        menu.getSlot(0).set(new ItemStack(Items.DIRT)); // Not among the recovered recipes.
+        test.assertTrue(discoveries(recorded).size() == 1, "Unsupported samples must not create discoveries");
+        menu.getSlot(0).set(new ItemStack(Items.WATER_BUCKET));
+        menu.getSlot(0).set(new ItemStack(Items.WATER_BUCKET));
+        test.assertTrue(discoveries(recorded).equals(List.of(MINECHEM + ":molecule_water", "minecraft:water_bucket")),
+                "A decomposition-only sample is recorded exactly once when inserted after the journal");
+        var snapshot = microscope.saveWithFullMetadata(level.registryAccess());
+        var savedBook = recorded.copy();
+        level.removeBlockEntity(pos);
+        level.setBlockAndUpdate(pos, Blocks.AIR.defaultBlockState());
+        var reloaded = placeMicroscope(test, pos);
+        reloaded.loadWithComponents(snapshot, level.registryAccess());
+        var restored = microscopeMenu(reloaded, actor);
+        test.assertTrue(!menu.stillValid(actor) && restored.stillValid(actor), "Only the live microscope's menu remains valid");
+        test.assertTrue(restored.getSlot(0).getItem().is(Items.WATER_BUCKET)
+                && ItemStack.matches(restored.getSlot(1).getItem(), savedBook), "Save/reload preserves both real slots and the journal's discoveries");
+        level.setBlockAndUpdate(pos, Blocks.AIR.defaultBlockState());
+        var drops = level.getEntitiesOfClass(ItemEntity.class, new AABB(pos).inflate(1)).stream().map(ItemEntity::getItem).toList();
+        test.assertTrue(drops.size() == 2 && drops.stream().anyMatch(item -> item.is(Items.WATER_BUCKET))
+                && drops.stream().anyMatch(item -> ItemStack.matches(item, savedBook)), "Breaking the microscope drops only the sample and journal, never preview products");
+        test.succeed();
+    }
+
+    @GameTest(template = "test_room")
+    public static void savedJournalSelectsTheSynthesizerRecipe(GameTestHelper test) {
+        var machine = placeMachine(test, "synthesizer", false);
+        var level = test.getLevel();
+        var pos = test.absolutePos(new BlockPos(2, 1, 2));
+        var microscope = placeMicroscope(test, pos);
+        var inspected = microscopeMenu(microscope, machine.user);
+        var water = stack(test, MINECHEM, "molecule_water");
+        inspected.getSlot(0).set(water.copy());
+        inspected.getSlot(1).set(stack(test, MINECHEM, "chemist_journal"));
+        var book = inspected.getSlot(1).remove(1);
+        withPlayer(test, pos, actor -> {
+            actor.setItemInHand(InteractionHand.MAIN_HAND, book);
+            book.getItem().use(level, actor, InteractionHand.MAIN_HAND);
+            var menu = actor.containerMenu;
+            test.assertTrue(menu != actor.inventoryMenu && BuiltInRegistries.MENU.getKey(menu.getType()).equals(
+                ResourceLocation.fromNamespaceAndPath(MINECHEM, "chemist_journal")), "Right-clicking the journal opened its menu");
+            test.assertTrue(!menu.clickMenuButton(actor, 770) && menu.clickMenuButton(actor, 1), "Only a supported journal action may select an entry");
+            test.assertTrue(journalTag(book).getString("Active").equals(MINECHEM + ":molecule_water")
+                    && journalTag(book).getString("Owner").equals(actor.getGameProfile().getName()),
+                    "The selected recipe and reader are saved on the held journal");
+            menu.clicked(0, 0, ClickType.PICKUP, actor);
+            test.assertTrue(menu.getCarried().isEmpty() && ItemStack.matches(menu.getSlot(0).getItem(), book),
+                    "The book on the journal screen is only a display, not a movable item");
+            actor.setItemInHand(InteractionHand.MAIN_HAND, ItemStack.EMPTY);
+            test.assertTrue(!menu.stillValid(actor) && !menu.clickMenuButton(actor, 1), "A stale journal menu cannot change another stack");
+        });
+        var reloaded = ItemStack.parse(level.registryAccess(), book.save(level.registryAccess())).orElseThrow();
+        machine.user.getInventory().setItem(0, reloaded);
+        var slot = machine.menu.getSlot(37);
+        test.assertTrue(slot.isActive() && slot.mayPlace(reloaded) && !slot.mayPlace(water), "Synthesizer has a dedicated journal slot");
+        test.assertTrue(WATER_INDEX > 0, "The journal must change the synthesizer's default selection in this fixture");
+        machine.menu.quickMoveStack(machine.user, 38 + 27);
+        test.assertTrue(ItemStack.matches(slot.getItem(), book) && machine.user.getInventory().getItem(0).isEmpty(),
+                "The journal and its data move to the synthesizer slot");
+        test.assertTrue(machine.input.getSlots() == 19 && machine.output.getSlots() == 18, "The journal does not enter the automated input/output inventory");
+        loadIngredients(test, machine);
+        charge(test, machine.power, 500);
+        test.assertTrue(machine.menu.clickMenuButton(machine.user, 0) && !slot.mayPlace(book), "Start the journal's recipe without editing selection during a job");
+        test.runAfterDelay(22, () -> {
+            test.assertTrue(machine.output.getStackInSlot(0).is(water.getItem()) && machine.power.getEnergyStored() == 0
+                    && journalTag(slot.getItem()).getString("Active").equals(MINECHEM + ":molecule_water"),
+                    "The selected recipe produced water with the usual FE cost and kept the journal");
+            test.succeed();
+        });
+    }
+
+    private static void withPlayer(GameTestHelper test, BlockPos pos, Consumer<ServerPlayer> action) {
+        var level = test.getLevel();
+        var players = level.getServer().getPlayerList();
+        var actor = new ServerPlayer(level.getServer(), level, new GameProfile(UUID.randomUUID(), "JournalFixture"), ClientInformation.createDefault());
+        var connection = new Connection(PacketFlow.SERVERBOUND);
+        var channel = new EmbeddedChannel(connection);
+        try {
+            NetworkRegistry.configureMockConnection(connection);
+            players.placeNewPlayer(connection, actor, CommonListenerCookie.createInitial(actor.getGameProfile(), false));
+            actor.setGameMode(GameType.SURVIVAL);
+            actor.moveTo(pos.getX() + .5, pos.getY() + 1, pos.getZ() + .5, 0F, 0F);
+            action.accept(actor);
+        } finally {
+            if (players.getPlayer(actor.getUUID()) == actor) {
+                actor.closeContainer();
+                players.remove(actor);
+            }
+            actor.discard();
+            channel.finishAndReleaseAll();
+        }
+    }
+
     @GameTest(template = "empty")
     public static void aspectFromComponents(GameTestHelper helper) {
         String ns = "thaumcraft_aspects";
@@ -232,6 +383,9 @@ public final class CatalogSmoke {
         var diamond = new ItemStack(Items.DIAMOND);
         check(helper, CraftingInput.of(3, 3, List.of(iron, iron, iron, iron, piston, iron, iron, dust, iron)), MINECHEM, "decomposer");
         check(helper, CraftingInput.of(3, 3, List.of(iron, dust, iron, iron, piston, iron, iron, diamond, iron)), MINECHEM, "synthesizer");
+        check(helper, CraftingInput.of(3, 3, List.of(ItemStack.EMPTY, new ItemStack(Items.SPYGLASS), iron,
+                ItemStack.EMPTY, new ItemStack(Items.GLASS_PANE), iron, iron, iron, iron)), MINECHEM, "microscope");
+        check(helper, CraftingInput.of(2, 1, List.of(new ItemStack(Items.BOOK), new ItemStack(Items.GLASS))), MINECHEM, "chemist_journal");
         helper.succeed();
     }
 }

@@ -34,6 +34,12 @@ final class ChemistryMenu extends AbstractContainerMenu {
         for (int i = 0; i < SLOTS; i++) {
             final int slot = i;
             if (i == CHARGE) addSlot(new SlotItemHandler(inventory, i, 8, 80));
+            else if (i == JOURNAL) addSlot(new SlotItemHandler(inventory, i, 152, 16) {
+                @Override public boolean isActive() { return synthesis(); }
+                @Override public boolean mayPlace(ItemStack item) {
+                    return isActive() && remaining() == 0 && ChemistryResearch.isJournal(item) && super.mayPlace(item);
+                }
+            });
             else if (i < FIRST_OUTPUT) addSlot(new SlotItemHandler(inventory, i, 8 + (i % 9) * 18, 37 + (i / 9) * 18) {
                 @Override public boolean isActive() { return slot == 0 || synthesis(); }
             });
@@ -85,6 +91,8 @@ final class ChemistryMenu extends AbstractContainerMenu {
         ItemStack previous = stack.copy();
         if (index < SLOTS) {
             if (!moveItemStackTo(stack, SLOTS, slots.size(), true)) return ItemStack.EMPTY;
+        } else if (ChemistryResearch.isJournal(stack)) {
+            if (!moveItemStackTo(stack, JOURNAL, JOURNAL + 1, false)) return ItemStack.EMPTY;
         } else if (!moveItemStackTo(stack, 0, FIRST_OUTPUT, false)) return ItemStack.EMPTY;
         if (stack.isEmpty()) slot.set(ItemStack.EMPTY);
         else slot.setChanged();

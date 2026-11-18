@@ -249,6 +249,10 @@ class ConvertTests(unittest.TestCase):
             self.assertNotIn(f"{MOLECULE}.class", archive.namelist())
             self.assertEqual(archive.read("assets/minechem_chemistry/textures/item/catalog/0.png"), PNG)
             self.assertNotIn("data/minechem_chemistry/recipe/combine/molecule_water.json", archive.namelist())
+            for item in ("microscope", "chemist_journal"):
+                recipe_data = json.loads(archive.read(f"data/minechem_chemistry/recipe/{item}.json"))
+                self.assertEqual(recipe_data["result"], {"id": f"minechem_chemistry:{item}", "count": 1})
+                self.assertIn(f"assets/minechem_chemistry/models/item/{item}.json", archive.namelist())
             recipe = next(r for r in doc["machine_recipes"] if r["id"].endswith(":molecule_water")
                           and r["machine"] == "synthesizer")
             self.assertEqual(recipe["energy_fe"], 500)
@@ -279,7 +283,8 @@ import minechem.item.element.Element;
 import minechem.item.element.ElementEnum;
 import minechem.potion.PotionChemical;
 public enum MoleculeEnum {
-    water(0, 0, 0, 1, 0, 0.5f, 1, new Element(ElementEnum.H, 2), new Element(ElementEnum.O));
+    water(0, 0, 0, 1, 0, 0.5f, 1, new Element(ElementEnum.H, 2), new Element(ElementEnum.O)),
+    hydrogenPeroxide(1, 0, 0, 1, 0, 0.5f, 1, new Element(ElementEnum.H, 2), new Element(ElementEnum.O, 2));
     MoleculeEnum(int id, float r, float g, float b, float r2, float g2, float b2, PotionChemical... parts) {}
 }""",
             ASPECT + ".java": '''package thaumcraft.api.aspects;
@@ -320,7 +325,7 @@ public class Aspect {
                 self.assertIn("Built partial NeoForge 1.21.1 JAR", proc.stdout)
                 with zipfile.ZipFile(output) as built:
                     raw = json.loads(built.read(f"data/{profile.namespace}/mcmodup/catalog.json"))
-                    self.assertEqual(len(raw["entries"]), 3)
+                    self.assertEqual(len(raw["entries"]), 4 if profile.mod_id == "minechem" else 3)
                     self.assertEqual(raw["entries"][-1]["recipe_status"],
                                      "powered_synthesis" if profile.mod_id == "minechem" else "crafting_shapeless")
                     self.assertTrue(built.read("META-INF/MCModUp-NOTICE.txt").startswith(b"PARTIAL PORT"))

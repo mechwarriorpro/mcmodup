@@ -9,7 +9,8 @@ from .inputs import InputError
 
 
 TEMPLATES = Path(__file__).with_name("templates") / "minechem"
-JAVA_CLASSES = ("ChemistryMachines", "ChemistryMenu", "ChemistryScreen", "ChemistryRecipes")
+JAVA_CLASSES = ("ChemistryMachines", "ChemistryMenu", "ChemistryScreen", "ChemistryRecipes",
+                "ChemistryResearch", "ResearchMenus", "ResearchScreens")
 
 
 @dataclass(frozen=True)
@@ -131,10 +132,32 @@ def machine_project(namespace: str, package: str, entries: list[CatalogEntry], r
         "requirement": "%s × %s", "recipe_help": "Recipe ingredients (hold Shift to skip 10 recipes)",
         "state_0": "Ready · %s FE", "state_1": "Working · %s FE", "state_2": "Need input · %s FE",
         "state_3": "Need power · %s FE", "state_4": "Output full · %s FE", "state_5": "Done · %s FE",
+        "inspect_sample": "Insert an item to inspect", "inspect_book": "Insert a journal to record the recipe",
+        "inspect_synthesis": "Synthesis", "inspect_decomposition": "Decomposition",
+        "inspect_inputs": "Ingredients · %s FE", "inspect_outputs": "Products · %s FE",
+        "no_recipe": "No supported recipe in this mode",
+        "journal_owner": "Last used by %s", "journal_count": "Discovered recipes: %s", "journal_active": "Active: %s",
+        "journal_empty": "Discover recipes in a Microscope", "journal_choose": "Choose a discovered recipe",
+        "journal_previous": "Select previous discovery", "journal_next": "Select next discovery",
+        "load_journal": "Insert a journal to load its active synthesis recipe",
     }.items()}
+    locales[f"item.{namespace}.chemist_journal"] = "Chemist's Journal"
+    files[f"{assets}/models/item/chemist_journal.json"] = document({
+        "parent": "minecraft:item/generated", "textures": {"layer0": "minecraft:item/writable_book"},
+    })
+    files[f"{data}/{namespace}/recipe/chemist_journal.json"] = document({
+        "type": "minecraft:crafting_shapeless", "category": "misc",
+        "ingredients": [{"item": "minecraft:book"}, {"item": "minecraft:glass"}],
+        "result": {"id": f"{namespace}:chemist_journal", "count": 1},
+    })
     for block, name, texture, pattern, keys in (
-        ("synthesizer", "Chemical Synthesizer", "minecraft:block/lapis_block", ["IRI", "IPI", "IDI"], {"D": {"item": "minecraft:diamond"}}),
-        ("decomposer", "Chemical Decomposer", "minecraft:block/iron_block", ["III", "IPI", "IRI"], {}),
+        ("synthesizer", "Chemical Synthesizer", "minecraft:block/lapis_block", ["IRI", "IPI", "IDI"],
+         {"I": "iron_ingot", "R": "redstone", "P": "piston", "D": "diamond"}),
+        ("decomposer", "Chemical Decomposer", "minecraft:block/iron_block", ["III", "IPI", "IRI"],
+         {"I": "iron_ingot", "R": "redstone", "P": "piston"}),
+        # A spyglass stands in for the legacy lens chain in this partial profile.
+        ("microscope", "Microscope", "minecraft:block/polished_andesite", [" LI", " PI", "III"],
+         {"I": "iron_ingot", "L": "spyglass", "P": "glass_pane"}),
     ):
         model = f"{namespace}:block/{block}"
         identifier = f"{namespace}:{block}"
@@ -146,12 +169,12 @@ def machine_project(namespace: str, package: str, entries: list[CatalogEntry], r
             "type": "minecraft:block", "pools": [{"rolls": 1, "conditions": [{"condition": "minecraft:survives_explosion"}],
                                                   "entries": [{"type": "minecraft:item", "name": identifier}]}],
         })
-        # Keep the machine craftable without the still-unported Atomic Manipulator.
+        # Keep the blocks craftable without the currently unported prerequisites.
         files[f"{data}/{namespace}/recipe/{block}.json"] = document({
             "type": "minecraft:crafting_shaped", "category": "misc", "pattern": pattern,
-            "key": {"I": {"item": "minecraft:iron_ingot"}, "R": {"item": "minecraft:redstone"},
-                    "P": {"item": "minecraft:piston"}, **keys}, "result": {"id": identifier, "count": 1},
+            "key": {symbol: {"item": f"minecraft:{item}"} for symbol, item in keys.items()},
+            "result": {"id": identifier, "count": 1},
         })
     files[f"{data}/minecraft/tags/block/mineable/pickaxe.json"] = document(
-        {"replace": False, "values": [f"{namespace}:synthesizer", f"{namespace}:decomposer"]})
+        {"replace": False, "values": [f"{namespace}:{block}" for block in ("synthesizer", "decomposer", "microscope")]})
     return files, locales

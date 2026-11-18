@@ -77,7 +77,8 @@ def _java(package: str, namespace: str, entries: list[CatalogEntry], *, machines
         definitions.append(f'        entries.add(items.registerSimpleItem("{entry.path}", new Item.Properties()'
                            f'.component(DataComponents.LORE, new ItemLore(List.of({lore})))));')
     if machines:
-        definitions.append("        entries.addAll(ChemistryMachines.register(bus, items));")
+        definitions.extend(("        entries.addAll(ChemistryMachines.register(bus, items));",
+                            "        entries.addAll(ChemistryResearch.register(bus, items));"))
     body = "\n".join(definitions)
     return f'''package {package};
 
@@ -142,14 +143,15 @@ def _project_files(profile: Profile, entries: list[CatalogEntry], textures: dict
                    digest: str, dependency_summary: dict, locations: list[ClassLocation]) -> tuple[dict[str, str | bytes], int]:
     namespace = profile.namespace
     package = f"mcmodup.generated.{namespace}"
-    version = "1.1.0-partial" if profile.name == "minechem-chemistry" else "1.0.0-partial"
+    version = "1.2.0-partial" if profile.name == "minechem-chemistry" else "1.0.0-partial"
     machines = profile.name == "minechem-chemistry"
     machine_rules = machine_recipes(namespace, entries) if machines else []
     if machines:
         recipe_files, extra_locales = machine_project(namespace, package, entries, machine_rules)
         recipe_status = {entry.path: "powered_synthesis" for entry in entries if entry.components}
         count = len(machine_rules)
-        features = "Recovered items and powered synthesis/decomposition. The machines use NeoForge FE, not the original UE grid."
+        features = ("Recovered items, powered synthesis/decomposition, and microscope and journal discovery for the recovered recipes. "
+                    "The powered machines use NeoForge FE, not the original UE grid.")
     else:
         recipe_files, recipe_status = _recipe_files(namespace, entries)
         extra_locales = {}

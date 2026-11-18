@@ -47,11 +47,12 @@ neoForge.runs.create('gameTestServer') {{
         "src/main/java/mcmodup/test/CatalogSmoke.java": fixture,
         "src/main/resources/META-INF/neoforge.mods.toml": _metadata(ModMetadata(""), namespace, "Catalog smoke tests", "1.0.0", "Unlicense"),
         f"src/main/resources/data/{namespace}/structure/empty.nbt": empty_test_structure(),
+        f"src/main/resources/data/{namespace}/structure/test_room.nbt": empty_test_structure(5),
         **inputs,
     })
     run = subprocess.run(["./gradlew", "--no-daemon", "--console=plain", "runGameTestServer"],
                          cwd=project, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=420)
-    if run.returncode or "All 6 required tests passed" not in run.stdout:
+    if run.returncode or "All 8 required tests passed" not in run.stdout:
         raise AssertionError(run.stdout[-8000:])
     parsing_errors = [line for line in run.stdout.splitlines() if "Parsing error loading recipe" in line
                       and ("minechem_chemistry:" in line or "thaumcraft_aspects:" in line)]
@@ -68,4 +69,5 @@ if __name__ == "__main__":
     args = cli.parse_args()
     with tempfile.TemporaryDirectory(prefix="mcmodup-smoke-") as scratch:
         check_recipes_in_game(Path(scratch) / "smoke", args.jars)
-    print("NeoForge GameTest passed powered synthesis, decomposition, automation, in-flight save/reload, jam handling, and machine/aspect crafting.")
+    print("NeoForge GameTests passed powered synthesis, decomposition, automation, saves and jams, "
+          "microscope discovery, journal recipe transfer, and machine/aspect crafting.")
