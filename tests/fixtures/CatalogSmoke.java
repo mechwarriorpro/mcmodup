@@ -271,11 +271,13 @@ public final class CatalogSmoke {
         menu.quickMoveStack(actor, 2 + 27);
         test.assertTrue(menu.getSlot(0).getItem().is(water.getItem()) && menu.getSlot(0).getItem().getCount() == 1
                 && actor.getInventory().getItem(0).getCount() == 2, "Shift-inserting a stack takes exactly one sample");
+        var journalItem = book.getItem();
         actor.getInventory().setItem(1, book);
         menu.quickMoveStack(actor, 2 + 27 + 1);
         var recorded = menu.getSlot(1).getItem();
-        test.assertTrue(recorded.is(book.getItem()) && discoveries(recorded).equals(List.of(MINECHEM + ":molecule_water")),
-                "Inserting the journal after a supported sample discovers that recipe");
+        test.assertTrue(recorded.is(journalItem) && actor.getInventory().getItem(1).isEmpty()
+                && discoveries(recorded).equals(List.of(MINECHEM + ":molecule_water")),
+                "Inserting the journal after a supported sample discovers that recipe: " + discoveries(recorded));
         menu.getSlot(0).set(new ItemStack(Items.DIRT)); // Not among the recovered recipes.
         test.assertTrue(discoveries(recorded).size() == 1, "Unsupported samples must not create discoveries");
         menu.getSlot(0).set(new ItemStack(Items.WATER_BUCKET));
