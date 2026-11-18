@@ -40,7 +40,14 @@ jobs:
           # Optional historical single-purpose release. Only the author's normal download and exact digest.
           if curl --proto '=https' --proto-redir '=https' --fail --location --silent --show-error --max-time 30 \
             'https://www.mediafire.com/file/ebse2afvwh2bh8x/RottenFlesh-to-Leather-v1.2.2.zip/file' -o mediafire.html; then
-            link=$(python -c 'import html,re,sys; page=open(sys.argv[1]).read(); print(next((html.unescape(url) for url in re.findall(r'href="(https://download[0-9]+\.mediafire\.com/[^"\s]+)"', page) if "ebse2afvwh2bh8x" in url), ""))' mediafire.html)
+            link=$(python - <<'PY'
+          import html
+          import re
+          text = open('mediafire.html').read()
+          print(next((html.unescape(link) for link in re.findall(r'href="(https://download[0-9]+\.mediafire\.com/[^"\s]+)"', text)
+                      if 'ebse2afvwh2bh8x' in link), ''))
+          PY
+            )
             if [ -n "$link" ]; then
               curl --proto '=https' --proto-redir '=https' --fail --location --silent --show-error --max-time 30 \
                 --max-filesize 1161 --output RottenFlesh.zip "$link" &&
