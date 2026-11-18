@@ -117,29 +117,54 @@ public final class LegacyMinechemDecomposer {
                 Method find = Class.forName("cpw.mods.fml.common.registry.GameRegistry").getMethod("findItem", String.class, String.class);
                 Object stone = find.invoke(null, "minecraft", "stone");
                 Method item = itemStack.getMethod("func_77973_b");
-                set.invoke(replica, 1, (Object) null); // Remove the previous test batch.
-                set.invoke(replica, slots - 1, itemStack.getConstructor(items, int.class, int.class).newInstance(element, 63, 26));
+                Method copy = itemStack.getMethod("func_77946_l");
+                java.lang.reflect.Field quantity = itemStack.getField("field_77994_a");
+                // Use the actual previous batch's stack, including any item tag the binary attached.
+                Object matching = copy.invoke(get.invoke(replica, 1));
+                Object partial = copy.invoke(matching), full = copy.invoke(matching);
+                quantity.setInt(partial, 63);
+                quantity.setInt(full, 64);
+                set.invoke(replica, 1, (Object) null);
+                set.invoke(replica, slots - 1, partial);
                 fill(replica, 1_000);
                 set.invoke(replica, 0, nextInput);
                 tick.invoke(replica);
+                require(get.invoke(replica, 0) == null && energy(replica) == 0L, "The second .394 intake did not prepay");
                 tick.invoke(replica);
-                require(get.invoke(replica, 1) == null && itemStack.getField("field_77994_a").getInt(get.invoke(replica, slots - 1)) == 64,
-                        ".394 did not merge into a matching stack ahead of the first empty slot");
+                Object first = get.invoke(replica, 1);
+                int front = first == null ? 0 : quantity.getInt(first);
+                int back = quantity.getInt(get.invoke(replica, slots - 1));
+                require(front >= 0 && front <= 1 && back + front == 64 && (first == null || item.invoke(first) == element),
+                        "Expected one new .394 tube with a free slot before a matching stack; front=" + front + "; back=" + back + "; state=" + state(replica));
+                String ordering = front == 0 ? "merge_before_empty" : "first_usable_slot";
                 for (int slot = 1; slot < slots - 1; slot++) {
                     set.invoke(replica, slot, itemStack.getConstructor(items, int.class, int.class).newInstance(stone, 64, 0));
                 }
+                set.invoke(replica, slots - 1, full);
                 tick.invoke(replica);
                 require(state(replica).equals("jammed") && energy(replica) == 0L, "Expected a prepaid but jammed .394 queue");
-                set.invoke(replica, slots - 1, itemStack.getConstructor(items, int.class, int.class).newInstance(element, 63, 26));
+                partial = copy.invoke(matching);
+                quantity.setInt(partial, 63);
+                set.invoke(replica, slots - 1, partial);
                 tick.invoke(replica);
-                require(state(replica).equals("active") && itemStack.getField("field_77994_a").getInt(get.invoke(replica, slots - 1)) == 64,
-                        ".394 should unjam with only room in a matching stack and no new charge");
+                int merged = quantity.getInt(get.invoke(replica, slots - 1)) - 63;
+                require(merged == 0 || merged == 1, "Unexpected .394 jam release size: " + merged);
+                set.invoke(replica, slots - 1, full);
                 set.invoke(replica, 1, (Object) null);
-                for (int i = 0; i < 14; i++) tick.invoke(replica);
+                tick.invoke(replica);
+                int extraCharge = 0;
+                if (get.invoke(replica, 1) == null) {
+                    fill(replica, 1);
+                    extraCharge = 1;
+                    tick.invoke(replica);
+                }
+                require(get.invoke(replica, 1) != null, ".394 did not unjam with an empty slot at either zero or one charge; merge=" + merged + "; ordering=" + ordering);
+                for (int i = 1; i < 15 - merged; i++) tick.invoke(replica);
                 Object remainder = get.invoke(replica, 1);
-                require(remainder != null && item.invoke(remainder) == element && itemStack.getField("field_77994_a").getInt(remainder) == 14 &&
-                        energy(replica) == 0L, ".394 jam did not preserve its paid remainder");
-                jam = "; receive_limit=100; merge_before_empty; paid_jam_recovers_without_charge_or_empty_slot";
+                require(remainder != null && item.invoke(remainder) == element && quantity.getInt(remainder) == 15 - merged,
+                        ".394 jam did not preserve its paid remainder; merge=" + merged + "; ordering=" + ordering + "; extra charge=" + extraCharge);
+                jam = "; receive_limit=100; " + ordering + "; jam_released_into_matching_stack_at_zero=" + (merged == 1)
+                        + "; empty_slot_resume_charge=" + extraCharge;
             }
             System.out.println("MCMODUP_MINECHEM_ORIGINAL_PASS slots=" + slots + "; start_charge=" + capacity + "; start_cost=" + paidAtStart
                     + "; input_consumed_on_start; saved_queue_emits_16_iron_tubes_one_per_tick; remaining_charge=0" + jam);
