@@ -47,7 +47,7 @@ jobs:
           download legacy/1.6.4/bin/minecraft.jar https://launcher.mojang.com/v1/objects/1703704407101cf72bd88e68579e3696ce733ecd/client.jar sha1sum 1703704407101cf72bd88e68579e3696ce733ecd
           download legacy/1.5.2/bin/minecraft.jar https://launcher.mojang.com/v1/objects/465378c9dc2f779ae1d6e8046ebc46fb53a57968/client.jar sha1sum 465378c9dc2f779ae1d6e8046ebc46fb53a57968
           download legacy/1.7.10/bin/modpack.jar https://maven.minecraftforge.net/net/minecraftforge/forge/1.7.10-10.13.4.1614-1.7.10/forge-1.7.10-10.13.4.1614-1.7.10-universal.jar sha1sum 25fd97f72beca728112256938e03e8105b1b78cc
-          download legacy/1.6.4/bin/modpack.jar https://maven.minecraftforge.net/net/minecraftforge/forge/1.6.4-9.11.1.964/forge-1.6.4-9.11.1.964-universal.jar sha1sum 2d26a79d0e053abb7d060a3cefab3a1d0b489c64
+          download legacy/1.6.4/bin/modpack.jar https://maven.minecraftforge.net/net/minecraftforge/forge/1.6.4-9.11.1.1345/forge-1.6.4-9.11.1.1345-universal.jar sha1sum eb9d954c8d057fa1768acaa40a35b864ad05c58b
           download legacy/1.5.2/bin/modpack.jar https://maven.minecraftforge.net/net/minecraftforge/forge/1.5.2-7.8.1.738/forge-1.5.2-7.8.1.738-universal.zip sha1sum 76223709288287a6a8d22ab16b43a6ab2a284a0d
           download legacy/1.7.10/mods/Xaeros_Minimap_21.10.44_Forge_1.7.10.jar https://edge.forgecdn.net/files/6012/805/Xaeros_Minimap_21.10.44_Forge_1.7.10.jar sha1sum 8be058c70fc161077fd84a6e72ba2bf951aa89c4
           download legacy/1.6.4/mods/bdlib-mc164-1.2.3.48.jar https://edge.forgecdn.net/files/2204/130/bdlib-mc164-1.2.3.48.jar sha1sum 12c99569ae2d00c5ddc3a67d0ed2b7e2309af074
