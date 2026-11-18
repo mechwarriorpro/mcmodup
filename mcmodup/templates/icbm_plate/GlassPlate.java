@@ -42,11 +42,13 @@ public final class GlassPlate extends PressurePlateBlock {
 
     public static final class Access {
         private final GlassPlate block;
-        public final int blockId;
 
         private Access(GlassPlate block) {
             this.block = block;
-            this.blockId = BuiltInRegistries.BLOCK.getId(block);
+        }
+
+        public static int registryId(Access access) {
+            return BuiltInRegistries.BLOCK.getId(access.block);
         }
 
         public int sense(WorldAccess world, int x, int y, int z) {

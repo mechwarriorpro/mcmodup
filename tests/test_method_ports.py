@@ -120,6 +120,45 @@ class MethodPortTests(unittest.TestCase):
         with self.assertRaisesRegex(InputError, "distinct"):
             self.parse(base, base)
 
+    def test_field_and_virtual_calls_can_redirect_to_explicit_static_helpers(self):
+        helpers = f"mcmodup_kernel/techbase/Helpers"
+        sense = f"{helpers}#sense(L{ACCESS};L{NATIVE_WORLD};I)I"
+        get = f"{helpers}#readLevel(L{NATIVE_WORLD};)I"
+        put = f"{helpers}#writeLevel(L{NATIVE_WORLD};I)V"
+        source = Machine()
+        source.append("set", f"(L{WORLD};I)V", b"\x2b\x1c\xb5" + u2(source.ref(9, WORLD, "level", "I")) + b"\xb1",
+                      access=2, locals=3)
+        raw = source.bytes()
+        row = group() | {"members": {}, "redirects": {"invokevirtual": {CALL: sense}, "getfield": {FIELD: get},
+                                                      "putfield": {FIELD: put}}}
+        row["methods"][f"{OWNER}#set(L{WORLD};I)V"] = "setLevel"
+        result = transplant(raw, self.parse(row))
+        self.assertEqual(result.uses, {Symbol.parse(key): {0xb8} for key in (sense, get, put)})
+        self.assertEqual({binding["opcode"]: binding["sites"] for binding in result.report()["call_redirects"]},
+                         {"invokevirtual": 1, "getfield": 1, "putfield": 1})
+        self.assertIn(b"\x1c\x99\x00\x0a\x2a\x2b\x1c\xb8", result.bytecode)
+        self.assertNotIn(b"old/", result.bytecode)
+        jar_path = self.root / "translated.jar"
+        files = adapters() | {result.path: result.bytecode}
+        for flags in (1, 9):
+            stub = fixture_class(helpers, methods=tuple((s.name, s.descriptor, flags) for s in result.uses))
+            jar(jar_path, **(files | {f"{helpers}.class": stub}))
+            if flags == 9:
+                verify(jar_path, (result,))
+            else:
+                with self.assertRaisesRegex(InputError, "callable native adapter member"):
+                    verify(jar_path, (result,))
+
+        for rules, error in (
+            ({"invokespecial": {CALL: sense}}, "supported bytecode opcode"),
+            ({"getfield": {FIELD: put}}, "mapped stack shape"),
+            ({"putfield": {FIELD: put.replace(helpers, "external/Helper")}}, "local static helper"),
+            ({"getfield": {FIELD: get}, "invokevirtual": {CALL: sense}}, "Unmapped bytecode member.*putfield"),
+            (row["redirects"] | {"getstatic": {f"{WORLD}#absent:I": f"{helpers}#absent()I"}}, "Unused bytecode redirects"),
+        ):
+            with self.subTest(error=error), self.assertRaisesRegex(InputError, error):
+                transplant(raw, self.parse(row | {"redirects": rules}))
+
     def test_built_jar_must_keep_exact_code_and_public_adapter_abi(self):
         linked = transplant(Machine().bytes(), self.parse(group()))
         artifact = self.root / "built.jar"
@@ -227,4 +266,5 @@ class MethodPortTests(unittest.TestCase):
         [group] = port.method_imports
         with ZipFile(original) as artifact:
             result = transplant(artifact.read(PLATE + ".class"), group)
-        self.assertEqual(result.report()["sha256"], "675f2f01a4fb32384465edd3ba09f8d764beaa27ab6d8e5341296f872b01989d")
+        self.assertEqual(result.report()["sha256"], "007274c0d2fcf80984e36d2cddfa8d0910df26da774e7a29012a518c4bc8c1d8")
+        self.assertEqual(result.report()["call_redirects"][0]["sites"], 1)

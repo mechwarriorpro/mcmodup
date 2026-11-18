@@ -15,7 +15,7 @@ from .source_ports import digest
 
 LEGACY_SHA256 = "34a0efec6a1d078d2d0f1b7681c1040d4d68cb096330f4db79bf569a00f75130"
 MOD_ID = "icbm_glass_plate"
-VERSION = "1.4.1.344-preview.1"
+VERSION = "1.4.1.344-preview.2"
 ARCHIVE = f"{MOD_ID}-{VERSION}.jar"
 PACKAGE = "mcmodup.icbmplate"
 KERNEL = f"mcmodup_kernel/{MOD_ID}"
@@ -33,12 +33,12 @@ def method_group() -> dict:
                 f"{OWNER}#func_94351_d({old_world}III)I": f"{plate}#sense({new_world}III)I",
                 f"{OWNER}#func_94355_d(I)I": f"{plate}#toMetadata(I)I",
                 f"{OWNER}#func_94354_b_({old_world}III)V": f"{plate}#notifyNeighbors({new_world}III)V",
-                f"{OWNER}#field_71990_ca:I": f"{plate}#blockId:I",
                 f"{OWNER}#func_71859_p_({old_world})I": f"{plate}#checkDelay({new_world})I",
                 f"{WORLD}#func_72921_c(IIIII)Z": f"{world}#setMetadata(IIIII)Z",
                 f"{WORLD}#func_72909_d(IIIIII)V": f"{world}#markRenderRange(IIIIII)V",
                 f"{WORLD}#func_72836_a(IIIII)V": f"{world}#schedule(IIIII)V",
-            }}
+            },
+            "redirects": {"getfield": {f"{OWNER}#field_71990_ca:I": f"{plate}#registryId(L{plate};)I"}}}
 
 
 def _json(data: dict) -> str:

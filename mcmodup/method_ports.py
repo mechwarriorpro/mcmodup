@@ -6,7 +6,7 @@ copied. Branch offsets, local slots and stack maps are retained. The game tests
 still have to exercise the adapted behavior.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import hashlib
 from pathlib import Path
 import re
@@ -28,6 +28,9 @@ _PLAIN = (frozenset(range(0, 0x10)) | frozenset(range(0x1a, 0x36)) |
           frozenset(range(0x3b, 0x84)) | frozenset(range(0x85, 0x99)) |
           frozenset(range(0xac, 0xb2)) | {0xbe})
 _MEMBERS = {0xb2: 9, 0xb3: 9, 0xb4: 9, 0xb5: 9, 0xb6: 10, 0xb8: 10}
+_REDIRECT_OPS = {"getstatic": 0xb2, "putstatic": 0xb3, "getfield": 0xb4, "putfield": 0xb5,
+                 "invokevirtual": 0xb6, "invokestatic": 0xb8}
+_OP_NAMES = {op: name for name, op in _REDIRECT_OPS.items()}
 _DEBUG = frozenset({"LineNumberTable", "LocalVariableTable", "LocalVariableTypeTable"})
 
 
@@ -46,6 +49,7 @@ class MethodPort:
     types: dict[str, str]
     methods: dict[Symbol, str]
     members: dict[Symbol, Symbol]
+    redirects: dict[tuple[int, Symbol], Symbol] = field(default_factory=dict)
 
     def type(self, name: str) -> str:
         if name.startswith("[") and FIELD_DESCRIPTOR.fullmatch(name):
@@ -64,9 +68,10 @@ def parse_method_ports(value: object, ids: dict[str, str]) -> tuple[MethodPort, 
     if not isinstance(value, list) or not 0 <= len(value) <= 32:
         raise InputError("method_imports must be a list of at most 32 method groups")
     result, outputs = [], set()
+    required = {"owner", "output", "types", "methods", "members"}
     for row in value:
-        if not isinstance(row, dict) or row.keys() != {"owner", "output", "types", "methods", "members"}:
-            raise InputError("A method import needs owner, output, types, methods and members")
+        if not isinstance(row, dict) or not required <= row.keys() <= required | {"redirects"}:
+            raise InputError("A method import needs owner, output, types, methods and members (optionally redirects)")
         owner, output, types, methods, members = (row[key] for key in ("owner", "output", "types", "methods", "members"))
 
         def internal(name: object) -> bool:
@@ -84,14 +89,14 @@ def parse_method_ports(value: object, ids: dict[str, str]) -> tuple[MethodPort, 
             raise InputError("Map legacy types one-to-one to local native adapter classes, not game or JDK classes")
         if not isinstance(methods, dict) or not 1 <= len(methods) <= 64 or not isinstance(members, dict) or len(members) > 128:
             raise InputError("Supply 1–64 chosen methods and at most 128 explicit adapter member bindings")
-        selected, bindings = {}, {}
+        selected, bindings, redirects = {}, {}, {}
         for old, new in methods.items():
             symbol = Symbol.parse(old)
             if (symbol.owner != owner or symbol.kind != "method" or not _NAME.fullmatch(symbol.name) or
                     not isinstance(new, str) or not _NAME.fullmatch(new)):
                 raise InputError(f"Expected an ordinary method from {owner!r} and a generated method name, not {old!r}")
             selected[symbol] = new
-        port = MethodPort(owner, output, types, selected, bindings)
+        port = MethodPort(owner, output, types, selected, bindings, redirects)
         for old, new in members.items():
             if not isinstance(new, str):
                 raise InputError(f"Expected an explicit target member for {old!r}")
@@ -101,6 +106,34 @@ def parse_method_ports(value: object, ids: dict[str, str]) -> tuple[MethodPort, 
                     dst.descriptor != port.descriptor(src.descriptor)):
                 raise InputError(f"Adapter binding must keep the member kind, receiver and mapped descriptor: {old!r} → {new!r}")
             bindings[src] = dst
+        rules = row.get("redirects", {})
+        if not isinstance(rules, dict) or rules.keys() - _REDIRECT_OPS.keys():
+            raise InputError("Use supported bytecode opcode names in redirects")
+        for opcode, edges in rules.items():
+            if not isinstance(edges, dict) or not edges or len(edges) + len(redirects) + len(bindings) > 128:
+                raise InputError("Supply at most 128 adapter member bindings and call redirects combined")
+            op = _REDIRECT_OPS[opcode]
+            for old, new in edges.items():
+                if not isinstance(new, str):
+                    raise InputError(f"Expected a static helper target for {old!r}")
+                src, dst = Symbol.parse(old), Symbol.parse(new)
+                if (src.kind != ("field" if _MEMBERS[op] == 9 else "method") or not _NAME.fullmatch(src.name) or
+                        dst.kind != "method" or not _NAME.fullmatch(dst.name) or not local(dst.owner) or dst.owner == output):
+                    raise InputError(f"Invalid {opcode} redirect {old!r} → {new!r}; target must be a local static helper")
+                # Like Connector's field/call redirects: consume exactly what the
+                # original opcode would have consumed, receiver first, leaving
+                # the same value (if any). This preserves frames and branches.
+                receiver = f"L{port.type(src.owner)};" if op in {0xb4, 0xb5, 0xb6} else ""
+                signature = port.descriptor(src.descriptor)
+                if op in {0xb2, 0xb4}:
+                    signature = f"({receiver}){signature}"
+                elif op in {0xb3, 0xb5}:
+                    signature = f"({receiver}{signature})V"
+                else:
+                    signature = "(" + receiver + signature[1:]
+                if dst.descriptor != signature:
+                    raise InputError(f"{opcode} redirect must keep the mapped stack shape {signature}: {old!r} → {new!r}")
+                redirects[op, src] = dst
         outputs.add(output.casefold())
         result.append(port)
     return tuple(result)
@@ -197,7 +230,7 @@ def _stack_map(data: memoryview, pool: _Pool, output: _OutputPool, port: MethodP
 
 
 def _code(data: memoryview, pool: _Pool, raw: dict[int, bytes], output: _OutputPool, port: MethodPort,
-          uses: dict[Symbol, set[int]], bound: set[Symbol]) -> bytes:
+          uses: dict[Symbol, set[int]], bound: set[Symbol], rewritten: dict[tuple[int, Symbol], int]) -> bytes:
     attr = _Reader(data)
     limits = bytes(attr.take(4))
     length = attr.u4()
@@ -219,11 +252,17 @@ def _code(data: memoryview, pool: _Pool, raw: dict[int, bytes], output: _OutputP
             jumps.add(start + struct.unpack(">h", code.take(2))[0])
         elif op in _MEMBERS:
             source = pool.member(code.u2(), _MEMBERS[op])
-            target = port.members.get(source)
-            if target is None:
-                raise InputError(f"Unmapped bytecode member {source.key}")
+            edge = (op, source)
+            if edge in port.redirects:
+                target = port.redirects[edge]
+                rewritten[edge] = rewritten.get(edge, 0) + 1
+                result[start] = op = 0xb8  # same instruction width; validated stack shape
+            else:
+                target = port.members.get(source)
+                if target is None:
+                    raise InputError(f"Unmapped bytecode member {source.key} ({_OP_NAMES[op]})")
+                bound.add(source)
             uses.setdefault(target, set()).add(op)
-            bound.add(source)
             result[start + 1:code.pos] = _u2(output.member(_MEMBERS[op], target))
         elif op in {0x12, 0x13, 0x14}:
             index = code.u1() if op == 0x12 else code.u2()
@@ -263,10 +302,15 @@ class ImportedMethods:
     uses: dict[Symbol, set[int]]
     types: frozenset[str]
     originals: tuple[str, ...]
+    call_redirects: tuple[tuple[str, str, str, int], ...]
 
     def report(self) -> dict:
-        return {"class": self.path.removesuffix(".class"), "sha256": hashlib.sha256(self.bytecode).hexdigest(),
-                "methods": list(self.originals), "adapter_members": sorted(s.key for s in self.uses)}
+        report = {"class": self.path.removesuffix(".class"), "sha256": hashlib.sha256(self.bytecode).hexdigest(),
+                  "methods": list(self.originals), "adapter_members": sorted(s.key for s in self.uses)}
+        if self.call_redirects:
+            report["call_redirects"] = [{"opcode": op, "source": src, "target": dst, "sites": count}
+                                        for op, src, dst, count in self.call_redirects]
+        return report
 
 
 def transplant(data: bytes, port: MethodPort) -> ImportedMethods:
@@ -283,7 +327,7 @@ def transplant(data: bytes, port: MethodPort) -> ImportedMethods:
         raise InputError("Method source is not the expected ordinary class")
     reader.u2()  # superclass is deliberately not pulled into the generated utility class
     reader.take(reader.u2() * 2)
-    compiled, found, emitted, uses, bound = [], set(), set(), {}, set()
+    compiled, found, emitted, uses, bound, rewritten = [], set(), set(), {}, set(), {}
     output = _OutputPool()
     for table in ("field", "method"):
         for _ in range(reader.u2()):
@@ -292,7 +336,9 @@ def transplant(data: bytes, port: MethodPort) -> ImportedMethods:
             key = Symbol(owner, name, descriptor)
             if table != "method" or key not in port.methods:
                 continue
-            if key in found or access not in {1, 4, 9, 12, 17, 20, 25, 28}:
+            # No synchronized, bridge, native, abstract, or loader entry
+            # methods. Even a private body is OK if all of its edges bind.
+            if key in found or access & ~0x1f or (access & 7) not in {0, 1, 2, 4}:
                 raise InputError(f"Duplicate or unsupported declaration for {key.key}")
             if len(attrs) != 1 or attrs[0][0] != "Code":
                 raise InputError(f"Method import requires a single Code attribute without loader metadata: {key.key}")
@@ -303,7 +349,7 @@ def transplant(data: bytes, port: MethodPort) -> ImportedMethods:
                 target = (port.methods[key], signature)
                 if not METHOD_DESCRIPTOR.fullmatch(signature) or target in emitted:
                     raise InputError("Conflicting or invalid generated method signature")
-                payload = _code(attrs[0][1], pool, raw, output, port, uses, bound)
+                payload = _code(attrs[0][1], pool, raw, output, port, uses, bound, rewritten)
             except InputError as exc:
                 raise InputError(f"{key.key}: {exc}") from exc
             found.add(key)
@@ -315,10 +361,16 @@ def transplant(data: bytes, port: MethodPort) -> ImportedMethods:
         reader.take(reader.u4())
     if not reader.end() or found != port.methods.keys() or bound != port.members.keys():
         raise InputError("Missing/extra method import bindings or malformed source class")
+    if unused := port.redirects.keys() - rewritten.keys():
+        detail = ", ".join(f"{_OP_NAMES[op]} {symbol.key}" for op, symbol in sorted(unused))
+        raise InputError(f"Unused bytecode redirects: {detail}")
     header = struct.pack(">IHH", 0xcafebabe, 0, major)
     declaration = struct.pack(">HHHHHH", 0x31, output.cls(port.output), output.cls("java/lang/Object"), 0, 0, len(compiled))
+    redirects = tuple(sorted((_OP_NAMES[op], symbol.key, port.redirects[op, symbol].key, count)
+                             for (op, symbol), count in rewritten.items()))
+    types = frozenset(port.types.values()) | {target.owner for target in uses}
     return ImportedMethods(port.output + ".class", header + output.bytes() + declaration + b"".join(compiled) + b"\0\0",
-                           uses, frozenset(port.types.values()), tuple(sorted(key.key for key in found)))
+                           uses, types, tuple(sorted(key.key for key in found)), redirects)
 
 
 def prepare(source: ModInput, workspace: Path, ports: tuple[MethodPort, ...]) -> tuple[ImportedMethods, ...]:

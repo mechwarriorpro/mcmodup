@@ -112,6 +112,8 @@ def modern(root: Path) -> None:
     built = report["native_builds"][ARCHIVE]
     assert built["status"] == "preview" and built["gametests"]["passed"] == 2, built
     assert len(built["method_imports"][0]["methods"]) == 2 and built["original_sha256"] == LEGACY_SHA256, built
+    (redirect,) = built["method_imports"][0]["call_redirects"]
+    assert redirect["opcode"] == "getfield" and redirect["sites"] == 1 and "#registryId(" in redirect["target"], redirect
     assert built["legacy_ids"] == {"icbm": MOD_ID, "icbm|explosion": None, "icbm|sentry": None}
     with ZipFile(out / "mods" / ARCHIVE) as artifact, ZipFile(source / label) as original:
         proof = json.loads(artifact.read(PROVENANCE))
