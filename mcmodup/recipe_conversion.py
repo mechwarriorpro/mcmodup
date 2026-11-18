@@ -111,7 +111,7 @@ class RecipeConversion:
     def metadata(self) -> str:
         lines = ['modLoader="lowcodefml"', 'loaderVersion="[1,)"', f"license={_toml(self.license)}", "", "[[mods]]",
                  f"modId={_toml(self.mod_id)}", f"version={_toml(self.version)}", f"displayName={_toml(self.name)}",
-                 f"description={_toml(self.description or 'Automatically converted legacy vanilla recipes.')}" ]
+                 f"description={_toml(self.description or 'Automatically converted legacy vanilla recipes.')}"]
         if self.authors:
             lines.append(f"authors={_toml(self.authors)}")
         for dep, version in (("neoforge", "[21.1,21.2)"), ("minecraft", f"[{MINECRAFT_VERSION}]")):
@@ -404,7 +404,8 @@ def analyze(path: Path, version: str) -> RecipeConversion:
     with open_input(path) as original:
         files = original.files
         classes = class_entries(files)
-        if original.warnings or len(files) > 16 or len(classes) != 1:
+        if (original.warnings or len(files) > 16 or len(classes) != 1 or
+                sum(not member.is_dir() for member in original.archive.infolist()) != len(files)):
             raise InputError("only single-class recipe-only FML archives are supported")
         owner, entry = next(iter(classes.items()))
         docs = []
@@ -439,9 +440,14 @@ def analyze(path: Path, version: str) -> RecipeConversion:
         meta = ModMetadata("")
         if "mcmod.info" in files:
             rows = _read_metadata(original.text("mcmod.info"), "mcmod.info")
-            if (len(rows) != 1 or rows[0].mod_id.lower() != mod_id or rows[0].dependencies or
-                    rows[0].minecraft not in {"", version} or rows[0].version not in {"", release}):
-                raise InputError("legacy mcmod.info disagrees with the recipe mod's identity, release, or standalone scope")
+            # With @Mod.useMetadata at its default, the annotated version controls
+            # FML version binding, even if mcmod.info has a different display version.
+            if len(rows) != 1 or rows[0].mod_id.lower() != mod_id:
+                raise InputError("legacy mcmod.info declares a different mod ID or more than one mod")
+            if rows[0].dependencies:
+                raise InputError("legacy mcmod.info declares dependencies outside the standalone recipe subset")
+            if rows[0].minecraft not in {"", version}:
+                raise InputError(f"legacy mcmod.info declares Minecraft {rows[0].minecraft!r}, not {version}")
             meta = rows[0]
         evaluator = _lifecycle(cls, version, legacy_id)
     if digest(path) != before:

@@ -50,15 +50,21 @@ def convert(root: Path, version: str, name: str, mod_id: str) -> tuple[Path, dic
         assert json.loads(jar.read(PROVENANCE)) == artifact["conversion"]
         recipes = {name: json.loads(jar.read(name)) for name in jar.namelist() if name.startswith(f"data/{mod_id}/recipe/")}
         assert len(recipes) == sum(artifact["conversion"]["recipes"].values()) > 0
-        print(json.dumps(list(recipes.values()), separators=(",", ":")), flush=True)
+
     notice(f"Original {version} converted", f"{name} -> {output_file.name}; generated {len(recipes)} recipe(s).")
     return output, report
 
 
 def main(root: Path) -> None:
+    failures = []
     for version, (name, mod_id) in CASES.items():
-        staged, report = convert(root, version, name, mod_id)
-        boot(staged, report["instance_runtime"]["launch"]["unix"])
+        try:
+            staged, report = convert(root, version, name, mod_id)
+            boot(staged, report["instance_runtime"]["launch"]["unix"])
+        except AssertionError as exc:
+            failures.append(f"{version}: {exc}")
+    if failures:
+        raise AssertionError("\n".join(failures))
 
 
 if __name__ == "__main__":
