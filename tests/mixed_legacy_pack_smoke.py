@@ -11,6 +11,7 @@ from zipfile import ZipFile
 
 from mcmodup.audit import ModMetadata
 from mcmodup.classfiles import class_entries
+from mcmodup.icbm_plate import prepare as prepare_plate
 from mcmodup.inputs import open_input
 from mcmodup.native_pack import REPORT_NAME
 from mcmodup.port import _build_gradle, _metadata, write_workspace
@@ -150,9 +151,18 @@ def originals(root: Path) -> None:
             for reason in report["problems"]:
                 note("Combined plan blocked", reason)
             voltz_dependencies(report, source)
+    out = root / "complete-with-executable-preview"
+    manifest = prepare_plate(root / "plate-preview-recipe")
+    code, report = run(*common, "--output-pack", out, "--source-ports", manifest, "--allow-preview-ports")
+    assert code == 1 and report["selected"] == labels and not report["ready"] and not out.exists(), report
+    assert not report["native_builds"] and not report["parity_verified"], report
+    assert any("No source recipe for this exact legacy archive" in reason for reason in report["problems"]), report
+    assert report["legacy_selection_conflicts"][0]["id"] == "minechem", report
+    (root / f"{out.name}.json").write_text(json.dumps(report, indent=2) + "\n")
+    note("Executable plate preview does not satisfy the mixed pack", "With the plate recipe enabled, the same eight originals still block as one selection. No partial pack was written.")
     assert fingerprints(source, target) == before, "Planning modified a source or target file"
     summary([*lines, "", "**Combined plan blocked; 0 of 8 originals produced a converted JAR and no pack was staged.** "
-             "The same selection also blocks with recipe previews opted in.",
+             "The same selection also blocks with the recipe and executable plate previews opted in (in separate runs).",
              f"The two original Minechem archives share `minechem`, {classes} `minechem/` class names, and {assets} `assets/minechem/` paths.",
              "The single Voltz ICBM archive still accounts for all three modules. The legacy archives were inspected, not executed.", ""])
 
