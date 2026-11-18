@@ -1,32 +1,30 @@
-# Build native 1.21.1 ports from the updater
+# Build native 1.21.1 JARs
 
-Use `--source-ports TRUSTED.json` on `update-pack` or `pack-ui` to **build new JARs** rather than match prebuilt replacements. The arguments, [installed folder layout](native-pack-updates.md#folder-layout), and output `mods/` swap are otherwise the same. Install Python 3.11+ and **JDK 21**. Gradle needs access to the reviewed projects' build repositories on a first build.
+Use `build-jars` for built-in ports, or supply `--source-ports TRUSTED.json` to `update-pack` or `pack-ui` for other reviewed source projects. These commands **compile new JARs**, rather than choose prebuilt replacements. They use the same [installed folder layout](native-pack-updates.md#folder-layout) and `mods/` swap as the updater. Install Python 3.11+ and **JDK 21**; the paired build also requires Git on `PATH`. First-run Gradle builds need network access to the pinned projects' repositories.
+
+No built-in recipe has full parity yet. `build-jars` requires `--allow-preview-ports`, leaves both input packs unchanged, and writes the new `mods/`, `update-report.json`, and `INSTALL.txt` outside them.
 
 In source-build mode, selecting a base mod automatically includes its detected old add-ons. Every selected legacy release and add-on needs an exact SHA-256 recipe; an existing JAR with the same mod ID does not stand in for a missing source port. Recipes build in dependency order. Required native libraries are taken from the installed packs where compatible. A library with its own exact recipe can be built if a unique local native JAR is not available. Old Forge libraries aren't passed through to the modern game.
 
-**Trust boundary:** The recipe is an explicit input, not a script found in `mods/`. Gradle source ZIPs, their wrappers, plugins, and mods under test execute code on your machine. Only provide recipes, sources and dependencies you have reviewed and trust. The temporary working directory is not a security sandbox. Read-only listing and planning do not download or execute sources. Do not publish third-party code, assets or your output JARs without the applicable rights.
+**Trust boundary:** Recipes are shipped with the tool or supplied explicitly, not taken from `mods/`. Gradle source ZIPs, their wrappers, plugins, and mods under test execute code on your machine. Only provide recipes, sources and dependencies you have reviewed and trust. The temporary working directory is not a security sandbox. Read-only listing and planning do not download or execute sources. Do not publish third-party code, assets or your output JARs without the applicable rights.
 
-## First real-mod recipe: Thaumcraft 4 Reload (preview)
+## Thaumcraft 4 Reload (preview)
 
-The [opt-in recipe](../examples/thaumcraft4-reload-preview.json) compiles the unofficial [Thaumcraft 4 Reload alpha.24 source](https://github.com/acak1221/Thaumcraft-1.21.1/tree/1417e30fa04ce349a8d811d8f1b3d7515cc58643) locally, not its release JAR. You need:
+The [opt-in recipe](../mcmodup/templates/source-ports/thaumcraft4-reload-preview.json) compiles the unofficial [Thaumcraft 4 Reload alpha.24 source](https://github.com/acak1221/Thaumcraft-1.21.1/tree/1417e30fa04ce349a8d811d8f1b3d7515cc58643) locally, not its release JAR. You need:
 
 - The exact **Thaumcraft 4.2.3.5** JAR in the old pack's `mods/`. The recipe matches its SHA-256, not its filename. First test with a clean target, and a selection without original add-ons that don't have native sources. The updater will flag such add-ons rather than skip them.
 - A **Minecraft 1.21.1 / NeoForge 21.1.259 or later 21.1.x** installation under the target's `bin/`. Put the vetted NeoForge 1.21.1 **Architectury API 13.0.11** JAR in the target's `lib/` or `mods/`. The pinned source project uses its own Gradle dependencies for development; the staged runtime uses the JAR found in the pack.
 - Permissions to make a local build. The [upstream attribution](https://github.com/acak1221/Thaumcraft-1.21.1/blob/1417e30fa04ce349a8d811d8f1b3d7515cc58643/THIRD_PARTY_NOTICES.md) distinguishes new code from Azanor's original code and assets. Keep the staged JAR local.
 
+If the original JAR has its release filename, run:
+
 ```sh
-python3 -m mcmodup pack-ui LegacyPack --target NeoForgePack \
-  --source-ports examples/thaumcraft4-reload-preview.json --allow-preview-ports \
+python3 -m mcmodup build-jars LegacyPack --target NeoForgePack \
+  --mod mods/Thaumcraft-1.7.10-4.2.3.5.jar --allow-preview-ports \
   -o .mcmodup/thaumcraft-preview
 ```
 
-Check Thaumcraft and review the plan, then click **Build and stage mods**. The equivalent command-line build, if using the original filename:
-
-```sh
-python3 -m mcmodup update-pack LegacyPack --target NeoForgePack \
-  --source-ports examples/thaumcraft4-reload-preview.json --allow-preview-ports \
-  --mod mods/Thaumcraft-1.7.10-4.2.3.5.jar -o .mcmodup/thaumcraft-preview
-```
+Use `--json` for the build report on stdout. Use `--keep-recipe NEW_DIR` to retain the recipe for inspection or pass its JSON to a later `pack-ui` or `update-pack` invocation. For stock Thaumcraft the recipe references a pinned codeload ZIP. For the pair it references local generated ZIPs. Use `--source-zips DIR` to read exact upstream archives from disk instead of codeload (`<project>-<commit>.zip`; see [the stock recipe](../mcmodup/templates/source-ports/thaumcraft4-reload-preview.json) and [the six pair pins](../mcmodup/tinkerer_computercraft.py)). This does not make Gradle dependency resolution offline.
 
 **Exact asset accounting:** The [independent audit](https://github.com/mechwarriorpro/mcmodup/actions/runs/44301870962) matches all **1,091 tracked paths** of Thaumcraft 4.2.3.5, including the old root logo. The recipe now requires each path to be byte-identical, relocated, or mapped to a specific adapted resource in the **built JAR**. The Warp effects use native shader replacements. The English and Russian original `.lang` files and experimental shader samples are kept as legacy resources, not loaded instead of the authored translations or active shaders. Twenty other locales are converted. The report lists malformed lines and duplicate keys rather than inferring translations for renamed keys. Asset accounting is not proof that the original appearance or every translation was reproduced.
 
@@ -38,48 +36,30 @@ python3 -m mcmodup update-pack LegacyPack --target NeoForgePack \
 
 This matches **GTNH Thaumic Tinkerer 2.13.0** for Minecraft 1.7.10, not every Thaumic Tinkerer release. Put that [original JAR](https://github.com/GTNewHorizons/ThaumicTinkerer/releases/tag/2.13.0) alongside the exact original Thaumcraft 4.2.3.5 JAR in `LegacyPack/mods/`. Use a clean 1.21.1 / NeoForge target and the same pack-local Architectury as above. Do not substitute the unmodified Reload alpha.24 release JAR: the pair needs the [post-release obsidian-tile fix](https://github.com/acak1221/Thaumcraft-1.21.1/commit/299a9c01cc4904597381f96cc4bbb8cb9ff667de).
 
-From this checkout, prepare the paired recipe in a new local directory. This verifies the pinned add-on source ZIP, rewires Gradle to use the just-built Thaumcraft and pack-local Architectury, and applies a NeoForge client patch for the original Bedrock base fog color and cloud height. It does not use a prebuilt modern add-on JAR.
+Select the **base JAR** with the same command as above (use a fresh output path). When the updater finds the exact add-on, the builder compiles both in dependency order, with optional CC: Tweaked support built in. It applies reviewed patches to six hash-pinned source archives and uses pack-local Architectury. It does not need a separate recipe preparation command or a prebuilt Thaumcraft or Tinkerer JAR. Unsupported detected add-ons block the build rather than being dropped.
 
-```sh
-mkdir -p .mcmodup
-curl -fL -o .mcmodup/tinkerer-source.zip \
-  https://codeload.github.com/acak1221/Thaumic-Tinkerer-1.21.1/zip/c2e67665446ffada85ec9342384f578875cabb12
-PYTHONPATH=.:tests python3 -m prepare_tinkerer_preview .mcmodup/tinkerer-source.zip .mcmodup/tinkerer-pair
-python3 -m mcmodup pack-ui LegacyPack --target NeoForgePack \
-  --source-ports .mcmodup/tinkerer-pair/thaumcraft-tinkerer-preview.json --allow-preview-ports \
-  -o .mcmodup/staged-tinkerer-pair
-```
+- **Bedrock** uses the original world/chunk seed and the three discarded draws of [`ChunkProviderBedrock.populate`](https://github.com/GTNewHorizons/ThaumicTinkerer/blob/28f4def938e80d7a0b6f433c2b84300dfb7c35ce/src/main/java/thaumic/tinkerer/common/dim/ChunkProviderBedrock.java), rather than 1.21.1's feature seed. Geometry, density, and blacklist still run through the native world-generation feature. Modern ore tags can resolve to different blocks from the old OreDictionary, and overlapping clusters are still sensitive to population order. The client uses the original day-independent base fog, zero cloud height, and full-bright lightmap input. Vanilla's later color processing and modern effects such as Darkness still apply.
+- **Imbued Fire** uses the NeoForge flammability callback for other mods' blocks, passing the same spread direction as the [original](https://github.com/GTNewHorizons/ThaumicTinkerer/blob/28f4def938e80d7a0b6f433c2b84300dfb7c35ce/src/main/java/thaumic/tinkerer/common/block/fire/BlockFireBase.java). The fire's transmutation rules take precedence, and the vanilla table keeps the legacy values.
 
-Select **Thaumcraft**. The plan should automatically include Thaumic Tinkerer and list Thaumcraft first in the build order. Do not stage this recipe with a different base JAR or assume it covers other detected add-ons. Use `update-pack ... --mod mods/Thaumcraft-1.7.10-4.2.3.5.jar` with the same recipe, target and output flags for the CLI equivalent.
-
-The paired recipe uses the upstream texture/locale migration table and checks it against the exact original JAR. [Paired production-JAR CI](https://github.com/mechwarriorpro/mcmodup/actions/runs/44303585905) passed 543 base and 371 add-on source GameTests and found **312 byte-identical or relocated paths, seven adapted paths, and no unmapped paths** of the add-on's 319 tracked assets. The staged add-on registered the Osmotic Enchanter infusion with normally crafted obsidian tiles on a dedicated server. On a fresh client it opened the Enchanter screen and took a player through a placed Bedrock portal; the destination used the original day-independent base fog color and cloud height. This does not check the other legacy sky and lighting rules.
+The paired recipe checks the upstream texture/locale migration table against the exact original JAR. The [pre-ComputerCraft production-JAR run](https://github.com/mechwarriorpro/mcmodup/actions/runs/44303585905) passed 543 base and 371 add-on source GameTests and found **312 byte-identical or relocated paths, seven adapted paths, and no unmapped paths** of the add-on's 319 tracked assets. It exercised the Osmotic Enchanter infusion with normally crafted obsidian tiles and opened the Enchanter and entered Bedrock on a fresh client.
 
 The [add-on's limitations and attribution](https://github.com/acak1221/Thaumic-Tinkerer-1.21.1/blob/c2e67665446ffada85ec9342384f578875cabb12/NOTICE.md) include omitted legacy integrations and non-commercial, share-alike terms. Keep the outputs local; neither CI preview publishes third-party JARs.
 
 ### Optional ComputerCraft integration
 
-To try the native ComputerCraft peripherals and Dissipating Turtle, use this recipe **instead of** `prepare_tinkerer_preview`. It applies the reviewed [Tinkerer ComputerCraft changes](https://github.com/acak1221/Thaumic-Tinkerer-1.21.1/tree/35c2fad848dd095e65263a6a163c0c964d021c00) and the [Reload machine/golem API changes](https://github.com/acak1221/Thaumcraft-1.21.1/commit/316897d63fde06f10313ad6162426a906b636d77) to the pins above without switching to those branches or dropping the existing fixes. It requires Git on `PATH`, verifies the six source ZIPs by SHA-256, and writes the recipe and local source ZIPs. It does not clone, patch, or build the original JARs.
+The pair uses the reviewed [Tinkerer ComputerCraft changes](https://github.com/acak1221/Thaumic-Tinkerer-1.21.1/tree/35c2fad848dd095e65263a6a163c0c964d021c00) and the [Reload machine/golem API changes](https://github.com/acak1221/Thaumcraft-1.21.1/commit/316897d63fde06f10313ad6162426a906b636d77) without dropping the Bedrock and obsidian-tile fixes.
 
-1. Use the same two exact 1.7.10 originals and 1.21.1 NeoForge target as above. To play with computers, install [CC: Tweaked 1.116.1 for 1.21.1 NeoForge](https://modrinth.com/mod/cc-tweaked/version/SQI2qmh5) in `NeoForgePack/mods/`; the download is named `cc-tweaked-1.21.1-forge-1.116.1.jar`. The generated pair can also run without CC: Tweaked. In that case it isn't staged, though the build still uses CC: Tweaked to run integration tests. Do not install the 1.7.10 ComputerCraft JAR or the Fabric version.
-2. Build in fresh directories:
+1. To play with computers, put [CC: Tweaked 1.116.1 for NeoForge 1.21.1](https://modrinth.com/mod/cc-tweaked/version/SQI2qmh5) (`cc-tweaked-1.21.1-forge-1.116.1.jar`) in `NeoForgePack/mods/`. Do not install legacy ComputerCraft or the Fabric release. The pair also runs without CC: Tweaked; it is not staged if it is not installed, though the source build still tests the integration.
+2. Run `build-jars` as above, selecting the base. To retain the recipe and source ZIPs for the runtime harness below, add `--keep-recipe .mcmodup/tinkerer-recipe`.
+3. In a fresh world, use the research **Computercraft Peripherals** for the Lua commands. Connect a computer to an Aspectalyzer, Dynamism Tablet, attractor, or another supported block; craft a turtle with the Fume Dissipator to give it the tool. CC: Tweaked and its nested libraries are **not** bundled in Thaumic Tinkerer.
 
-   ```sh
-   PYTHONPATH=.:tests python3 -m tinkerer_computercraft .mcmodup/tinkerer-computercraft
-   python3 -m mcmodup update-pack LegacyPack --target NeoForgePack \
-     --source-ports .mcmodup/tinkerer-computercraft/thaumcraft-tinkerer-preview.json \
-     --allow-preview-ports --mod mods/Thaumcraft-1.7.10-4.2.3.5.jar \
-     -o .mcmodup/staged-tinkerer-computercraft
-   ```
+The backport restores reading the label of an empty fillable or void jar: `getAspects()` returns the aspect, while `getAspectCount()` still reports zero. Tinkerer `0.1.0-alpha.7-mcmodup.cc.3` requires Reload `0.1.0-alpha.24-mcmodup.cc.1`. Other differences described in the [upstream behavior notes](https://github.com/acak1221/Thaumic-Tinkerer-1.21.1/blob/35c2fad848dd095e65263a6a163c0c964d021c00/docs/deviations/ComputerCraft.md) remain, including namespaced golem marker dimensions and changed argument errors. OpenComputers, IC2 and other old integrations are not restored.
 
-3. In a fresh world, use the research **Computercraft Peripherals** for the Lua commands. Connect a computer to an Aspectalyzer, Dynamism Tablet, attractor, or another supported block; craft a turtle with the Fume Dissipator to give it the tool. CC: Tweaked and its nested libraries are **not** bundled in Thaumic Tinkerer. No Connector or save conversion is involved.
-
-This backport also restores reading the label of an empty fillable or void jar: `getAspects()` returns that aspect, while `getAspectCount()` still reports zero. The output JARs have distinct `-mcmodup.cc.1` versions; the add-on requires the matching Reload build. Other differences described in the [upstream behavior notes](https://github.com/acak1221/Thaumic-Tinkerer-1.21.1/blob/35c2fad848dd095e65263a6a163c0c964d021c00/docs/deviations/ComputerCraft.md) remain, including namespaced golem marker dimensions and changed argument errors. OpenComputers, IC2 and other old integrations are not restored.
-
-**Verified on NeoForge 21.1.267:** The [production-JAR run](https://github.com/mechwarriorpro/mcmodup/actions/runs/44308983844/attempts/2) passed 549 Thaumcraft and 385 Tinkerer source GameTests, plus five exact original-JAR checks. All 1,091 and 319 tracked asset paths respectively were present or mapped in the built JARs. The dedicated test server ran all 14 ComputerCraft integration cases again against those JARs, including a real computer reading an empty jar's label, changing a golem's home and markers, and a turtle clearing gas. A fresh graphical client rendered the computer screen and resolved the Fume Dissipator model on a crafted and placed turtle. The same Thaumcraft and Tinkerer JARs also passed the existing server and client checks with CC: Tweaked removed. The first attempt stopped at the existing Frost Focus test; the successful rerun used the same source with that test still required. No original or built mod JARs were uploaded.
+**Original ComputerCraft backport verification:** The [production-JAR run on NeoForge 21.1.267](https://github.com/mechwarriorpro/mcmodup/actions/runs/44308983844/attempts/2) passed 549 Thaumcraft and 385 Tinkerer source GameTests, plus five exact original-JAR checks. All 1,091 and 319 tracked asset paths respectively were present or mapped in the built JARs. The dedicated test server ran all 14 ComputerCraft integration cases again against those JARs, including a real computer reading an empty jar's label, changing a golem's home and markers, and a turtle clearing gas. A fresh graphical client rendered the computer screen and resolved the Fume Dissipator model on a crafted and placed turtle. The same Thaumcraft and Tinkerer JARs also passed the existing server and client checks with CC: Tweaked removed. The first attempt stopped at the existing Frost Focus test; the successful rerun used the same source with that test still required. No original or built mod JARs were uploaded.
 
 ## Test the emitted JARs
 
-The verification harness copies the staged `mods/` into separate temporary NeoForge 21.1.267 instances. It runs the crucible GameTest on the production JAR, not the port's source tree. In the pair it also checks the Osmotic Enchanter infusion's five crafted obsidian-tile inputs. The client harness launches the staged JARs in a fresh creative world, uses the Thaumonomicon, checks the four active Warp post chains before and after resource reload and removal, and saves the world. For the pair it opens the Osmotic Enchanter screen and checks the Bedrock portal and restored dimension settings. These checks use supplied items and blocks, not full survival progression or pixel-for-pixel comparisons.
+The verification harness copies the staged `mods/` into separate temporary NeoForge 21.1.267 instances. It runs the crucible GameTest on the production JAR, not the port's source tree. In the pair it also checks the Osmotic Enchanter infusion's five crafted obsidian-tile inputs. The client harness launches the staged JARs in a fresh creative world, uses the Thaumonomicon, checks the four active Warp post chains before and after resource reload and removal, and saves the world. For the pair the server fixture also compares every block in two generated Bedrock chunks against the legacy population seed with current ore tags and verifies that Imbued Fire burns only the exposed side accepted by a direction-sensitive test block. The client opens the Osmotic Enchanter screen, enters Bedrock through its portal, checks fog and cloud height, and examines the rendered lightmap at midnight. These checks use supplied items and blocks, not full survival progression or pixel-for-pixel comparisons.
 
 From the checkout, with JDK 21 and a graphical display (or Xvfb on Linux):
 
@@ -87,7 +67,7 @@ From the checkout, with JDK 21 and a graphical display (or Xvfb on Linux):
 PYTHONPATH=.:tests python3 -m thaumcraft_pack_smoke .mcmodup/thaumcraft-preview --client
 PYTHONPATH=.:tests python3 -m thaumcraft_pack_smoke .mcmodup/staged-tinkerer-pair --client --with-tinkerer
 PYTHONPATH=.:tests python3 -m thaumcraft_pack_smoke .mcmodup/staged-tinkerer-computercraft --client --with-tinkerer \
-  --computercraft-source .mcmodup/tinkerer-computercraft/tinkerer-neoforge-source.zip
+  --computercraft-source .mcmodup/tinkerer-recipe/tinkerer-neoforge-source.zip
 ```
 
 The optional third run assumes the exact CC: Tweaked release was staged. It checks the peripherals, actual Lua calls, the craftable turtle tool and gas removal on a dedicated server. With `--client` it also exercises a computer GUI and the placed turtle's upgrade model. It reruns the baseline tests with exactly the same port JARs and CC: Tweaked absent. Without `--client`, all commands only run the dedicated server checks. These tests are separate from the updater, do not change either input pack or the staged JARs, and do not assert complete parity.
@@ -97,7 +77,7 @@ The optional third run assumes the exact CC: Tweaked release was staged. It chec
 | Original | What's available | Not a full port because… |
 |---|---|---|
 | Thaumcraft 4.2.3.5 | Exact native source-build preview, plus the paired Tinkerer preview | Visual, localization, survival, multiplayer and compatibility gaps remain, even with complete asset accounting. |
-| GTNH Thaumic Tinkerer 2.13.0 | Exact native add-on preview, with an optional CC: Tweaked integration recipe | OpenComputers and other legacy integrations, some behaviors and some effects are still missing. |
+| GTNH Thaumic Tinkerer 2.13.0 | Exact native add-on preview, with optional CC: Tweaked runtime support | OpenComputers and other legacy integrations, some behaviors and some effects are still missing. |
 | Minechem 1.6.4 5.0.5 FINAL | [Original tagged source](https://github.com/iopleke/Minechem/tree/1.6.4-5.0.5-FINAL) and the partial chemistry profile | Not all machines, recipes, effects, worldgen, graphics or integrations have been ported. |
 | Atomic Science 1.6.4 and ICBM 1.6.4 | [Exact Voltz archives and dependency audits](usage-examples.md#atomic-science-120-and-icbm-141344-forge-164-input-examples) | No reviewed native source build for these originals or their required old dependency APIs. Later mods with similar features aren't replacements. |
 

@@ -49,6 +49,22 @@ public final class TinkererPackSmoke {
         helper.succeed();
     }
 
+    @GameTest(template = "empty")
+    public static void imbuedFireUsesTheModdedBlocksFaceSensitiveFlammability(GameTestHelper helper) {
+        var level = helper.getLevel();
+        var pos = helper.absolutePos(new BlockPos(1, 2, 1));
+        var fuel = ThaumcraftPackSmoke.DIRECTIONAL_FUEL.get();
+        level.setBlockAndUpdate(pos.below(), Blocks.STONE.defaultBlockState());
+        level.setBlockAndUpdate(pos.east(), fuel.defaultBlockState());
+        level.setBlockAndUpdate(pos.west(), fuel.defaultBlockState());
+        var fire = BuiltInRegistries.BLOCK.get(ResourceLocation.parse("thaumictinkerer:fire_order"));
+        level.setBlockAndUpdate(pos, fire.defaultBlockState());
+        level.getBlockState(pos).tick(level, pos, new LegacyRandomSource(751));
+        helper.assertTrue(!level.getBlockState(pos.east()).is(fuel), "Fire must use the modded block's burn chance on the original spread side");
+        helper.assertTrue(level.getBlockState(pos.west()).is(fuel), "The other side of the same modded block must not burn");
+        helper.succeed();
+    }
+
     @GameTest(template = "empty", timeoutTicks = 600)
     public static void bedrockTerrainUsesTheLegacyPopulationSeed(GameTestHelper helper) {
         var key = ResourceKey.create(Registries.DIMENSION, ResourceLocation.parse("thaumictinkerer:bedrock"));

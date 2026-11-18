@@ -13,9 +13,16 @@ Open the local URL to select legacy mods under `mods/`. mcmodup reads platform e
 
 ## Build native mods and add-ons from reviewed source
 
-Add `--source-ports TRUSTED.json` to `update-pack` or `pack-ui`. The updater matches the exact legacy archives, builds the selected mods and detected add-ons in dependency order, checks legacy assets and NeoForge GameTests, and stages only after the checks pass. It uses available pack-local native dependency JARs and does not run Legacy Connector. A mod with no exact source recipe is blocked in this mode, not replaced by a prebuilt approximation.
+`build-jars` compiles the built-in source ports. With the exact **Thaumcraft 4.2.3.5** JAR in the legacy pack and native dependencies in the target pack, run:
 
-The [source-build guide](docs/source-port-builds.md) includes an opt-in **Thaumcraft 4.2.3.5 preview** and a [paired preview for GTNH Thaumic Tinkerer 2.13.0](docs/source-port-builds.md#thaumic-tinkerer-paired-preview), including an [optional CC: Tweaked recipe](docs/source-port-builds.md#optional-computercraft-integration). Both require all tracked paths from the exact original JAR to be retained, relocated, or explicitly mapped in the native build. The staged JARs have fresh-world NeoForge runtime checks without Connector. These are not full-parity ports: some preserved assets have no active consumer, and gameplay and integration gaps remain. Minechem remains partial; Atomic Science and ICBM require native ports.
+```sh
+python3 -m mcmodup build-jars LegacyPack --target NeoForgePack \
+  --mod mods/Thaumcraft-1.7.10-4.2.3.5.jar --allow-preview-ports -o .mcmodup/native-jars
+```
+
+If the exact **GTNH Thaumic Tinkerer 2.13.0** is present and detected as an add-on, it is compiled against the just-built Thaumcraft JAR. The [source-build guide](docs/source-port-builds.md) lists prerequisites and [optional CC: Tweaked support](docs/source-port-builds.md#optional-computercraft-integration). For your own reviewed native source project, use `--source-ports TRUSTED.json` with `update-pack` or `pack-ui`.
+
+The builder matches exact legacy archives, builds in dependency order, checks legacy assets and NeoForge GameTests, and stages only after those checks pass. It never substitutes a prebuilt approximation for an unsupported selection. **The built-in ports are not full-parity releases.** The command requires `--allow-preview-ports`; missing legacy behavior and integrations are not counted as ported. Minechem remains partial, and Atomic Science and ICBM have no native build recipe.
 
 ## Build a new JAR from a supported part of a legacy mod
 

@@ -118,12 +118,13 @@ neoForge.runs.create('gameTestServer') {{
     write_workspace(project, files)
     mods = copy_mods(staged, project, expected)
     log = run_gradle(project, "runGameTestServer")
-    tests = 1 + 2 * with_tinkerer + (len(CC_CASES) if cc_fixtures else 0)
+    tests = 1 + 3 * with_tinkerer + (len(CC_CASES) if cc_fixtures else 0)
     assert f"All {tests} required tests passed" in log, log[-12000:]
     assert mod_hashes(mods) == expected, "A server runtime input changed"
     print("Staged production Thaumcraft and Architectury passed the native NeoForge crucible smoke test without Connector.")
     if with_tinkerer:
-        print("The staged Bedrock generator matched the legacy population seed for two complete chunks (using modern ore tags).")
+        print("The staged Bedrock generator matched the legacy population seed for two complete chunks (using modern ore tags). "
+              "Imbued Fire used the side-sensitive flammability of another mod's block.")
     if cc_fixtures:
         print(f"CC: Tweaked {CC_VERSION}: {len(CC_CASES)} integration GameTests passed against the production JARs, "
               "including live Lua calls to the peripherals, golem control, turtle crafting and gas removal.")

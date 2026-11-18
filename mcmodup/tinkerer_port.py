@@ -21,14 +21,14 @@ TT_COMMIT = "c2e67665446ffada85ec9342384f578875cabb12"
 TT_SOURCE_HASH = "6ef30454521bfc65a894d3425784a3ccdd9931701edd50f0c483ef9cc3322ded"
 TT_ROOT = f"Thaumic-Tinkerer-1.21.1-{TT_COMMIT}"
 TT_LEGACY_HASH = "6aee6009a0ae0fa7929258f34530b1dc01c1245bfccae400fd673419ebe812b3"
-TINKERER_VERSION = "0.1.0-alpha.7-mcmodup.1"
+TINKERER_VERSION = "0.1.0-alpha.7-mcmodup.2"
 SOURCE_TEMPLATES = Path(__file__).with_name("templates") / "source-ports"
 TC_RECIPE = SOURCE_TEMPLATES / "thaumcraft4-reload-preview.json"
 
 
 def change(body: str, old: str, new: str) -> str:
     if body.count(old) != 1:
-        raise InputError("Pinned Tinkerer Gradle input does not match the reviewed build wiring")
+        raise InputError(f"Expected exactly one patch anchor in the pinned source: {old.strip().splitlines()[0]!r}")
     return body.replace(old, new, 1)
 
 
@@ -51,6 +51,36 @@ def asset_mappings(upstream: ZipFile) -> dict:
     return result
 
 
+def fire_with_native_flammability(text: str) -> bytes:
+    """Restore the positional/side-sensitive Forge callback for other mods' blocks."""
+    text = change(text, "import net.minecraft.core.Direction;", "import net.minecraft.core.Direction;\nimport net.minecraft.core.registries.BuiltInRegistries;")
+    text = change(text, "return flammabilityOf(level.getBlockState(pos));", """return getBlockFlammability(level, pos, Direction.UP);
+    }
+
+    public int getBlockFlammability(BlockGetter level, BlockPos pos, Direction face) {
+        BlockState state = level.getBlockState(pos);
+        // Keep the original vanilla burn chances and the imbued fire's own target/result overrides.
+        if (BuiltInRegistries.BLOCK.getKey(state.getBlock()).getNamespace().equals("minecraft")) {
+            return flammabilityOf(state);
+        }
+        if (isTransmutationTarget(state)) return 100;
+        if (isTransmutationResult(state)) return 0;
+        return state.getFlammability(level, pos, face);
+    }
+
+    @Override
+    public boolean canCatchFire(BlockGetter level, BlockPos pos, Direction face) {
+        return getBlockFlammability(level, pos, face) > 0;""")
+    # Legacy BlockFireBase.tryCatchFire passes the direction of the spread, not its opposite.
+    text = change(text, "this.tryCatchFire(world, pos.relative(dir), 300 + strMod, rand, blockMeta);",
+                  "this.tryCatchFire(world, pos.relative(dir), 300 + strMod, rand, blockMeta, dir);")
+    return change(text, """private void tryCatchFire(Level world, BlockPos pos, int strength, RandomSource rand, int meta) {
+        if (!world.isLoaded(pos)) return;
+        final int blockFlammability = getBlockFlammability(world, pos);""", """private void tryCatchFire(Level world, BlockPos pos, int strength, RandomSource rand, int meta, Direction spread) {
+        if (!world.isLoaded(pos)) return;
+        final int blockFlammability = getBlockFlammability(world, pos, spread);""").encode()
+
+
 def prepare(archive: Path, output: Path) -> Path:
     if archive.stat().st_size > 8 * 1024 * 1024 or digest(archive) != TT_SOURCE_HASH:
         raise InputError("Need the exact Thaumic Tinkerer alpha.7 source ZIP")
@@ -71,6 +101,7 @@ def prepare_pair(archive: Path, output: Path, *, version: str = TINKERER_VERSION
         dimension_test = f"{TT_ROOT}/common/src/test/java/thaumic/tinkerer/kamiworld/KamiWorldResourcesTest.java"
         worldgen = f"{TT_ROOT}/common/src/main/java/thaumic/tinkerer/common/dim/"
         feature = worldgen + "BedrockOreClustersFeature.java"
+        imbued_fire = f"{TT_ROOT}/common/src/main/java/thaumic/tinkerer/common/block/fire/BlockFireBase.java"
         properties = f"{TT_ROOT}/gradle.properties"
         with ZipFile(archive) as upstream, ZipFile(local, "x") as scratch:
             assets = asset_mappings(upstream)
@@ -98,6 +129,7 @@ plugins { id 'dev.architectury.loom' version '1.11.458' apply false }
                     "OreClusterGenerator.generate(context.random(), chunkX, chunkZ, density,",
                     "var populationRandom = LegacyBedrockSeed.population(level.getSeed(), chunkX, chunkZ);\n"
                     "        OreClusterGenerator.generate(populationRandom, chunkX, chunkZ, density,").encode(),
+                imbued_fire: fire_with_native_flammability(upstream.read(imbued_fire).decode()),
                 properties: change(upstream.read(properties).decode(), "mod_version=0.1.0-alpha.7\n", f"mod_version={version}\n").encode(),
             }
             for info in upstream.infolist():
@@ -131,6 +163,7 @@ plugins { id 'dev.architectury.loom' version '1.11.458' apply false }
                 "Osmotic Enchanter works with native wand": "enchantmentsgametests.theenchanterenchantsatoolfromawandbetweensixpillars",
                 "Bedrock terrain and ore clusters": "kamiworldgametests.bedrockdimensionissolidbedrockwithoreveins",
                 "Bedrock density and blacklist": "kamiworldgametests.bedrockoreconfigdecidesdensityandblacklist",
+                "Imbued fire vanilla flammability and transmutation overrides": "simpleblocksgametests.thefiresknowtheflammabilityoftheoriginal",
             },
             "asset_map": assets,
             "require_asset_coverage": True,

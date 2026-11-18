@@ -24,7 +24,7 @@ CC_VERSION = "1.116.1"
 CC_JAR = f"cc-tweaked-1.21.1-forge-{CC_VERSION}.jar"  # 'forge' is the NeoForge release.
 CC_SHA512 = "6f4e0329d8d9d54375241d0fab5219a6963e3ca678cb8d9fff8e7a39b1a825a5f62f3f5518e9a53f86de7f601797af6efdfdff74fc8fb6fc369e930eb639ec25"
 RELOAD_BACKPORT_VERSION = "0.1.0-alpha.24-mcmodup.cc.1"
-TINKERER_BACKPORT_VERSION = "0.1.0-alpha.7-mcmodup.cc.2"
+TINKERER_BACKPORT_VERSION = "0.1.0-alpha.7-mcmodup.cc.3"
 CC_CASES = {
     "Optional ComputerCraft registration": "computercraftisloadedandtheglueregistered",
     "Add-on peripheral capabilities": "addonperipheralsarefoundattheirblocks",

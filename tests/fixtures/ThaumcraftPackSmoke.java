@@ -4,20 +4,38 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.level.BlockGetter;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.state.BlockBehaviour;
+import net.minecraft.world.level.block.state.BlockState;
+import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.ModList;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
+import net.neoforged.neoforge.registries.DeferredHolder;
+import net.neoforged.neoforge.registries.DeferredRegister;
 
 @Mod(ThaumcraftPackSmoke.ID)
 @GameTestHolder(ThaumcraftPackSmoke.ID)
 @PrefixGameTestTemplate(false)
 public final class ThaumcraftPackSmoke {
     public static final String ID = "mcmodup_thaumcraft_check";
+    private static final DeferredRegister<Block> BLOCKS = DeferredRegister.create(BuiltInRegistries.BLOCK, ID);
+    static final DeferredHolder<Block, Block> DIRECTIONAL_FUEL = BLOCKS.register("directional_fuel", () -> new Block(BlockBehaviour.Properties.of()) {
+        @Override public int getFlammability(BlockState state, BlockGetter world, BlockPos pos, Direction face) {
+            return face == Direction.EAST ? 300 : 0;
+        }
+    });
+
+    public ThaumcraftPackSmoke(IEventBus bus) {
+        BLOCKS.register(bus);
+    }
 
     @GameTest(template = "empty")
     public static void standalonePortLoadsFromItsStagedJar(GameTestHelper helper) throws IOException {
