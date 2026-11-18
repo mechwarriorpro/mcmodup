@@ -132,14 +132,16 @@ public final class LegacyMinechemDecomposer {
                 set.invoke(replica, 0, nextInput);
                 tick.invoke(replica);
                 require(get.invoke(replica, 0) == null && energy(replica) == 0L, "The second .394 intake did not prepay");
+                Object compacted = get.invoke(replica, 1);
+                require(compacted != null && item.invoke(compacted) == element && quantity.getInt(compacted) == 63 &&
+                        get.invoke(replica, slots - 1) == null, ".394 must compact its existing output during intake without releasing a tube");
+                // Introduce a gap again after intake. This distinguishes compaction from normal output selection.
+                set.invoke(replica, 1, (Object) null);
+                set.invoke(replica, slots - 1, compacted);
                 tick.invoke(replica);
-                Object first = get.invoke(replica, 1);
-                int front = first == null ? 0 : quantity.getInt(first);
                 Object trailing = get.invoke(replica, slots - 1);
-                int back = trailing == null ? 0 : quantity.getInt(trailing);
-                require(front >= 0 && front <= 1 && back + front == 64 && (first == null || item.invoke(first) == element),
-                        "Expected one new .394 tube with a free slot before a matching stack; front=" + front + "; back=" + back + "; state=" + state(replica));
-                String ordering = front == 0 ? "merge_before_empty" : "first_usable_slot";
+                require(get.invoke(replica, 1) == null && trailing != null && quantity.getInt(trailing) == 64,
+                        ".394 did not merge into a matching stack ahead of the first empty slot while active");
                 for (int slot = 1; slot < slots - 1; slot++) {
                     set.invoke(replica, slot, itemStack.getConstructor(items, int.class, int.class).newInstance(blocker, 64, 0));
                 }
@@ -151,24 +153,14 @@ public final class LegacyMinechemDecomposer {
                 set.invoke(replica, slots - 1, partial);
                 tick.invoke(replica);
                 trailing = get.invoke(replica, slots - 1);
-                int merged = (trailing == null ? 0 : quantity.getInt(trailing)) - 63;
-                require(merged == 0 || merged == 1, "Unexpected .394 jam release size: " + merged);
-                set.invoke(replica, slots - 1, full);
+                require(trailing != null && quantity.getInt(trailing) == 64 && state(replica).equals("active") && energy(replica) == 0L,
+                        ".394 did not unjam with room in a matching stack and no new charge");
                 set.invoke(replica, 1, (Object) null);
-                tick.invoke(replica);
-                int extraCharge = 0;
-                if (get.invoke(replica, 1) == null) {
-                    fill(replica, 1);
-                    extraCharge = 1;
-                    tick.invoke(replica);
-                }
-                require(get.invoke(replica, 1) != null, ".394 did not unjam with an empty slot at either zero or one charge; merge=" + merged + "; ordering=" + ordering);
-                for (int i = 1; i < 15 - merged; i++) tick.invoke(replica);
+                for (int i = 0; i < 14; i++) tick.invoke(replica);
                 Object remainder = get.invoke(replica, 1);
-                require(remainder != null && item.invoke(remainder) == element && quantity.getInt(remainder) == 15 - merged,
-                        ".394 jam did not preserve its paid remainder; merge=" + merged + "; ordering=" + ordering + "; extra charge=" + extraCharge);
-                jam = "; receive_limit=100; " + ordering + "; jam_released_into_matching_stack_at_zero=" + (merged == 1)
-                        + "; empty_slot_resume_charge=" + extraCharge;
+                require(remainder != null && item.invoke(remainder) == element && quantity.getInt(remainder) == 14 && energy(replica) == 0L,
+                        ".394 jam did not preserve its paid remainder");
+                jam = "; receive_limit=100; compacts_at_intake; merge_before_empty_when_active; paid_jam_resumes_without_more_charge";
             }
             System.out.println("MCMODUP_MINECHEM_ORIGINAL_PASS slots=" + slots + "; start_charge=" + capacity + "; start_cost=" + paidAtStart
                     + "; input_consumed_on_start; saved_queue_emits_16_iron_tubes_one_per_tick; remaining_charge=0" + jam);

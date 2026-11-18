@@ -285,7 +285,10 @@ public final class ChemistryMachines {
                     }
                 }
                 inventory.extractItem(0, 1, false);
-                if (PREPAID_DECOMPOSER) power.restore(energy - recipe.energy());
+                if (PREPAID_DECOMPOSER) {
+                    power.restore(energy - recipe.energy());
+                    compactPrepaidOutputs();
+                }
                 status = WORKING;
                 setChanged();
                 return; // Intake and the first output occur on different ticks.
@@ -326,6 +329,31 @@ public final class ChemistryMachines {
             if (!PREPAID_DECOMPOSER) power.restore(Math.max(0, energy - 1));
             status = WORKING;
             setChanged();
+        }
+
+        // .394 compacts stacks already in the output inventory at intake,
+        // before emitting the first tube from the new buffer on a later tick.
+        private void compactPrepaidOutputs() {
+            for (int from = FIRST_OUTPUT + BUFFERED_OUTPUTS - 1; from > FIRST_OUTPUT; from--) {
+                ItemStack moving = inventory.getStackInSlot(from);
+                if (moving.isEmpty()) continue;
+                for (int to = FIRST_OUTPUT; to < from; to++) {
+                    ItemStack target = inventory.getStackInSlot(to);
+                    if (target.isEmpty()) {
+                        inventory.setStackInSlot(to, moving.copy());
+                        inventory.setStackInSlot(from, ItemStack.EMPTY);
+                        break;
+                    }
+                    if (ItemStack.isSameItemSameComponents(target, moving)) {
+                        int transfer = Math.min(moving.getCount(), target.getMaxStackSize() - target.getCount());
+                        if (transfer > 0) {
+                            inventory.setStackInSlot(to, target.copyWithCount(target.getCount() + transfer));
+                            inventory.setStackInSlot(from, moving.copyWithCount(moving.getCount() - transfer));
+                        }
+                        break;
+                    }
+                }
+            }
         }
 
         static void tick(Level level, BlockPos pos, BlockState state, Machine machine) {

@@ -81,6 +81,11 @@ public final class MinechemPairChecks {
         put(test, machine.input(), 0, new ItemStack(Items.IRON_INGOT));
         charge(test, machine.power(), 1000);
         tick(machine);
+        checkOutput(test, machine, 0, iron, 63);
+        test.assertTrue(outputs.getStackInSlot(last).isEmpty(), ".394 should compact existing output on intake without emitting a tube");
+        // Recreate a gap during the running batch, after intake compaction.
+        outputs.setStackInSlot(0, ItemStack.EMPTY);
+        outputs.setStackInSlot(last, iron.copyWithCount(63));
         tick(machine);
         test.assertTrue(outputs.getStackInSlot(0).isEmpty(), ".394 should merge a matching stack before using an empty slot");
         checkOutput(test, machine, last, iron, 64);
