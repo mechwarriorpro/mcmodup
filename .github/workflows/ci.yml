@@ -97,7 +97,7 @@ jobs:
                   print(f"::error title=Historical mapping failed::{reason}")
                   raise SystemExit(1)
           require(report["mcp"]["minecraft"] == "1.6.4", "Wrong MCP release")
-          require(report["mod"]["sha256"] == "80cf5bd9d485377acde3822154a5db47804fab3e8f78c388cfcf529239655938", "Wrong original JAR")
+          require(report["mod"]["sha256"] == "80cf5bd9d485377ecde3822154a5db47804fab3e8f78c388cfcf529239655938", "Wrong original JAR")
           require(report["source_files"] == ["atomicscience/fission/BlockUraniumOre.java"], "Wrong selected class output")
           source = (out / "sources" / report["source_files"][0]).read_text()
           missing = [name for name in ("randomDisplayTick", "setHardness", "blockIcon") if name not in source]
