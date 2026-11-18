@@ -328,17 +328,23 @@ public final class ThaumcraftClientSmoke {
             require(WandHelper.setFocus(wand, focus), "Could not mount the Ender Rift focus");
             for (var aspect : Aspect.getPrimalAspects()) WandHelper.addRealVis(wand, aspect, 1000, true);
             actor.setItemInHand(InteractionHand.MAIN_HAND, wand);
-            var aim = Vec3.atCenterOf(pos).subtract(actor.getEyePosition());
             float yaw = actor.getYRot();
+            float headYaw = actor.getYHeadRot();
             float pitch = actor.getXRot();
-            actor.setYRot((float) Math.toDegrees(Math.atan2(aim.z, aim.x)) - 90F);
-            actor.setXRot(-(float) Math.toDegrees(Math.atan2(aim.y, aim.horizontalDistance())));
+            boolean sneaking = actor.isShiftKeyDown();
             actor.setShiftKeyDown(true);
+            var aim = Vec3.atCenterOf(pos).subtract(actor.getEyePosition());
+            float facing = (float) Math.toDegrees(Math.atan2(aim.z, aim.x)) - 90F;
+            actor.setYRot(facing);
+            // The wand traces LivingEntity's view vector, which reads head rotation, not body yaw.
+            actor.setYHeadRot(facing);
+            actor.setXRot(-(float) Math.toDegrees(Math.atan2(aim.y, aim.horizontalDistance())));
             try {
                 wand.getItem().use(level, actor, InteractionHand.MAIN_HAND);
             } finally {
-                actor.setShiftKeyDown(false);
+                actor.setShiftKeyDown(sneaking);
                 actor.setYRot(yaw);
+                actor.setYHeadRot(headYaw);
                 actor.setXRot(pitch);
             }
             require(actor.containerMenu == actor.inventoryMenu && !WandHelper.getFocus(wand)
