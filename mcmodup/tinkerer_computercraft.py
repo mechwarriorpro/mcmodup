@@ -167,6 +167,13 @@ def finish_reload(updates: dict, current: ZipFile, root: str) -> None:
     updates[tile] = change(text, "    public Aspect getFilter()", "    @Override public Aspect getFilter()").encode()
     updates["common/src/main/java/thaumcraft/api/aspects/IJarLabel.java"] = (
         SOURCE_TEMPLATES / "IJarLabel.java").read_bytes()
+    # The idle stranger used to wait at the shared spawn until tick 16, where another test's
+    # Eldritch Gate could transfer them. Put both actors in the cleared fixture on login.
+    warding = "common/src/gameTest/java/thaumcraft/common/testing/WardingRuntimeChecks.java"
+    test = updates.get(warding, current.read(f"{root}/{warding}")).decode()
+    updates[warding] = change(test, "            player.setNoGravity(true); player.setGameMode(GameType.SURVIVAL);", """            player.setNoGravity(true); player.setGameMode(GameType.SURVIVAL);
+            player.teleportTo(base.getX() + 12.5, base.getY() + 4, base.getZ() + 23.5);
+            test.assertTrue(player.serverLevel() == level, "the actor starts in the test level");""").encode()
     gradle = current.read(f"{root}/gradle.properties").decode()
     updates["gradle.properties"] = change(gradle, "mod_version=0.1.0-alpha.24\n", f"mod_version={RELOAD_BACKPORT_VERSION}\n").encode()
 
