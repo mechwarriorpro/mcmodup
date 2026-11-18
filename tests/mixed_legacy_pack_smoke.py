@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import traceback
 from zipfile import ZipFile
 
 from mcmodup.audit import ModMetadata
@@ -55,9 +56,9 @@ CHECK = "mcmodup_multipart_control"
 PACKAGE = "mcmodup.multipartcheck"
 
 
-def note(title: str, message: str) -> None:
+def note(title: str, message: str, *, level: str = "notice") -> None:
     escaped = message.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
-    print(f"::notice title={title}::{escaped}", flush=True)
+    print(f"::{level} title={title}::{escaped}", flush=True)
 
 
 def summary(lines: list[str]) -> None:
@@ -73,6 +74,29 @@ def inspect_overlap(left: Path, right: Path) -> tuple[int, int]:
         classes = class_entries(first.files).keys() & class_entries(second.files).keys()
         assets = first.files.keys() & second.files.keys()
         return sum(name.startswith("minechem/") for name in classes), sum(name.startswith("assets/minechem/") for name in assets)
+
+
+def voltz_dependencies(report: dict, source: Path) -> None:
+    ue = "mods/1.6.4/universal-electricity-3.1.0.74-core.jar"
+    core = "mods/1.6.4/calclavia-core-development-1.2.0.6-main.jar"
+    assert file_digest(source / ue) == "709d41f4d4345681170b01f5e15142b5843c5750765e2dff42bb9233b825b7b6"
+    assert file_digest(source / core) == "0372d373993769264da00cef69c3814f89295856d5f14dd570d6a7aaac6c5585"
+    with open_input(source / ue) as archive:
+        ue_owners = class_entries(archive.files).keys()
+    for artifact in ORIGINALS[2:4]:
+        declarations = [row for row in report["legacy_requirements"]
+                        if row["consumer"] == artifact.label and row["id"] == "CalclaviaCore"]
+        assert any(row["status"] == "present" and row["provider"]["minecraft"] == "1.6.4" and
+                   row["provider"]["archive"] == core for row in declarations), declarations
+        linkage = report["legacy_class_providers"][artifact.label]
+        resolved = [name for row in linkage["providers"] if row["archive"] == ue for name in row["classes"]]
+        ambiguous = set(linkage["ambiguous_classes"]) & ue_owners
+        # Other originals can bundle the same UE class names. A duplicate owner
+        # is evidence of a reference, but is not evidence of the bound JVM class.
+        assert resolved or ambiguous, linkage
+        note(f"{artifact.name} legacy dependency evidence",
+             f"CalclaviaCore declared and found in 1.6.4; {len(resolved)} references to uniquely owned Universal Electricity "
+             f"classes and {len(ambiguous)} whose JAR owner is ambiguous in this selection. Not a runtime linkage check.")
 
 
 def originals(root: Path) -> None:
@@ -121,21 +145,11 @@ def originals(root: Path) -> None:
         assert {row["archive"] for row in conflict["archives"]} == {artifact.label for artifact in ORIGINALS[:2]}, conflict
         assert any("illegal NeoForge mod ID" in reason and "icbm|explosion" in reason and "icbm|sentry" in reason
                    for reason in report["problems"]), report["problems"]
-        if not preview:
-            for artifact in ORIGINALS[2:4]:
-                rows = report["legacy_requirements"]
-                declarations = [row for row in rows if row["consumer"] == artifact.label and row["id"] == "CalclaviaCore"]
-                assert any(row["status"] == "present" and row["provider"]["minecraft"] == "1.6.4" and
-                           row["provider"]["sha256"] == "0372d373993769264da00cef69c3814f89295856d5f14dd570d6a7aaac6c5585"
-                           for row in declarations), declarations
-                providers = report["legacy_class_providers"][artifact.label]["providers"]
-                assert any(row["sha256"] == "709d41f4d4345681170b01f5e15142b5843c5750765e2dff42bb9233b825b7b6"
-                           for row in providers), providers
-            note("Voltz dependency evidence", "Both selected Voltz archives resolve their CalclaviaCore declaration and reference classes from the pinned 1.6.4 Universal Electricity JAR. This is static evidence, not native linkage.")
         (root / f"{out.name}.json").write_text(json.dumps(report, indent=2) + "\n")
         if not preview:
             for reason in report["problems"]:
                 note("Combined plan blocked", reason)
+            voltz_dependencies(report, source)
     assert fingerprints(source, target) == before, "Planning modified a source or target file"
     summary([*lines, "", "**Combined plan blocked; 0 of 8 originals produced a converted JAR and no pack was staged.** "
              "The same selection also blocks with recipe previews opted in.",
@@ -195,4 +209,9 @@ if __name__ == "__main__":
     parser.add_argument("scratch", type=Path)
     parser.add_argument("check", choices=("originals", "control"))
     args = parser.parse_args()
-    {"originals": originals, "control": control}[args.check](args.scratch.resolve())
+    try:
+        {"originals": originals, "control": control}[args.check](args.scratch.resolve())
+    except Exception:
+        if os.environ.get("GITHUB_ACTIONS") == "true":
+            note(f"Mixed legacy pack check failed ({args.check})", traceback.format_exc()[-5000:], level="error")
+        raise
