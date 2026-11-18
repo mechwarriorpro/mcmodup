@@ -36,6 +36,7 @@ jobs:
           download XtraRecipes_v2.1.1__1.5.2_.zip https://edge.forgecdn.net/files/711/105/XtraRecipes_v2.1.1__1.5.2_.zip 1632cde94e42c54099db63bf5f988bd4e3b7b2ca
           download CBR_1.0.zip https://edge.forgecdn.net/files/713/755/CBR_1.0.zip 353289623195f43a7b5bc2e06066e831d4362728
           download Saddle_Recipe.jar https://edge.forgecdn.net/files/772/757/Saddle_Recipe.jar f4b6441696eb58e8d42747fe1909ba43edd936c7
+          download ZombieLeather.zip https://edge.forgecdn.net/files/756/031/ZombieLeather.zip dd5e6a111e4e36e70c8788a1ca026e8eb0e295bc
           download 'Craftable Saddles mc 1.7.10.jar' https://edge.forgecdn.net/files/2336/175/Craftable%20Saddles%20mc%201.7.10.jar 939434ba9ff8e7788839dd5ecf01a74909d60f2a
           # Optional historical single-purpose release. Only the author's normal download and exact digest.
           if curl --proto '=https' --proto-redir '=https' --fail --location --silent --show-error --max-time 30 \
