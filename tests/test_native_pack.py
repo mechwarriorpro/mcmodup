@@ -155,6 +155,9 @@ class NativePackTests(unittest.TestCase):
         update = plan(inventory(self.target, self.target), ["mods/Tech.jar"])
         self.assertTrue(update.report["ready"], update.problems)
         self.assertEqual(set(update.removed), {"mods/Tech.jar", "mods/Tools.jar"})
+        addon_only = plan(inventory(self.target, self.target), ["mods/Tools.jar"])
+        self.assertTrue(addon_only.report["ready"], addon_only.problems)
+        self.assertEqual(set(addon_only.removed), set(update.removed))
         stage(update, self.out)
         self.assertEqual({p.name for p in (self.out / "mods").iterdir()}, {"Tech-new.jar", "Tools-new.jar"})
         self.assertTrue((self.target / "mods/Tech.jar").exists())
@@ -173,6 +176,18 @@ class NativePackTests(unittest.TestCase):
         self.assertFalse(self.out.exists())
         with self.assertRaisesRegex(InputError, "outside"):
             stage(update, self.target / "newmods")
+
+    def test_connector_in_embedded_jar_and_partial_alias_are_not_replacements(self):
+        legacy(self.src, "mods/Example.jar", "oldexample")
+        legacy(self.src, "mods/Other.jar", "oldother")
+        (self.src / "mcmodup-updates.json").write_text('{"oldexample":"newexample","oldother":"newother"}')
+        embedded = jar(self.root / "embedded.jar", **{"META-INF/legacyconnector/provenance.json": "{}"})
+        native(self.target, "lib/Example.jar", "newexample", more={"META-INF/jarjar/embedded.jar": embedded.read_bytes()})
+        native(self.target, "mods/PartialOther.jar", "newother", more={"META-INF/MCModUp-NOTICE.txt": "PARTIAL PORT"})
+        state = inventory(self.src, self.target)
+        self.assertTrue(any("Could not verify embedded" in warning for warning in state.warnings))
+        for archive in ("mods/Example.jar", "mods/Other.jar"):
+            self.assertFalse(plan(state, [archive]).report["ready"])
 
     def test_optional_and_incompatible_dependencies(self):
         self.working_stack()
@@ -203,6 +218,9 @@ class NativePackTests(unittest.TestCase):
             urllib.request.urlopen(urllib.request.Request(url + "/api/stage", body, headers), timeout=5)
         self.assertEqual(refused.exception.code, 403)
         self.assertFalse(self.out.exists())
+        with self.assertRaises(urllib.error.HTTPError) as refused:
+            urllib.request.urlopen(urllib.request.Request(url + "/api/catalog", headers={"Host": "untrusted.local"}), timeout=5)
+        self.assertEqual(refused.exception.code, 403)
         headers["X-Mcmodup-Token"] = listing["token"]
         with urllib.request.urlopen(urllib.request.Request(url + "/api/plan", body, headers), timeout=5) as r:
             self.assertTrue(json.load(r)["ready"])
@@ -217,4 +235,4 @@ class NativePackTests(unittest.TestCase):
         self.assertTrue(matches("2.1.4+1.21.1", "[2.0,3)"))
         self.assertTrue(matches("1.21.1", "[1.21.1]"))
         self.assertFalse(matches("21.2", "[21.1,21.2)"))
-        self.assertFalse(matches("2.1", "(,2],[3,4)") )
+        self.assertFalse(matches("2.1", "(,2],[3,4)"))

@@ -36,7 +36,17 @@ def handler(state: UpdateInventory, output: Path | None) -> type[BaseHTTPRequest
         def _json(self, status: int, payload: dict) -> None:
             self._send(status, "application/json", json.dumps(payload, ensure_ascii=True).encode("utf-8"))
 
+        def _allowed_host(self) -> bool:
+            if output is None:
+                return True  # Read-only demos can be placed behind a preview proxy.
+            port = self.server.server_port
+            host = self.headers.get("Host", "").casefold()
+            return host in {"localhost", "127.0.0.1", f"localhost:{port}", f"127.0.0.1:{port}"}
+
         def do_GET(self) -> None:
+            if not self._allowed_host():
+                self._json(HTTPStatus.FORBIDDEN, {"error": "Use the local workbench URL shown in your terminal."})
+                return
             route = urlsplit(self.path).path
             if route in STATIC:
                 name, media = STATIC[route]
@@ -52,7 +62,7 @@ def handler(state: UpdateInventory, output: Path | None) -> type[BaseHTTPRequest
             if route not in {"/api/plan", "/api/stage"}:
                 self._json(HTTPStatus.NOT_FOUND, {"error": "Not found"})
                 return
-            if (self.headers.get_content_type() != "application/json" or
+            if (not self._allowed_host() or self.headers.get_content_type() != "application/json" or
                     not secrets.compare_digest(self.headers.get("X-Mcmodup-Token", "").encode("utf-8"), token.encode("ascii"))):
                 self._json(HTTPStatus.FORBIDDEN, {"error": "Open the workbench page and retry."})
                 return
@@ -87,6 +97,8 @@ def serve(state: UpdateInventory, output: Path | None, host: str, port: int) -> 
     if not 1 <= port <= 65535:
         raise InputError("Use an HTTP port between 1 and 65535.")
     if output is not None:
+        if host not in {"127.0.0.1", "localhost"}:
+            raise InputError("Use --host 127.0.0.1 for a writable workbench; network previews are read-only.")
         output = output.expanduser()
         if output.exists() or output.is_symlink() or any(output.resolve().is_relative_to(root) for root in (state.source, state.target)):
             raise InputError("Choose a new output directory outside both modpacks.")

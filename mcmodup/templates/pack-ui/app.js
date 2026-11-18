@@ -164,6 +164,11 @@ $('stage').addEventListener('click', async () => {
     const sourceVersions = [...new Set(catalog.source_bin.minecraft.map(row => row.version))];
     $('source-detail').textContent = (sourceVersions.length ? `MC ${sourceVersions.join(', ')} · ` : '') + 'mods/';
     $('target-detail').textContent = `MC ${catalog.minecraft} · NeoForge ${catalog.neoforge} · bin/`;
+    if (catalog.warnings.length) {
+      $('scan-notes').hidden = false;
+      $('scan-summary').textContent = `Scan notes (${catalog.warnings.length})`;
+      for (const warning of catalog.warnings) $('scan-items').append(element('li', '', warning));
+    }
     if (!catalog.can_stage) $('stage-hint').textContent = 'Preview only. Run with -o NEW_DIR to write the plan.';
     refresh();
   } catch (error) {
