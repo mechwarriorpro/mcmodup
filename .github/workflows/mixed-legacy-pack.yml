@@ -2,6 +2,12 @@ name: Check the mixed legacy pack
 
 on:
   workflow_dispatch:
+    inputs:
+      connector_oracle:
+        description: Run the exact inputs through Legacy Connector instead of the native pack regression
+        type: choice
+        options: ['none', mixed, mimicry]
+        default: 'none'
   push:
     paths:
       - '.github/workflows/mixed-legacy-pack.yml'
@@ -71,7 +77,19 @@ jobs:
           download 'legacy/mods/1.6.4/GeoStrata 1.6 v23b.zip' https://dist.modpacks.ch/Reika/GeoStrata/Gamma/a4c4318549d1ac6de878c5dce95ac9fa3f55dbb6 sha256sum afd68aa6ca1222a0f53ee25323c18bd3c2473c346a15345b216c9ef1042a0414 1138465
           download 'legacy/mods/1.6.4/DragonAPI 1.6 v23b.zip' https://dist.modpacks.ch/Reika/DragonAPI/release/2dbd889f480fe39c094575c8045b4f4652a33aa3 sha1sum 2dbd889f480fe39c094575c8045b4f4652a33aa3 1209419
       - name: Run the updater on the whole original selection
+        if: ${{ inputs.connector_oracle == '' || inputs.connector_oracle == 'none' }}
         run: python -m mixed_legacy_pack_smoke "$RUNNER_TEMP/mixed-legacy-pack" originals
       - name: Run the unchanged Multipart and CodeChickenLib control separately
-        if: ${{ !cancelled() && steps.target.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.target.outcome == 'success' && (inputs.connector_oracle == '' || inputs.connector_oracle == 'none') }}
         run: python -m mixed_legacy_pack_smoke "$RUNNER_TEMP/mixed-legacy-pack" control
+      - name: Run the exact-input Legacy Connector oracle (not a native pack)
+        if: ${{ inputs.connector_oracle == 'mixed' || inputs.connector_oracle == 'mimicry' }}
+        env:
+          ORACLE: ${{ inputs.connector_oracle }}
+        shell: bash
+        run: |
+          root="$RUNNER_TEMP/mixed-legacy-pack"
+          curl --proto '=https' --proto-redir '=https' --fail --location --silent --show-error \
+            --retry 2 --max-time 90 --max-filesize 37681773 --output "$root/connector.jar" \
+            https://github.com/kylepitcock/Legacy-Connector/releases/download/v0.5.0/legacyconnector-0.5.0.jar
+          python -m connector_mixed_smoke "$root" "$ORACLE"
