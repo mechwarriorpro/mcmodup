@@ -19,7 +19,7 @@
     <section class="intro" aria-labelledby="title">
       <div class="eyebrow">MODPACK WORKBENCH</div>
       <h1 id="title">Update your modpack</h1>
-      <p>Choose the legacy mods you want to update. Matching native builds and their local dependencies go into a new mods folder.</p>
+      <p id="intro-copy">Choose the legacy mods you want to update. Matching native builds and their local dependencies go into a new mods folder.</p>
     </section>
     <section class="routes" aria-label="Source and target instances">
       <div class="route"><span class="route-label">SOURCE PACK</span><strong id="source">Loading…</strong><span class="mono route-detail" id="source-detail">Legacy mods · mods/</span></div>
@@ -38,7 +38,7 @@
         <div class="card-head"><div><div class="eyebrow">REVIEW</div><h2 id="plan-title">Update plan</h2></div><button type="button" class="quiet" id="clear" disabled>Clear</button></div>
         <div class="stats"><div><strong id="stat-selected">0</strong><span>Selected</span></div><div><strong id="stat-addons">0</strong><span>Add-ons</span></div><div><strong id="stat-deps">0</strong><span>Dependencies</span></div></div>
         <div class="plan-body" aria-live="polite"><div id="plan-content"><p class="plan-empty">Select a mod to see what will be added or replaced.</p></div></div>
-        <div class="plan-footer"><button type="button" class="primary" id="stage" disabled>Stage updated mods <span aria-hidden="true">→</span></button><p id="stage-hint">A new folder is written. Your original packs are left alone.</p></div>
+        <div class="plan-footer"><button type="button" class="primary" id="stage" disabled><span id="stage-title">Stage updated mods</span> <span aria-hidden="true">→</span></button><p id="stage-hint">A new folder is written. Your original packs are left alone.</p></div>
       </aside>
     </div>
     <details id="scan-notes" class="scan-notes" hidden><summary id="scan-summary">Scan notes</summary><ul id="scan-items"></ul></details>

@@ -153,6 +153,8 @@ def main(argv: list[str] | None = None) -> int:
                 else:
                     for path, related in report["auto_addons"].items():
                         print(f"Add-on {path!r}: {related['reason']}")
+                    if report["build_order"]:
+                        print("Build order: " + " → ".join(report["build_order"]))
                     for item in report["files"]:
                         print(f"{item['action']:>10}  {item['file']!r} ← {item['from']!r}")
                     for issue in report["problems"]:

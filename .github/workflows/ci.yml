@@ -124,6 +124,20 @@ jobs:
         run: |
           PYTHONPATH=.:tests python -m native_pack_smoke ports/retro-ruby/build/libs/*.jar
           echo '::notice title=Native updater runtime passed::The staged base, add-on and auto-selected library passed GameTest with no Legacy Connector.'
+      - name: Build source ports and play the newly built base and add-on
+        shell: bash
+        run: |
+          log="$RUNNER_TEMP/mcmodup-source-build-test.log"
+          if ! PYTHONPATH=.:tests python -m source_pack_smoke 2>&1 | tee "$log"; then
+            python - "$log" <<'PY'
+          import pathlib
+          import sys
+          log = pathlib.Path(sys.argv[1]).read_text(errors="replace")[-5200:]
+          print("::error title=Source build smoke failed::" + log.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A"))
+          PY
+            exit 1
+          fi
+          echo '::notice title=Source build smoke passed::Built the base and its add-on from pinned source ZIPs, used the pack-local library, audited the legacy assets, and passed a GameTest on the staged JARs.'
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: neoforge-1.21.1-retro-ruby-demo
