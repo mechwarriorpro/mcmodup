@@ -65,7 +65,15 @@ The translator reads bytecode without running it. It needs exact Minecraft relea
 
 **A recipe preview does not meet full parity.** Legacy client/server requirements and startup log messages are not reproduced, and positive furnace XP uses modern accounting. The preview is not validated for add-ons, interactions with other mods, or old saves. Staging for your input verifies metadata and hashes, not gameplay.
 
-The [original recipe workflow](../.github/workflows/recipe-conversion.yml) downloads three pinned public originals and runs dedicated server probes on historical Forge and stock NeoForge. Its cases cover the two rotten-flesh smelting recipes and the shaped recipes from Craftable Saddles. It checks observed registry matches, output counts, offsets and mirroring, ingredient variants, and furnace timing and normal pickup XP where applicable. The probes are test-only and are not shipped in the generated JARs. This is separate from the random original-only benchmark and does not establish full parity or client compatibility.
+The [original recipe workflow](../.github/workflows/recipe-conversion.yml) downloads pinned public originals and tests them on historical Forge. Each generated JAR also boots on stock NeoForge with no replacement mod or probe, then runs the recipe checks alongside a test-only probe. The [recorded run](https://github.com/mechwarriorpro/mcmodup/actions/runs/44352910963) measured:
+
+| Original | Observed on Forge and NeoForge |
+| --- | --- |
+| 1.5.2 Rotten Flesh to Leather 1.2.2 | One rotten flesh smelts to one leather in 200 ticks; a normal pickup awards 1 XP. After two non-player extractions and one pickup, the original awards 1 XP and the preview awards 3 XP. |
+| 1.6.4 Zombie Leather 1.0.0 | One rotten flesh smelts to one leather in 200 ticks; a normal pickup awards 0 XP on both. |
+| 1.7.10 Craftable Saddles 1.2 | All five shaped recipes pass 241 cases on each runtime, including tested offsets, mirroring, ingredient variants, and invalid inputs. |
+
+These hand-picked previews do not count toward full parity. The [random original-only benchmark](https://github.com/mechwarriorpro/mcmodup/actions/runs/44352029826) is separate: 0 of 3 originals produced a JAR in the normal updater. Two official native controls staged and booted; neither is an automatic conversion.
 
 ## Different versions of the same dependency
 
