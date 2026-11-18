@@ -131,6 +131,27 @@ jobs:
               assert catalog["decomposer_mode"] == "5.0.5-final-output-buffer" and not catalog["full_port"]
               print(f"::notice title=Minechem catalog and buffer mode checked::113 elements, 147 molecules, {recipes} machine recipes")
           PY
+      - name: Build a separate partial decomposer from Minechem .394
+        shell: bash
+        run: |
+          jar="$RUNNER_TEMP/Minechem-1.7.10-5.0.5.394.jar"
+          curl --proto '=https' --proto-redir '=https' --fail --location --retry 2 \
+            --max-time 100 --max-filesize 1090147 --output "$jar" \
+            https://edge.forgecdn.net/files/2230/655/Minechem-1.7.10-5.0.5.394.jar
+          printf '%s  %s\n' ea802167b760d43828a0648de3727a58d5c1f7737613123ae49f2743188cdae7 "$jar" | sha256sum --check
+          # Keep both inputs and generated partial JARs in runner scratch (no uploads).
+          log="$RUNNER_TEMP/minechem-394-build.log"
+          if ! python -m mcmodup convert-jar "$jar" --pack "$jar" --profile minechem-chemistry-394 --allow-partial \
+            -o "$RUNNER_TEMP/minechem-394-test-only.jar" > "$log" 2>&1; then
+            python - "$log" <<'PY'
+          import pathlib
+          import sys
+          output = pathlib.Path(sys.argv[1]).read_text(errors="replace")[-4000:]
+          print("::error title=Minechem .394 build failed::" + output.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A"))
+          PY
+            exit 1
+          fi
+          cat "$log"
       - name: Verify catalog recovery on the official Thaumcraft 4 release
         shell: bash
         run: |
@@ -163,8 +184,18 @@ jobs:
               recipes = sum(item["recipe_status"] == "crafting_shapeless" for item in catalog["entries"])
               print(f"::notice title=Thaumcraft catalog verified::{len(catalog['entries'])} aspects, {recipes} crafting recipes")
           PY
-          PYTHONPATH=.:tests python -m neoforge_smoke \
-            "$RUNNER_TEMP/minechem-chemistry-test-only.jar" "$scratch/test-only.jar"
+          log="$scratch/runtime.log"
+          if ! PYTHONPATH=.:tests python -m neoforge_smoke "$RUNNER_TEMP/minechem-chemistry-test-only.jar" \
+            "$scratch/test-only.jar" --minechem-394 "$RUNNER_TEMP/minechem-394-test-only.jar" > "$log" 2>&1; then
+            python - "$log" <<'PY'
+          import pathlib
+          import sys
+          output = pathlib.Path(sys.argv[1]).read_text(errors="replace")[-5000:]
+          print("::error title=Release-derived NeoForge checks failed::" + output.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A"))
+          PY
+            exit 1
+          fi
+          cat "$log"
           echo '::notice title=Official release smoke tests passed::The release-derived JARs passed Minechem machine and Thaumcraft aspect tests on NeoForge.'
       - name: Generate the demo project
         run: python -m mcmodup port examples/retro-ruby -o ports/retro-ruby --plain-item ruby

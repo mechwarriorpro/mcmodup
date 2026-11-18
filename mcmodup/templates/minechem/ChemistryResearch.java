@@ -75,7 +75,7 @@ final class ChemistryResearch {
         return List.of(items.registerSimpleBlockItem(MICROSCOPE), journal);
     }
 
-    static boolean isJournal(ItemStack stack) { return stack.is(journal.get()); }
+    static boolean isJournal(ItemStack stack) { return journal != null && stack.is(journal.get()); }
 
     static String key(ItemStack stack) { return BuiltInRegistries.ITEM.getKey(stack.getItem()).toString(); }
 

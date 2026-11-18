@@ -11,6 +11,9 @@ from .inputs import InputError
 ELEMENT = "minechem/item/element/ElementEnum"
 CATEGORY = "minechem/item/element/ElementClassificationEnum"
 RADIATION = "minechem/radiation/RadiationEnum"
+ROOM_STATE = "minechem/item/ChemicalRoomStateEnum"
+RELEASE_394_SHA256 = "ea802167b760d43828a0648de3727a58d5c1f7737613123ae49f2743188cdae7"
+RELEASE_394_PROFILE = "minechem-chemistry-394"
 MOLECULE = "minechem/item/molecule/MoleculeEnum"
 CHEMICAL = "minechem/potion/PotionChemical"
 CHEMICAL_OBJECTS = {"minechem/item/element/Element": ELEMENT, "minechem/item/molecule/Molecule": MOLECULE}
@@ -39,6 +42,7 @@ class Profile:
     license: str
     attribution: str
     not_ported: str
+    source_sha256: str | None = None
 
 
 PROFILES = {profile.name: profile for profile in (
@@ -46,77 +50,118 @@ PROFILES = {profile.name: profile for profile in (
             "CC-BY-SA-3.0", "Minechem and its contributors — https://github.com/iopleke/Minechem/tree/1.6.4-5.0.5-FINAL",
             "Most material recipes, original microscope and journal graphics, journal cloning, the rest of the machines "
             "and lens chain, reactors, fluids, radiation effects, legacy power integrations, and old saves."),
+    Profile(RELEASE_394_PROFILE, "minechem", "1.7.10", (ELEMENT, MOLECULE), "minechem_chemistry_394",
+            "Minechem .394 Decomposer (Partial Port)", "Don't Be a Jerk (DBaJ) non-commercial license",
+            "Minechem and its contributors — https://github.com/iopleke/Minechem/tree/1.7.10-5.0.5.394",
+            "All decomposition recipes except iron ingots, original models and menus, fluids, radiation, synthesis, research, "
+            "other machines, legacy integrations, configuration and old saves.", RELEASE_394_SHA256),
     Profile("thaumcraft-aspects", "thaumcraft", "1.7.10", (ASPECT,), "thaumcraft_aspects", "Thaumcraft Aspects (Partial Port)",
             "Thaumcraft custom license — private use only unless authorized", "Thaumcraft by Azanor — https://www.curseforge.com/minecraft/mc-mods/thaumcraft",
             "Essentia storage and transport, research, wands, infusion, golems, magic, add-on integration, worldgen, and old saves."),
 )}
 
 
-def _definitions(info: ClassFile, *, enum: bool) -> dict[str, tuple[Instruction, ...]]:
+def _definitions(info: ClassFile, *, enum: bool, factory: bool = False) -> dict[str, tuple[Instruction, ...]]:
     owner_type = f"L{info.owner};"
-    mask = 0x4008 if enum else 0x0019  # static enum constants or public static final Aspect fields
+    mask = 0x4008 if enum else 0x0019  # static enum constants or public static final fields
     fields = {name for (name, descriptor), access in info.members.items() if descriptor == owner_type and access & mask == mask}
     if not fields or len(fields) > 512 or not info.initializer:
         raise InputError(f"No supported catalog fields and initializer in {info.owner}.")
     definitions = {}
-    start = None
+    start = 0 if factory else None
     for i, op in enumerate(info.initializer):
-        if op == Instruction("new", info.owner):
+        if not factory and op == Instruction("new", info.owner):
             start = i
-        if op.op == "putstatic" and isinstance(op.value, Symbol) and op.value.owner == info.owner and op.value.name in fields:
-            name = op.value.name
+        if op.op != "putstatic" or not isinstance(op.value, Symbol) or op.value.owner != info.owner:
+            continue
+        name = op.value.name
+        if name in fields:
             if start is None or name in definitions or op.value.descriptor != owner_type:
                 raise InputError(f"Can't recover a unique literal initialization of {info.owner}#{name}.")
             definitions[name] = info.initializer[start:i]
-            start = None
+            if not factory:
+                start = None
+        if factory:
+            # The .394 constants are straight-line assignments of literal
+            # arguments to a known static factory, not JVM enum allocations.
+            start = i + 1
     if set(definitions) != fields:
         raise InputError(f"Some catalog fields in {info.owner} have no supported initialization: {', '.join(sorted(fields - definitions)[:5])}.")
     return definitions
 
 
-def _elements(info: ClassFile) -> list[CatalogEntry]:
-    ctor = Symbol(ELEMENT, "<init>", f"({TEXT}I{TEXT}L{CATEGORY};L{CATEGORY};L{RADIATION};)V")
+def _literal_field(value: object, owner: str) -> bool:
+    return isinstance(value, Symbol) and value.owner == owner and value.descriptor == f"L{owner};"
+
+
+def _elements(info: ClassFile, *, factory: bool = False) -> list[CatalogEntry]:
+    state_type = ROOM_STATE if factory else CATEGORY
+    properties = f"L{CATEGORY};L{state_type};L{RADIATION};"
+    ctor = (Symbol(ELEMENT, "addElement", f"(I{TEXT}{TEXT}{properties})L{ELEMENT};") if factory else
+            Symbol(ELEMENT, "<init>", f"({TEXT}I{TEXT}{properties})V"))
     entries = []
-    for field, ops in _definitions(info, enum=True).items():
-        if ([op.op for op in ops] != ["new", "dup", "const", "const", "const", "getstatic", "getstatic", "getstatic", "constructor"]
+    for field, ops in _definitions(info, enum=not factory, factory=factory).items():
+        prefix, call = ([], "static") if factory else (["new", "dup"], "constructor")
+        if ([op.op for op in ops] != prefix + ["const", "const", "const", "getstatic", "getstatic", "getstatic", call]
                 or ops[-1].value != ctor):
             raise InputError(f"Unsupported Minechem element initializer: {field}.")
-        symbol, ordinal, label, category, state, radiation = (op.value for op in ops[2:-1])
+        first, second, label, category, state, radiation = (op.value for op in ops[len(prefix):-1])
+        symbol, metadata = (second, first) if factory else (first, second)
         if not (isinstance(symbol, str) and re.fullmatch(r"[A-Z][a-z]{0,3}", symbol) and symbol == field
-                and isinstance(ordinal, int) and ordinal == len(entries) and isinstance(label, str) and 0 < len(label) <= 100):
+                and type(metadata) is int and metadata == len(entries) + factory and isinstance(label, str) and 0 < len(label) <= 100):
             raise InputError(f"Invalid Minechem element name or legacy index for {field}.")
-        for constant, owner in ((category, CATEGORY), (state, CATEGORY), (radiation, RADIATION)):
-            if not (isinstance(constant, Symbol) and constant.owner == owner and constant.descriptor == f"L{owner};"):
+        for constant, owner in ((category, CATEGORY), (state, state_type), (radiation, RADIATION)):
+            if not _literal_field(constant, owner):
                 raise InputError(f"Unsupported Minechem property reference for {field}.")
         assert isinstance(category, Symbol) and isinstance(state, Symbol) and isinstance(radiation, Symbol)
+        atomic_number = len(entries) + 1
         entries.append(CatalogEntry(
             f"element_{symbol.lower()}", label, "assets/minechem/textures/items/filledTestTube.png",
-            (f"{symbol} · Atomic number {ordinal + 1}", f"{category.name} · {state.name}", f"Legacy radiation class: {radiation.name}"),
-            {"symbol": symbol, "atomic_number": ordinal + 1, "legacy_metadata": ordinal, "name": label,
+            (f"{symbol} · Atomic number {atomic_number}", f"{category.name} · {state.name}", f"Legacy radiation class: {radiation.name}"),
+            {"symbol": symbol, "atomic_number": atomic_number, "legacy_metadata": metadata, "name": label,
              "category": category.name, "state": state.name, "radiation_class": radiation.name},
         ))
     return entries
 
 
-def _molecules(info: ClassFile, elements: list[CatalogEntry]) -> list[CatalogEntry]:
+def _molecules(info: ClassFile, elements: list[CatalogEntry], *, factory: bool = False) -> list[CatalogEntry]:
     refs = {(ELEMENT, entry.legacy["symbol"]): entry.path for entry in elements}
     entries = []
-    paths = set()
-    for field, ops in _definitions(info, enum=True).items():
+    paths, metadata_seen = set(), set()
+    args = f"{TEXT}I" if factory else f"{TEXT}II"
+    tail = f"L{ROOM_STATE};[L{CHEMICAL};)L{MOLECULE};" if factory else f"[L{CHEMICAL};)V"
+    for field, ops in _definitions(info, enum=not factory, factory=factory).items():
         failure = f"Unsupported Minechem molecule declaration: {field}."
-        if (not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,63}", field) or len(ops) < 8
-                or ops[1:5] != (Instruction("dup"), Instruction("const", field),
-                                Instruction("const", len(entries)), Instruction("const", len(entries)))
-                or ops[-1].op != "constructor" or not isinstance(ops[-1].value, Symbol)):
+        if (not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,63}", field) or len(ops) < (6 if factory else 8)
+                or ops[-1].op != ("static" if factory else "constructor") or not isinstance(ops[-1].value, Symbol)):
+            raise InputError(failure)
+        metadata = len(entries)
+        if factory:
+            metadata = ops[1].value
+            if (ops[0] != Instruction("const", field) or ops[1].op != "const" or type(metadata) is not int
+                    or not 0 <= metadata <= 4095 or metadata in metadata_seen):
+                raise InputError(failure)
+        elif ops[1:5] != (Instruction("dup"), Instruction("const", field), Instruction("const", metadata), Instruction("const", metadata)):
             raise InputError(failure)
         ctor = ops[-1].value
-        channels = 6 if ctor.descriptor == f"({TEXT}IIFFFFFF[L{CHEMICAL};)V" else 0
-        if ctor != Symbol(MOLECULE, "<init>", f"({TEXT}II{'F' * channels}[L{CHEMICAL};)V"):
+        channels = 6 if ctor.descriptor == f"({args}FFFFFF{tail}" else 0
+        if ctor != Symbol(MOLECULE, "addMolecule" if factory else "<init>", f"({args}{'F' * channels}{tail}"):
             raise InputError(failure)
-        colors = ops[5:5 + channels]
+        start = 2 if factory else 5
+        colors = ops[start:start + channels]
         if len(colors) != channels or any(op.op != "float" or not 0.0 <= op.value <= 1.0 for op in colors):
             raise InputError(failure)
-        array = ops[5 + channels:-1]
+        cursor = start + channels
+        properties = {}
+        if factory:
+            if cursor >= len(ops) - 1:
+                raise InputError(failure)
+            room = ops[cursor]
+            if room.op != "getstatic" or not _literal_field(room.value, ROOM_STATE):
+                raise InputError(failure)
+            properties["state"] = room.value.name
+            cursor += 1
+        array = ops[cursor:-1]
         if (len(array) < 2 or array[0].op != "const" or not isinstance(array[0].value, int)
                 or not 1 <= array[0].value <= 128 or array[1] != Instruction("array", CHEMICAL)):
             raise InputError(failure)
@@ -145,12 +190,13 @@ def _molecules(info: ClassFile, elements: list[CatalogEntry]) -> list[CatalogEnt
         if cursor != len(array) or path in paths:
             raise InputError(failure)
         paths.add(path)
+        metadata_seen.add(metadata)
         refs[MOLECULE, field] = path
         name = re.sub(r"(?<=[a-z0-9])([A-Z])", r" \1", field).replace("_", " ").title()
         details = tuple(f"{qty} × {item.partition('_')[2]}" for item, qty in composition.items())
         entries.append(CatalogEntry(
             path, name, "assets/minechem/textures/items/filledMolecule.png", details,
-            {"legacy_field": field, "legacy_metadata": len(entries), "render_colors": [op.value for op in colors] or None},
+            {"legacy_field": field, "legacy_metadata": metadata, "render_colors": [op.value for op in colors] or None, **properties},
             tuple(composition.items()),
         ))
     return entries
@@ -214,9 +260,10 @@ def recover_catalog(profile: Profile, classes: dict[str, ClassFile]) -> list[Cat
     for owner in profile.owners:
         if owner not in classes or classes[owner].owner != owner:
             raise InputError(f"Expected catalog class {owner}.")
-    if profile.name == "minechem-chemistry":
-        elements = _elements(classes[ELEMENT])
-        return elements + _molecules(classes[MOLECULE], elements)
+    if profile.name in {"minechem-chemistry", RELEASE_394_PROFILE}:
+        factory = profile.name == RELEASE_394_PROFILE
+        elements = _elements(classes[ELEMENT], factory=factory)
+        return elements + _molecules(classes[MOLECULE], elements, factory=factory)
     if profile.name == "thaumcraft-aspects":
         return _aspects(classes[ASPECT])
     raise InputError(f"No catalog importer for {profile.name!r}.")

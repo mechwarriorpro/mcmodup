@@ -16,10 +16,10 @@ from . import JAVA_VERSION, MINECRAFT_VERSION, NEOFORGE_VERSION
 from .api import ClassLocation
 from .assets import PNG_SIGNATURE
 from .audit import ModMetadata
-from .catalogs import CatalogEntry, Profile, recover_catalog
+from .catalogs import RELEASE_394_PROFILE, CatalogEntry, Profile, recover_catalog
 from .classfiles import CLASS_LIMIT, Symbol, read_class
 from .inputs import InputError, open_input
-from .machines import BUFFERED_DECOMPOSER, FINAL_LEGACY_SHA256, JAVA_CLASSES as MACHINE_CLASSES, machine_project, machine_recipes
+from .machines import FINAL_LEGACY_SHA256, DecomposerMode, machine_classes, machine_project, machine_recipes
 from .pack import ModPack, PackMod
 from .port import _build_gradle, _metadata, write_workspace
 
@@ -69,16 +69,17 @@ def _textures(entries: list[CatalogEntry], mod: PackMod, locations: list[ClassLo
     return textures
 
 
-def _java(package: str, namespace: str, entries: list[CatalogEntry], *, machines: bool = False) -> str:
+def _java(package: str, namespace: str, entries: list[CatalogEntry], mode: DecomposerMode | None) -> str:
     definitions = []
     for entry in entries:
         keys = [f"item.{namespace}.{entry.path}.detail_{i}" for i in range(len(entry.details))]
         lore = ", ".join(f'Component.translatable("{key}")' for key in keys)
         definitions.append(f'        entries.add(items.registerSimpleItem("{entry.path}", new Item.Properties()'
                            f'.component(DataComponents.LORE, new ItemLore(List.of({lore})))));')
-    if machines:
-        definitions.extend(("        entries.addAll(ChemistryMachines.register(bus, items));",
-                            "        entries.addAll(ChemistryResearch.register(bus, items));"))
+    if mode is not None:
+        definitions.append("        entries.addAll(ChemistryMachines.register(bus, items));")
+        if mode != DecomposerMode.RELEASE_394:
+            definitions.append("        entries.addAll(ChemistryResearch.register(bus, items));")
     body = "\n".join(definitions)
     return f'''package {package};
 
@@ -139,20 +140,35 @@ def _recipe_files(namespace: str, entries: list[CatalogEntry]) -> tuple[dict[str
     return files, status
 
 
+def _decomposer_mode(profile: Profile, digest: str) -> DecomposerMode | None:
+    if profile.source_sha256 is not None and digest != profile.source_sha256:
+        raise InputError(f"{profile.name} requires the exact original archive (SHA-256 {profile.source_sha256}).")
+    if profile.name == RELEASE_394_PROFILE:
+        return DecomposerMode.RELEASE_394
+    if profile.name == "minechem-chemistry":
+        return DecomposerMode.FINAL if digest == FINAL_LEGACY_SHA256 else DecomposerMode.BATCH
+    return None
+
+
 def _project_files(profile: Profile, entries: list[CatalogEntry], textures: dict[str, bytes],
                    digest: str, dependency_summary: dict, locations: list[ClassLocation]) -> tuple[dict[str, str | bytes], int]:
     namespace = profile.namespace
     package = f"mcmodup.generated.{namespace}"
-    machines = profile.name == "minechem-chemistry"
-    buffered = machines and digest == FINAL_LEGACY_SHA256
-    version = "1.3.0-partial" if buffered else "1.2.0-partial" if machines else "1.0.0-partial"
-    machine_rules = machine_recipes(namespace, entries) if machines else []
-    if machines:
-        recipe_files, extra_locales = machine_project(namespace, package, entries, machine_rules, buffered_decomposer=buffered)
-        recipe_status = {entry.path: "powered_synthesis" for entry in entries if entry.components}
+    mode = _decomposer_mode(profile, digest)
+    version = {DecomposerMode.FINAL: "1.3.0-partial", DecomposerMode.BATCH: "1.2.0-partial"}.get(mode, "1.0.0-partial")
+    machine_rules = machine_recipes(namespace, entries, mode=mode) if mode else []
+    if mode:
+        recipe_files, extra_locales = machine_project(namespace, package, entries, machine_rules, mode=mode)
         count = len(machine_rules)
-        features = ("Recovered items, powered synthesis/decomposition, and microscope and journal discovery for the recovered recipes. "
-                    "The powered machines use NeoForge FE, not the original UE grid.")
+        if mode == DecomposerMode.RELEASE_394:
+            recipe_status = {entry.path: "catalog_only" for entry in entries}
+            recipe_status["element_fe"] = "decomposer_output"
+            features = ("Recovered .394 catalog items and an iron-ingot decomposer with upfront FE cost and a saved output queue. "
+                        "CoFH RF linkage is not provided.")
+        else:
+            recipe_status = {entry.path: "powered_synthesis" for entry in entries if entry.components}
+            features = ("Recovered items, powered synthesis/decomposition, and microscope and journal discovery for the recovered recipes. "
+                        "The powered machines use NeoForge FE, not the original UE grid.")
     else:
         recipe_files, recipe_status = _recipe_files(namespace, entries)
         extra_locales = {}
@@ -178,7 +194,7 @@ adaptations without the owner's permission. This JAR contains no legacy JVM clas
         "settings.gradle": f"pluginManagement {{ repositories {{ gradlePluginPortal() }} }}\nrootProject.name = '{namespace}'\n",
         "build.gradle": _build_gradle(namespace, package, version),
         "gradle.properties": "org.gradle.jvmargs=-Xmx2G\n",
-        f"src/main/java/{package.replace('.', '/')}/CatalogPort.java": _java(package, namespace, entries, machines=machines),
+        f"src/main/java/{package.replace('.', '/')}/CatalogPort.java": _java(package, namespace, entries, mode),
         f"{src}/META-INF/neoforge.mods.toml": _metadata(ModMetadata("", description=description), namespace, profile.title, version, profile.license),
         f"{src}/META-INF/MCModUp-NOTICE.txt": notice,
         f"{src}/data/{namespace}/mcmodup/catalog.json": _document({
@@ -186,7 +202,7 @@ adaptations without the owner's permission. This JAR contains no legacy JVM clas
             "source_sha256": digest, "target_minecraft": MINECRAFT_VERSION,
             "target_neoforge": NEOFORGE_VERSION, "not_ported": profile.not_ported,
             "catalog_classes": [location.owner for location in locations],
-            **({"decomposer_mode": BUFFERED_DECOMPOSER if buffered else "batch-adaptation"} if machines else {}),
+            **({"decomposer_mode": mode.value} if mode else {}),
             "dependencies_observed": dependency_summary,
             "machine_recipes": [recipe.describe() for recipe in machine_rules],
             "entries": [{"new_id": f"{namespace}:{entry.path}", **entry.legacy,
@@ -233,8 +249,9 @@ def _gradle(workspace: Path, timeout: int) -> Path:
     return jars[0]
 
 
-def _check_artifact(jar: Path, profile: Profile) -> None:
+def _check_artifact(jar: Path, profile: Profile, digest: str) -> None:
     namespace = profile.namespace
+    mode = _decomposer_mode(profile, digest)
     owner = f"mcmodup/generated/{namespace}/CatalogPort"
     try:
         with zipfile.ZipFile(jar) as archive:
@@ -246,12 +263,13 @@ def _check_artifact(jar: Path, profile: Profile) -> None:
         raise InputError(f"Built JAR lacks valid NeoForge catalog metadata or code: {exc}") from exc
     declared_mods = metadata.get("mods")
     expected = {owner}
-    if profile.name == "minechem-chemistry":
-        expected.update(f"mcmodup/generated/{namespace}/{name}" for name in MACHINE_CLASSES)
+    if mode:
+        expected.update(f"mcmodup/generated/{namespace}/{name}" for name in machine_classes(mode))
     top_level = {name.removesuffix(".class").split("$", 1)[0] for name in classes}
     if (top_level != expected or not all(f"{name}.class" in classes for name in expected) or info.owner != owner or Symbol("net/neoforged/fml/common/Mod") not in info.references
             or not isinstance(declared_mods, list) or len(declared_mods) != 1 or not isinstance(declared_mods[0], dict)
-            or declared_mods[0].get("modId") != namespace or not isinstance(catalog, dict) or catalog.get("full_port") is not False):
+            or declared_mods[0].get("modId") != namespace or not isinstance(catalog, dict) or catalog.get("full_port") is not False
+            or catalog.get("source_sha256") != digest or catalog.get("decomposer_mode") != (mode.value if mode else None)):
         raise InputError("Built JAR failed the generated-class, mod ID, or partial-port verification.")
 
 
@@ -266,6 +284,9 @@ def convert_catalog(pack: ModPack, mod: PackMod, profile: Profile, output: Path,
         raise InputError("Write the new JAR outside the legacy modpack.")
     if mod.audit.source_version != profile.version or profile.mod_id not in {info.mod_id.casefold() for info in mod.audit.mods}:
         raise InputError(f"This profile requires the {profile.mod_id!r} mod for Minecraft {profile.version}.")
+    with mod.path.open("rb") as stream:
+        digest = hashlib.file_digest(stream, "sha256").hexdigest()
+    _decomposer_mode(profile, digest)  # Reject an unpinned input before recovering any declarations.
     locations = [_location(pack, mod, owner) for owner in profile.owners]
     classes = {}
     for location in locations:
@@ -274,8 +295,6 @@ def convert_catalog(pack: ModPack, mod: PackMod, profile: Profile, output: Path,
                                                 capture_initializer=True)
     entries = recover_catalog(profile, classes)
     textures = _textures(entries, mod, locations)
-    with mod.path.open("rb") as stream:
-        digest = hashlib.file_digest(stream, "sha256").hexdigest()
     report = pack.report(mod.archive)["archives"][0]
     observed = {
         "declared": [{"id": entry["id"], "required": entry["required"], "status": entry["status"]}
@@ -288,7 +307,7 @@ def convert_catalog(pack: ModPack, mod: PackMod, profile: Profile, output: Path,
         files, recipe_count = _project_files(profile, entries, textures, digest, observed, locations)
         write_workspace(workspace, files)
         built = _gradle(workspace, timeout)
-        _check_artifact(built, profile)
+        _check_artifact(built, profile, digest)
         output.parent.mkdir(parents=True, exist_ok=True)
         # Don't expose a half-written result, or overwrite an output created during Gradle's run.
         staging_path = None

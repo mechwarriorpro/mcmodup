@@ -49,7 +49,7 @@ final class ChemistryMenu extends AbstractContainerMenu {
             else {
                 int n = i - FIRST_OUTPUT;
                 addSlot(new SlotItemHandler(inventory, i, 8 + (n % 9) * 18, 115 + (n / 9) * 18) {
-                    @Override public boolean isActive() { return !bufferedDecomposer() || n < FINAL_OUTPUTS; }
+                    @Override public boolean isActive() { return !bufferedDecomposer() || n < BUFFERED_OUTPUTS; }
                     @Override public boolean mayPlace(ItemStack item) { return false; }
                 });
             }

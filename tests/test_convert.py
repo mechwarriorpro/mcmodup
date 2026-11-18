@@ -11,12 +11,12 @@ from unittest.mock import patch
 import zipfile
 
 from mcmodup.api import ApiContext
-from mcmodup.catalogs import (ASPECT, CATEGORY, CHEMICAL, ELEMENT, MOLECULE, PROFILES, RADIATION, TEXT,
-                             CatalogEntry, recover_catalog)
+from mcmodup.catalogs import (ASPECT, CATEGORY, CHEMICAL, ELEMENT, MOLECULE, PROFILES, RADIATION, RELEASE_394_PROFILE,
+                             RELEASE_394_SHA256, ROOM_STATE, TEXT, CatalogEntry, recover_catalog)
 from mcmodup.classfiles import read_class
 from mcmodup.convert import _project_files, _recipe_files, convert_catalog
 from mcmodup.inputs import InputError
-from mcmodup.machines import BUFFERED_DECOMPOSER, FINAL_LEGACY_SHA256, JAVA_CLASSES, machine_recipes
+from mcmodup.machines import FINAL_LEGACY_SHA256, JAVA_CLASSES, DecomposerMode, machine_recipes
 from mcmodup.pack import open_pack
 from neoforge_smoke import check_recipes_in_game
 from test_cli import PNG, ROOT, run_cli
@@ -64,8 +64,8 @@ class CatalogClass:
         self.opcode(0xBB, self.cls(self.name))
         self.opcode(0x59)
 
-    def declare(self, field, descriptor, access):
-        self.opcode(0xB7, self.ref(10, self.name, "<init>", descriptor))
+    def declare(self, field, descriptor, access, *, factory=None):
+        self.opcode(0xB8 if factory else 0xB7, self.ref(10, self.name, factory or "<init>", descriptor))
         self.opcode(0xB3, self.ref(9, self.name, field, self.type))
         self.fields.append(u2(access, self.utf(field), self.utf(self.type), 0))
 
@@ -78,30 +78,46 @@ class CatalogClass:
                 + u2(len(self.fields)) + b"".join(self.fields) + u2(1) + method + u2(0))
 
 
-def element_class(*, invalid=False):
+def element_class(*, invalid=False, factory=False):
     data = CatalogClass(ELEMENT)
+    state = ROOM_STATE if factory else CATEGORY
     for symbol, number, label in (("H", 0, "Hydrogen"), ("O", 1, "Oxygen")):
-        data.start()
-        data.push(symbol)
-        data.push(number)
+        if factory:
+            data.push(number + 1)
+            data.push(symbol)
+        else:
+            data.start()
+            data.push(symbol)
+            data.push(number)
         data.push(label)
         data.get(CATEGORY, "nonmetal")
-        data.get(CATEGORY, "gas")
+        data.get(state, "gas")
         data.get(RADIATION, "stable")
-        data.declare(symbol, f"({TEXT}I{TEXT}L{CATEGORY};L{CATEGORY};L{RADIATION};)V", 0x4019)
+        args = f"L{CATEGORY};L{state};L{RADIATION};"
+        if factory:
+            data.declare(symbol, f"(I{TEXT}{TEXT}{args})L{ELEMENT};", 0x19, factory="addElement")
+        else:
+            data.declare(symbol, f"({TEXT}I{TEXT}{args})V", 0x4019)
     return data.bytes(invalid=invalid)
 
 
-def molecule_class():
+def molecule_class(*, factory=False, factory_name="addMolecule", second_metadata=4):
     data = CatalogClass(MOLECULE)
     for index, (name, parts) in enumerate((
         ("water", ((ELEMENT, "H", 2), (ELEMENT, "O", 1))),
         ("nested", ((MOLECULE, "water", 3),)),
     )):
-        data.start()
+        if not factory:
+            data.start()
         data.push(name)
-        data.push(index)
-        data.push(index)
+        data.push(second_metadata if factory and index else index)
+        if factory:
+            if index == 0:
+                for op in (0x0B, 0x0B, 0x0C, 0x0B, 0x0B, 0x0C):
+                    data.opcode(op)
+            data.get(ROOM_STATE, "liquid")
+        else:
+            data.push(index)
         data.push(len(parts))
         data.opcode(0xBD, data.cls(CHEMICAL))
         for i, (owner, constant, count) in enumerate(parts):
@@ -116,7 +132,11 @@ def molecule_class():
             desc = f"(L{owner};{'I' if count != 1 else ''})V"
             data.opcode(0xB7, data.ref(10, obj, "<init>", desc))
             data.opcode(0x53)
-        data.declare(name, f"({TEXT}II[L{CHEMICAL};)V", 0x4019)
+        if factory:
+            colors = "FFFFFF" if index == 0 else ""
+            data.declare(name, f"({TEXT}I{colors}L{ROOM_STATE};[L{CHEMICAL};)L{MOLECULE};", 0x19, factory=factory_name)
+        else:
+            data.declare(name, f"({TEXT}II[L{CHEMICAL};)V", 0x4019)
     return data.bytes()
 
 
@@ -163,6 +183,56 @@ class ConvertTests(unittest.TestCase):
         self.assertEqual(entries[-1].legacy["components"], ["aer", "ignis"])
         self.assertEqual(entries[-1].legacy["color"], 0xFFF663)
 
+    def test_394_static_factories_preserve_explicit_ids_without_running_code(self):
+        profile = PROFILES[RELEASE_394_PROFILE]
+        element = read_class(element_class(factory=True), capture_initializer=True)
+        molecule = read_class(molecule_class(factory=True), capture_initializer=True)
+        rows = recover_catalog(profile, {ELEMENT: element, MOLECULE: molecule})
+        self.assertEqual([row.legacy["legacy_metadata"] for row in rows], [1, 2, 0, 4])
+        self.assertEqual(rows[1].legacy["atomic_number"], 2)
+        self.assertEqual(rows[2].legacy["state"], "liquid")
+        self.assertEqual(rows[2].legacy["render_colors"], [0.0, 0.0, 1.0, 0.0, 0.0, 1.0])
+        self.assertEqual(rows[3].components, (("molecule_water", 3),))
+        for declaration in (molecule_class(factory=True, factory_name="unreviewed"),
+                            molecule_class(factory=True, second_metadata=0)):
+            broken = read_class(declaration, capture_initializer=True)
+            with self.assertRaisesRegex(InputError, "Unsupported Minechem molecule declaration"):
+                recover_catalog(profile, {ELEMENT: element, MOLECULE: broken})
+
+    def test_394_profile_is_hash_bound_and_does_not_duplicate_final_recipes(self):
+        profile = PROFILES[RELEASE_394_PROFILE]
+        iron = CatalogEntry("element_fe", "Iron", "test.png", (), {"legacy_metadata": 26})
+        water = CatalogEntry("molecule_water", "Water", "test.png", (), {}, (("element_h", 2), ("element_o", 1)))
+        files, count = _project_files(profile, [iron, water], {"test.png": PNG}, RELEASE_394_SHA256, {}, [])
+        self.assertEqual(count, 1)
+        package = "src/main/java/mcmodup/generated/minechem_chemistry_394"
+        self.assertIn("PREPAID_DECOMPOSER = true;", files[f"{package}/ChemistryMachines.java"])
+        self.assertNotIn("ChemistryResearch.register", files[f"{package}/CatalogPort.java"])
+        self.assertNotIn(f"{package}/ResearchScreens.java", files)
+        resources = "src/main/resources/data/minechem_chemistry_394"
+        self.assertNotIn(f"{resources}/recipe/synthesizer.json", files)
+        self.assertNotIn(f"{resources}/recipe/chemist_journal.json", files)
+        catalog = json.loads(files[f"{resources}/mcmodup/catalog.json"])
+        self.assertFalse(catalog["full_port"])
+        self.assertEqual(catalog["decomposer_mode"], DecomposerMode.RELEASE_394)
+        self.assertEqual(catalog["machine_recipes"][0]["energy_fe"], 1_000)
+        self.assertEqual(catalog["machine_recipes"][0]["outputs"], [{"id": "minechem_chemistry_394:element_fe", "count": 16}])
+        self.assertEqual(catalog["entries"][1]["recipe_status"], "catalog_only")
+        for digest in (FINAL_LEGACY_SHA256, "0" * 64):
+            with self.assertRaisesRegex(InputError, "requires the exact original archive"):
+                _project_files(profile, [iron, water], {}, digest, {}, [])
+        counterfeit = jar(self.root / "Minechem-1.7.10-5.0.5.394.jar", **{
+            "mcmod.info": '[{"modid":"minechem","mcversion":"1.7.10","version":"5.0.5.394"}]',
+            f"{ELEMENT}.class": element_class(factory=True),
+            f"{MOLECULE}.class": molecule_class(factory=True),
+        })
+        output = self.root / "counterfeit.jar"
+        result = run_cli("convert-jar", counterfeit, "--pack", counterfeit, "--profile", RELEASE_394_PROFILE,
+                         "--allow-partial", "-o", output)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("requires the exact original archive", result.stderr)
+        self.assertFalse(output.exists())
+
     def test_recipes_skip_ambiguous_and_oversized_inputs(self):
         entries = [CatalogEntry(path, "Test", "", (), {}, ingredients) for path, ingredients in (
             ("first", (("x", 1), ("y", 1))), ("second", (("y", 1), ("x", 1))),
@@ -190,8 +260,8 @@ class ConvertTests(unittest.TestCase):
         profile = PROFILES["minechem-chemistry"]
         path = "src/main/java/mcmodup/generated/minechem_chemistry/ChemistryMachines.java"
         report = "src/main/resources/data/minechem_chemistry/mcmodup/catalog.json"
-        for checksum, mode, enabled in ((FINAL_LEGACY_SHA256, BUFFERED_DECOMPOSER, "true"),
-                                         ("1" * 64, "batch-adaptation", "false")):
+        for checksum, mode, enabled in ((FINAL_LEGACY_SHA256, DecomposerMode.FINAL, "true"),
+                                         ("1" * 64, DecomposerMode.BATCH, "false")):
             with self.subTest(mode=mode):
                 files, _ = _project_files(profile, [], {}, checksum, {}, [])
                 self.assertIn(f"ORIGINAL_DECOMPOSER = {enabled};", files[path])
@@ -319,7 +389,8 @@ public class Aspect {
         library = jar(self.root / "pack.jar", **{"mods/dep.jar": jar(self.root / "dep.jar", **{
             "fake/Dep.class": fixture_class("fake/Dep")}).read_bytes()})
         outputs = []
-        for profile in PROFILES.values():
+        fixtures = [profile for profile in PROFILES.values() if profile.source_sha256 is None]
+        for profile in fixtures:
             with self.subTest(profile=profile.name):
                 entries = {path.relative_to(classes).as_posix(): path.read_bytes()
                            for path in (classes / profile.mod_id).rglob("*.class")}
@@ -342,5 +413,5 @@ public class Aspect {
                                      "powered_synthesis" if profile.mod_id == "minechem" else "crafting_shapeless")
                     self.assertTrue(built.read("META-INF/MCModUp-NOTICE.txt").startswith(b"PARTIAL PORT"))
                 outputs.append(output)
-        if len(outputs) == len(PROFILES):
+        if len(outputs) == len(fixtures):
             check_recipes_in_game(self.root / "smoke", outputs)

@@ -48,12 +48,13 @@ public final class ChemistryMachines {
     private static final DeferredRegister.Blocks BLOCKS = DeferredRegister.createBlocks(CatalogPort.MOD_ID);
     private static final DeferredRegister<BlockEntityType<?>> ENTITIES = DeferredRegister.create(Registries.BLOCK_ENTITY_TYPE, CatalogPort.MOD_ID);
     private static final DeferredRegister<MenuType<?>> MENUS = DeferredRegister.create(Registries.MENU, CatalogPort.MOD_ID);
-    static final DeferredBlock<MachineBlock> SYNTHESIZER =
+    static final DeferredBlock<MachineBlock> SYNTHESIZER = Machine.PREPAID_DECOMPOSER ? null :
         BLOCKS.register("synthesizer", () -> new MachineBlock(BlockBehaviour.Properties.of().strength(3.5F).requiresCorrectToolForDrops()));
     static final DeferredBlock<MachineBlock> DECOMPOSER =
         BLOCKS.register("decomposer", () -> new MachineBlock(BlockBehaviour.Properties.of().strength(3.5F).requiresCorrectToolForDrops()));
     private static final DeferredHolder<BlockEntityType<?>, BlockEntityType<Machine>> MACHINE =
-        ENTITIES.register("chemical_machine", () -> BlockEntityType.Builder.of(Machine::new, SYNTHESIZER.get(), DECOMPOSER.get()).build(null));
+        ENTITIES.register("chemical_machine", () -> BlockEntityType.Builder.of(Machine::new,
+            SYNTHESIZER == null ? new MachineBlock[]{DECOMPOSER.get()} : new MachineBlock[]{SYNTHESIZER.get(), DECOMPOSER.get()}).build(null));
     static final DeferredHolder<MenuType<?>, MenuType<ChemistryMenu>> MENU =
         MENUS.register("chemical_machine", () -> new MenuType<>(ChemistryMenu::new, FeatureFlags.DEFAULT_FLAGS));
 
@@ -64,7 +65,8 @@ public final class ChemistryMachines {
         ENTITIES.register(bus);
         MENUS.register(bus);
         bus.addListener(ChemistryMachines::registerCapabilities);
-        return List.of(items.registerSimpleBlockItem(SYNTHESIZER), items.registerSimpleBlockItem(DECOMPOSER));
+        var decomposer = items.registerSimpleBlockItem(DECOMPOSER);
+        return SYNTHESIZER == null ? List.of(decomposer) : List.of(items.registerSimpleBlockItem(SYNTHESIZER), decomposer);
     }
 
     private static void registerCapabilities(RegisterCapabilitiesEvent event) {
@@ -111,7 +113,8 @@ public final class ChemistryMachines {
         static final int CHARGE = 18, FIRST_OUTPUT = 19, JOURNAL = 37, SLOTS = JOURNAL + 1;
         static final int CAPACITY = 10_000, DUST_FE = 500;
         static final boolean ORIGINAL_DECOMPOSER = @BUFFERED_DECOMPOSER@;
-        static final int FINAL_OUTPUTS = 9;
+        static final boolean PREPAID_DECOMPOSER = @PREPAID_DECOMPOSER@;
+        static final int BUFFERED_OUTPUTS = PREPAID_DECOMPOSER ? 18 : 9;
         static final int IDLE = 0, WORKING = 1, NEED_INPUT = 2, NEED_POWER = 3, OUTPUT_FULL = 4, DONE = 5;
 
         private int selected;
@@ -161,10 +164,10 @@ public final class ChemistryMachines {
             super(MACHINE.get(), pos, state);
             boolean buffered = bufferedDecomposer();
             inputs = new RangedWrapper(inventory, 0, buffered ? 1 : FIRST_OUTPUT);
-            outputs = new RangedWrapper(inventory, FIRST_OUTPUT, buffered ? FIRST_OUTPUT + FINAL_OUTPUTS : JOURNAL);
-            power = new Power(buffered ? 20 : 200);
+            outputs = new RangedWrapper(inventory, FIRST_OUTPUT, buffered ? FIRST_OUTPUT + BUFFERED_OUTPUTS : JOURNAL);
+            power = new Power(PREPAID_DECOMPOSER ? 100 : buffered ? 20 : 200);
         }
-        boolean synthesis() { return getBlockState().is(SYNTHESIZER.get()); }
+        boolean synthesis() { return SYNTHESIZER != null && getBlockState().is(SYNTHESIZER.get()); }
         boolean bufferedDecomposer() { return ORIGINAL_DECOMPOSER && !synthesis(); }
 
         private ChemistryRecipes.Recipe currentDecomposition() {
@@ -268,8 +271,8 @@ public final class ChemistryMachines {
         private void tickBufferedDecomposer() {
             int energy = power.getEnergyStored();
             if (decompositionBuffer.isEmpty()) {
-                var recipe = energy > 0 ? currentDecomposition() : null;
-                if (recipe == null) {
+                var recipe = currentDecomposition();
+                if (recipe == null || energy < (PREPAID_DECOMPOSER ? recipe.energy() : 1)) {
                     if (status != IDLE) { status = IDLE; setChanged(); }
                     return;
                 }
@@ -282,36 +285,46 @@ public final class ChemistryMachines {
                     }
                 }
                 inventory.extractItem(0, 1, false);
+                if (PREPAID_DECOMPOSER) power.restore(energy - recipe.energy());
                 status = WORKING;
                 setChanged();
                 return; // Intake and the first output occur on different ticks.
             }
-            if (status == OUTPUT_FULL) {
+            int end = FIRST_OUTPUT + BUFFERED_OUTPUTS;
+            if (!PREPAID_DECOMPOSER && status == OUTPUT_FULL) {
                 // FINAL only clears a jam with power and an empty slot, even if
                 // an occupied matching stack could otherwise accept an item.
                 if (energy <= 0) return;
                 boolean hasEmptySlot = false;
-                for (int slot = FIRST_OUTPUT; slot < FIRST_OUTPUT + FINAL_OUTPUTS; slot++) {
+                for (int slot = FIRST_OUTPUT; slot < end; slot++) {
                     if (inventory.getStackInSlot(slot).isEmpty()) { hasEmptySlot = true; break; }
                 }
                 if (!hasEmptySlot) return;
             }
             ItemStack next = decompositionBuffer.getFirst();
-            for (int slot = FIRST_OUTPUT; slot < FIRST_OUTPUT + FINAL_OUTPUTS; slot++) {
+            int destination = -1;
+            for (int slot = FIRST_OUTPUT; slot < end; slot++) {
                 ItemStack stored = inventory.getStackInSlot(slot);
-                if (stored.isEmpty() || (ItemStack.isSameItemSameComponents(stored, next) && stored.getCount() < stored.getMaxStackSize())) {
-                    inventory.setStackInSlot(slot, next.copyWithCount(stored.getCount() + 1));
-                    next.shrink(1);
-                    if (next.isEmpty()) decompositionBuffer.removeFirst();
-                    // An already active FINAL machine continues discharging even
-                    // after its charge reaches zero; only intake/unjam need power.
-                    power.restore(Math.max(0, energy - 1));
-                    status = WORKING;
-                    setChanged();
-                    return;
+                if (stored.isEmpty()) {
+                    if (destination < 0) destination = slot;
+                    if (!PREPAID_DECOMPOSER) break; // FINAL uses the first usable slot.
+                } else if (ItemStack.isSameItemSameComponents(stored, next) && stored.getCount() < stored.getMaxStackSize()) {
+                    destination = slot;
+                    break; // .394 merges into a matching stack before using an empty slot.
                 }
             }
-            status = OUTPUT_FULL;
+            if (destination < 0) {
+                if (status != OUTPUT_FULL) { status = OUTPUT_FULL; setChanged(); }
+                return;
+            }
+            int count = inventory.getStackInSlot(destination).getCount();
+            inventory.setStackInSlot(destination, next.copyWithCount(count + 1));
+            next.shrink(1);
+            if (next.isEmpty()) decompositionBuffer.removeFirst();
+            // .394 already paid at intake; FINAL spends up to one stored unit
+            // but keeps draining a running buffer even with zero stored power.
+            if (!PREPAID_DECOMPOSER) power.restore(Math.max(0, energy - 1));
+            status = WORKING;
             setChanged();
         }
 

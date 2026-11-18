@@ -51,7 +51,7 @@ import net.minecraft.world.phys.AABB;
 public final class CatalogSmoke {
     public static final String ID = "mcmodup_smoke";
 
-    private static ItemStack stack(GameTestHelper helper, String namespace, String name) {
+    static ItemStack stack(GameTestHelper helper, String namespace, String name) {
         var id = ResourceLocation.fromNamespaceAndPath(namespace, name);
         helper.assertTrue(BuiltInRegistries.ITEM.containsKey(id), "Missing converted item " + id);
         return new ItemStack(BuiltInRegistries.ITEM.get(id));
@@ -67,17 +67,21 @@ public final class CatalogSmoke {
                 "Unexpected result " + output + " for " + match.orElseThrow().id());
     }
 
-    private static final String MINECHEM = "minechem_chemistry";
+    static final String MINECHEM = "minechem_chemistry";
     private static final boolean FINAL_BUFFER = @BUFFERED_DECOMPOSER@;
     private static final int WATER_INDEX = @WATER_INDEX@;
 
-    private record Machine(BlockEntity entity, Player user, AbstractContainerMenu menu, IItemHandler input,
+    record Machine(BlockEntity entity, Player user, AbstractContainerMenu menu, IItemHandler input,
                            IItemHandler output, IEnergyStorage power) {}
 
     private static Machine placeMachine(GameTestHelper helper, String name, boolean waterRecipe) {
+        return placeMachine(helper, BlockPos.ZERO, MINECHEM, name, waterRecipe);
+    }
+
+    static Machine placeMachine(GameTestHelper helper, BlockPos relative, String namespace, String name, boolean waterRecipe) {
         var level = helper.getLevel();
-        var pos = helper.absolutePos(BlockPos.ZERO);
-        var id = ResourceLocation.fromNamespaceAndPath(MINECHEM, name);
+        var pos = helper.absolutePos(relative);
+        var id = ResourceLocation.fromNamespaceAndPath(namespace, name);
         helper.assertTrue(BuiltInRegistries.BLOCK.containsKey(id), "Machine isn't registered: " + id);
         level.setBlockAndUpdate(pos, BuiltInRegistries.BLOCK.get(id).defaultBlockState());
         BlockEntity entity = level.getBlockEntity(pos);
@@ -96,11 +100,11 @@ public final class CatalogSmoke {
         return new Machine(entity, user, menu, input, output, power);
     }
 
-    private static void put(GameTestHelper helper, IItemHandler input, int slot, ItemStack stack) {
+    static void put(GameTestHelper helper, IItemHandler input, int slot, ItemStack stack) {
         helper.assertTrue(input.insertItem(slot, stack, false).isEmpty(), "Machine rejected " + stack);
     }
 
-    private static void charge(GameTestHelper helper, IEnergyStorage power, int amount) {
+    static void charge(GameTestHelper helper, IEnergyStorage power, int amount) {
         while (amount > 0) {
             int inserted = power.receiveEnergy(amount, false);
             helper.assertTrue(inserted > 0 && inserted <= amount, "Couldn't charge the machine");
@@ -162,7 +166,7 @@ public final class CatalogSmoke {
     }
 
     @SuppressWarnings("unchecked")
-    private static void tick(Machine machine) {
+    static void tick(Machine machine) {
         var entity = machine.entity;
         var state = entity.getBlockState();
         var ticker = ((EntityBlock) state.getBlock()).getTicker(entity.getLevel(), state, (BlockEntityType<BlockEntity>) entity.getType());

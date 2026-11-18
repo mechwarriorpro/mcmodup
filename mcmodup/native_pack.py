@@ -259,7 +259,6 @@ class UpdateInventory:
         present = {mod_id for artifact in self.installed if not artifact.partial for mod_id in artifact.ids}
         for label, item in self.entries.items():
             ids = self.native_ids(item)
-            supported = [p.name for p in PROFILES.values() if p.mod_id in item.ids and p.version == item.version]
             recipe = self.recipes.get(label)
             conversion = self.conversions.get(label)
             if self.build_options is not None:
@@ -279,7 +278,7 @@ class UpdateInventory:
                 reason = f"Translate {count} literal recipe{'s' if count != 1 else ''} from the original. Not a full-parity update."
                 if not self.allow_recipe_preview:
                     reason += " Requires --allow-recipe-preview with --output-pack."
-            elif not item.problem and supported:
+            elif not item.problem and _has_partial_profile(item):
                 status, reason = "partial", "Only a partial conversion profile exists here. It is not a replacement or add-on compatible."
             else:
                 missing = sorted(key for key in ids if not self.providers.get(key))
@@ -297,6 +296,20 @@ class UpdateInventory:
                 "allow_recipe_preview": self.allow_recipe_preview,
                 "source_bin": self.source_platform.report(),
                 "target_bin": self.target_platform.report(), "rows": rows, "warnings": self.warnings, "target_issues": self.target_issues}
+
+
+def _has_partial_profile(item: LegacyEntry) -> bool:
+    for profile in PROFILES.values():
+        if profile.mod_id not in item.ids or profile.version != item.version:
+            continue
+        if profile.source_sha256 is None:
+            return True
+        try:
+            if _digest(item.path) == profile.source_sha256:
+                return True
+        except OSError:
+            return False
+    return False
 
 
 def _legacy(path: Path, label: str, runtime: Platform | None) -> LegacyEntry:

@@ -48,11 +48,19 @@ public final class LegacyMinechemDecomposer {
                         .invoke(null, "minecraft", "iron_ingot");
                 input = itemStack.getConstructor(type("item.Item"), int.class, int.class).newInstance(iron, 1, 0);
             }
+            Object nextInput = FINAL_164 ? null : itemStack.getMethod("func_77946_l").invoke(input);
             set.invoke(machine, 0, input);
             tick.invoke(machine);
             require(get.invoke(machine, 0) != null && get.invoke(machine, 1) == null, "Unpowered decomposition began");
             long capacity = FINAL_164 ? 1 : 1000;
-            fill(machine, capacity);
+            if (FINAL_164) {
+                fill(machine, capacity);
+            } else {
+                fill(machine, capacity - 1);
+                tick.invoke(machine);
+                require(get.invoke(machine, 0) != null && energy(machine) == 999L, ".394 started below the original RF threshold");
+                fill(machine, 1);
+            }
             require(energy(machine) == capacity, "Couldn't charge original machine");
             tick.invoke(machine);
             require(get.invoke(machine, 0) == null && get.invoke(machine, 1) == null && state(machine).equals("active"), "Original did not consume the input into its buffer before producing output");
@@ -100,6 +108,38 @@ public final class LegacyMinechemDecomposer {
                 require(remaining != null && itemStack.getField("field_77994_a").getInt(remaining) == 15 && energy(replica) == 0L,
                         "Original did not preserve the remaining buffer across a jam");
                 jam = "; receive_limit=20; jam_clears_only_when_charged_and_slot_empty";
+            } else {
+                require((Integer) tile.getMethod("getMaxEnergyStored").invoke(replica) == 10_000, "Wrong original .394 energy capacity");
+                Method receive = tile.getMethod("receiveEnergy", int.class, boolean.class);
+                require((Integer) receive.invoke(replica, 1_000, true) == 100 && energy(replica) == 0L,
+                        "Wrong original .394 simulated energy reception");
+                Class<?> items = type("item.Item");
+                Method find = Class.forName("cpw.mods.fml.common.registry.GameRegistry").getMethod("findItem", String.class, String.class);
+                Object stone = find.invoke(null, "minecraft", "stone");
+                Method item = itemStack.getMethod("func_77973_b");
+                set.invoke(replica, 1, (Object) null); // Remove the previous test batch.
+                set.invoke(replica, slots - 1, itemStack.getConstructor(items, int.class, int.class).newInstance(element, 63, 26));
+                fill(replica, 1_000);
+                set.invoke(replica, 0, nextInput);
+                tick.invoke(replica);
+                tick.invoke(replica);
+                require(get.invoke(replica, 1) == null && itemStack.getField("field_77994_a").getInt(get.invoke(replica, slots - 1)) == 64,
+                        ".394 did not merge into a matching stack ahead of the first empty slot");
+                for (int slot = 1; slot < slots - 1; slot++) {
+                    set.invoke(replica, slot, itemStack.getConstructor(items, int.class, int.class).newInstance(stone, 64, 0));
+                }
+                tick.invoke(replica);
+                require(state(replica).equals("jammed") && energy(replica) == 0L, "Expected a prepaid but jammed .394 queue");
+                set.invoke(replica, slots - 1, itemStack.getConstructor(items, int.class, int.class).newInstance(element, 63, 26));
+                tick.invoke(replica);
+                require(state(replica).equals("active") && itemStack.getField("field_77994_a").getInt(get.invoke(replica, slots - 1)) == 64,
+                        ".394 should unjam with only room in a matching stack and no new charge");
+                set.invoke(replica, 1, (Object) null);
+                for (int i = 0; i < 14; i++) tick.invoke(replica);
+                Object remainder = get.invoke(replica, 1);
+                require(remainder != null && item.invoke(remainder) == element && itemStack.getField("field_77994_a").getInt(remainder) == 14 &&
+                        energy(replica) == 0L, ".394 jam did not preserve its paid remainder");
+                jam = "; receive_limit=100; merge_before_empty; paid_jam_recovers_without_charge_or_empty_slot";
             }
             System.out.println("MCMODUP_MINECHEM_ORIGINAL_PASS slots=" + slots + "; start_charge=" + capacity + "; start_cost=" + paidAtStart
                     + "; input_consumed_on_start; saved_queue_emits_16_iron_tubes_one_per_tick; remaining_charge=0" + jam);

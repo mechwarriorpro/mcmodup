@@ -1,6 +1,7 @@
 """Generate NeoForge machine logic and a recipe table for the recovered Minechem catalog."""
 
 from dataclasses import dataclass
+from enum import StrEnum
 import json
 from pathlib import Path
 
@@ -10,9 +11,19 @@ from .inputs import InputError
 
 TEMPLATES = Path(__file__).with_name("templates") / "minechem"
 FINAL_LEGACY_SHA256 = "2443c7f91351f0e6c2323636be28a6fe8697704f20edf378dfe1a9d7a3070bea"
-BUFFERED_DECOMPOSER = "5.0.5-final-output-buffer"
 JAVA_CLASSES = ("ChemistryMachines", "ChemistryMenu", "ChemistryScreen", "ChemistryRecipes",
                 "ChemistryResearch", "ResearchMenus", "ResearchScreens")
+
+
+class DecomposerMode(StrEnum):
+    BATCH = "batch-adaptation"
+    FINAL = "5.0.5-final-output-buffer"
+    RELEASE_394 = "5.0.5.394-prepaid-output-buffer"
+
+
+def machine_classes(mode: DecomposerMode) -> tuple[str, ...]:
+    # No subscriber should try to register screens for unavailable research menus.
+    return tuple(name for name in JAVA_CLASSES if mode != DecomposerMode.RELEASE_394 or name != "ResearchScreens")
 
 
 @dataclass(frozen=True)
@@ -39,7 +50,15 @@ def _decomposition(source_item: str, products: tuple[tuple[str, int], ...], sour
     return MachineRecipe("decomposer", source_item, ((source_item, 1),), products, amount, amount, source)
 
 
-def machine_recipes(namespace: str, entries: list[CatalogEntry]) -> list[MachineRecipe]:
+def machine_recipes(namespace: str, entries: list[CatalogEntry], *,
+                    mode: DecomposerMode = DecomposerMode.BATCH) -> list[MachineRecipe]:
+    if mode == DecomposerMode.RELEASE_394:
+        # Only the deterministic iron recipe has a strict .394 runtime oracle.
+        # Do not import FINAL's starter rules or infer synthesis from formulas.
+        if not any(item.path == "element_fe" and item.legacy.get("legacy_metadata") == 26 for item in entries):
+            raise InputError("The .394 decomposer requires the original iron element (metadata 26).")
+        return [MachineRecipe("decomposer", "minecraft:iron_ingot", (("minecraft:iron_ingot", 1),),
+                              ((f"{namespace}:element_fe", 16),), 1_000, 16, "5.0.5.394 Forge iron-ingot oracle")]
     recipes = []
     for entry in sorted(entries, key=lambda item: item.path):
         if not entry.components:
@@ -117,7 +136,7 @@ final class ChemistryRecipes {{
 
 
 def machine_project(namespace: str, package: str, entries: list[CatalogEntry], recipes: list[MachineRecipe], *,
-                    buffered_decomposer: bool = False) -> tuple[dict[str, str], dict[str, str]]:
+                    mode: DecomposerMode) -> tuple[dict[str, str], dict[str, str]]:
     def document(value: dict) -> str:
         return json.dumps(value, indent=2) + "\n"
 
@@ -125,10 +144,12 @@ def machine_project(namespace: str, package: str, entries: list[CatalogEntry], r
     source = "src/main/resources"
     assets = f"{source}/assets/{namespace}"
     data = f"{source}/data"
+    prepaid = mode == DecomposerMode.RELEASE_394
     files = {f"{java}/{name}.java": (TEMPLATES / f"{name}.java").read_text(encoding="utf-8")
              .replace("@PACKAGE@", package).replace("@NAMESPACE@", namespace)
-             .replace("@BUFFERED_DECOMPOSER@", str(buffered_decomposer).lower())
-             for name in JAVA_CLASSES if name != "ChemistryRecipes"}
+             .replace("@BUFFERED_DECOMPOSER@", str(mode != DecomposerMode.BATCH).lower())
+             .replace("@PREPAID_DECOMPOSER@", str(prepaid).lower())
+             for name in machine_classes(mode) if name != "ChemistryRecipes"}
     files[f"{java}/ChemistryRecipes.java"] = _java_recipes(package, namespace, entries, recipes)
     locales = {f"gui.{namespace}.{key}": label for key, label in {
         "process": "Process", "auto": "Auto", "manual": "Manual",
@@ -146,15 +167,17 @@ def machine_project(namespace: str, package: str, entries: list[CatalogEntry], r
         "journal_previous": "Select previous discovery", "journal_next": "Select next discovery",
         "load_journal": "Insert a journal to load its active synthesis recipe",
     }.items()}
-    locales[f"item.{namespace}.chemist_journal"] = "Chemist's Journal"
-    files[f"{assets}/models/item/chemist_journal.json"] = document({
-        "parent": "minecraft:item/generated", "textures": {"layer0": "minecraft:item/writable_book"},
-    })
-    files[f"{data}/{namespace}/recipe/chemist_journal.json"] = document({
-        "type": "minecraft:crafting_shapeless", "category": "misc",
-        "ingredients": [{"item": "minecraft:book"}, {"item": "minecraft:glass"}],
-        "result": {"id": f"{namespace}:chemist_journal", "count": 1},
-    })
+    if not prepaid:
+        locales[f"item.{namespace}.chemist_journal"] = "Chemist's Journal"
+        files[f"{assets}/models/item/chemist_journal.json"] = document({
+            "parent": "minecraft:item/generated", "textures": {"layer0": "minecraft:item/writable_book"},
+        })
+        files[f"{data}/{namespace}/recipe/chemist_journal.json"] = document({
+            "type": "minecraft:crafting_shapeless", "category": "misc",
+            "ingredients": [{"item": "minecraft:book"}, {"item": "minecraft:glass"}],
+            "result": {"id": f"{namespace}:chemist_journal", "count": 1},
+        })
+    blocks = []
     for block, name, texture, pattern, keys in (
         ("synthesizer", "Chemical Synthesizer", "minecraft:block/lapis_block", ["IRI", "IPI", "IDI"],
          {"I": "iron_ingot", "R": "redstone", "P": "piston", "D": "diamond"}),
@@ -164,6 +187,9 @@ def machine_project(namespace: str, package: str, entries: list[CatalogEntry], r
         ("microscope", "Microscope", "minecraft:block/polished_andesite", [" LI", " PI", "III"],
          {"I": "iron_ingot", "L": "spyglass", "P": "glass_pane"}),
     ):
+        if prepaid and block != "decomposer":
+            continue
+        blocks.append(block)
         model = f"{namespace}:block/{block}"
         identifier = f"{namespace}:{block}"
         locales[f"block.{namespace}.{block}"] = name
@@ -181,5 +207,5 @@ def machine_project(namespace: str, package: str, entries: list[CatalogEntry], r
             "result": {"id": identifier, "count": 1},
         })
     files[f"{data}/minecraft/tags/block/mineable/pickaxe.json"] = document(
-        {"replace": False, "values": [f"{namespace}:{block}" for block in ("synthesizer", "decomposer", "microscope")]})
+        {"replace": False, "values": [f"{namespace}:{block}" for block in blocks]})
     return files, locales

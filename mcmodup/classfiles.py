@@ -312,9 +312,16 @@ def _initializer(code_attr: memoryview, pool: _Pool) -> tuple[Instruction, ...]:
             ops.append(pool.literal(reader.u1() if op == 0x12 else reader.u2()))
         elif op in {0xBB, 0xBD}:
             ops.append(Instruction("new" if op == 0xBB else "array", pool.owner(reader.u2())))
-        elif op in {0xB2, 0xB3, 0xB7}:
-            ops.append(Instruction({0xB2: "getstatic", 0xB3: "putstatic", 0xB7: "constructor"}[op],
-                                   pool.member(reader.u2(), 10 if op == 0xB7 else 9)))
+        elif op in {0xB2, 0xB3, 0xB7, 0xB8}:
+            index = reader.u2()
+            # invokestatic can also target an interface. Neither catalog format
+            # treats interface calls as data-producing declarations.
+            if op == 0xB8 and 0 < index < len(pool.entries) and (pool.entries[index] or (None,))[0] == 11:
+                pool.member(index, 11)
+                ops.append(Instruction("other"))
+            else:
+                ops.append(Instruction({0xB2: "getstatic", 0xB3: "putstatic", 0xB7: "constructor", 0xB8: "static"}[op],
+                                       pool.member(index, 10 if op >= 0xB7 else 9)))
         elif op in {0x59, 0x53}:
             ops.append(Instruction("dup" if op == 0x59 else "aastore"))
         else:
