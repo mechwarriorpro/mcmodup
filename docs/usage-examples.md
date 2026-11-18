@@ -1,6 +1,6 @@
 # Porting examples: Thaumcraft and Minechem
 
-**Current capability:** There is a real JAR-to-JAR path for the two static content catalogs below. It is not a complete rewrite of either mod. For the rest of the gameplay, the dependency report and source workspace are starting points for a manual port.
+**Current capability:** `convert-jar` builds new NeoForge JARs with recovered items and adapted crafting recipes. It is not a complete rewrite of either mod. The machines, research, and other gameplay still require separate ports.
 
 Run the examples from the mcmodup checkout with Python 3.11+. Put your local inputs under `.mcmodup/` (ignored by Git). You can substitute an installed pack folder for either pack archive. A `.jar` or `.zip` pack must contain the actual mod files under `mods/` or `coremods/` (an enclosing instance folder is fine), or at the archive root. If a launcher export has only a download manifest, point to the installed instance instead.
 
@@ -10,17 +10,17 @@ With **JDK 21** on `PATH` or in `JAVA_HOME`, and Gradle network access:
 
 ```sh
 python3 -m mcmodup convert-jar .mcmodup/Minechem-1.6.4-5.0.5.FINAL.jar \
-  --pack .mcmodup/minechem-pack.zip --profile minechem-elements --allow-partial \
-  -o ports/minechem-elements-1.21.1.jar
+  --pack .mcmodup/minechem-pack.zip --profile minechem-chemistry --allow-partial \
+  -o ports/minechem-chemistry-1.21.1.jar
 
 python3 -m mcmodup convert-jar .mcmodup/Thaumcraft-1.7.10-4.2.3.5.jar \
   --pack .mcmodup/thaumcraft-pack.jar --profile thaumcraft-aspects --allow-partial \
   -o ports/thaumcraft-aspects-1.21.1.jar
 ```
 
-- **Minechem Elements:** Copies element names, atomic numbers, legacy metadata, classification, state, and radioactivity labels into the catalog. Registers individual element vials with the legacy test-tube icon. It does **not** simulate radiation or port machines, compounds, recipes, power, or fluids.
-- **Thaumcraft Aspects:** Copies built-in aspect tags, colors, and component relationships into the catalog. Registers icon items with the recovered details. This is **not** the original essentia item, research system, wands, infusion, or other magic. It does not support old Thaumcraft add-ons.
-- Both JARs have separate namespaces and a **Partial Port** creative tab. If installed on NeoForge 1.21.1, try `/give @s minechem_elements:element_h` or `/give @s thaumcraft_aspects:aspect_aer` in a **new** world. They include a notice and a `data/<namespace>/mcmodup/catalog.json` record with original-to-new data. No original code or old dependency JAR is included.
+- **Minechem Chemistry:** Imports elements, molecule formulas, and legacy metadata; registers vials using the legacy icons. Put two hydrogen vials and an oxygen vial in separate crafting slots to make a water vial. This adapts the molecule synthesizer's ingredient counts to table crafting. It does **not** recover ore or fluid processing, powered machines, reactors, radiation effects, or other legacy recipes.
+- **Thaumcraft Aspects:** Imports the built-in aspect tags, colors, and component relationships and registers icon items. Try combining `aspect_aer` and `aspect_ignis` to make `aspect_lux` in the crafting grid. This uses the original aspect relationships but is **not** a port of the research table, essentia system, or magic. It does not support old Thaumcraft add-ons.
+- Both JARs use separate namespaces and a **Partial Port** creative tab. In a **new** NeoForge 1.21.1 world get primitives from the creative tab or with `/give @s minechem_chemistry:element_h` or `/give @s thaumcraft_aspects:aspect_aer`. No survival acquisition is added. Recipes that take more than nine slots or share an identical input with another output are not generated; the item and ingredients are still listed in `data/<namespace>/mcmodup/catalog.json` with a skip reason. No original code or old dependency JAR is included.
 - Only use sources and assets you are allowed to modify. A generated Thaumcraft adaptation is for private use unless the author has given permission to distribute it. `convert-jar` does not upload an artifact or publish a release.
 
 ## Thaumcraft 4.2.3.5: Forge 1.7.10 → NeoForge 1.21.1

@@ -38,7 +38,7 @@ def _mod_selection(command: argparse.ArgumentParser, *, required: bool = False) 
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="mcmodup", description=f"Prepare legacy Forge mods for a source port to NeoForge {MINECRAFT_VERSION}.")
+        prog="mcmodup", description=f"Analyze legacy Forge mods and build supported partial ports for NeoForge {MINECRAFT_VERSION}.")
     commands = parser.add_subparsers(dest="command", required=True)
     inspect = commands.add_parser("inspect", help="audit a source directory, ZIP, or JAR without modifying it")
     inspect.add_argument("--json", action="store_true", help="emit a machine-readable audit")
@@ -109,7 +109,8 @@ def main(argv: list[str] | None = None) -> int:
             with open_pack(args.pack, _pack_context(args), args.input) as pack:
                 assert pack.selected_archive is not None
                 result = convert_catalog(pack, pack.select(pack.selected_archive), profile, args.output, args.timeout)
-            print(f"Built partial NeoForge {MINECRAFT_VERSION} JAR ({result.entries} recovered entries): {result.output}")
+            print(f"Built partial NeoForge {MINECRAFT_VERSION} JAR "
+                  f"({result.entries} recovered items, {result.recipes} adapted recipes): {result.output}")
             print(f"Not ported: {result.profile.not_ported}")
         elif args.command in {"scan-pack", "decompile-deps"}:
             with open_pack(args.input, _pack_context(args), args.mod_jar) as pack:

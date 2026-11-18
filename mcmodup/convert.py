@@ -1,5 +1,6 @@
 """Compile a new NeoForge JAR from a recognized, explicitly partial legacy profile."""
 
+from collections import Counter
 from dataclasses import dataclass
 import hashlib
 import json
@@ -27,27 +28,32 @@ class Conversion:
     output: Path
     profile: Profile
     entries: int
+    recipes: int
 
 
 def _document(value: dict) -> str:
     return json.dumps(value, ensure_ascii=False, indent=2) + "\n"
 
 
-def _location(pack: ModPack, mod: PackMod, profile: Profile) -> ClassLocation:
-    if profile.owner in mod.classes:
-        return ClassLocation(mod.path, mod.classes[profile.owner], profile.owner)
-    if Symbol(profile.owner) not in mod.references and not any(ref.owner == profile.owner for ref in mod.references):
-        raise InputError(f"Selected mod does not contain or reference the expected catalog {profile.owner}.")
-    locations = pack.dependency_locations(mod, profile.owner)
+def _location(pack: ModPack, mod: PackMod, owner: str) -> ClassLocation:
+    if owner in mod.classes:
+        return ClassLocation(mod.path, mod.classes[owner], owner)
+    if not any(ref.owner == owner for ref in mod.references):
+        raise InputError(f"Selected mod does not contain or reference the expected catalog {owner}.")
+    locations = pack.dependency_locations(mod, owner)
     if len(locations) != 1:
-        raise InputError(f"The pack must supply one unambiguous provider of {profile.owner}; found {len(locations)}.")
-    return next(iter(locations))
+        raise InputError(f"The pack must supply one unambiguous provider of {owner}; found {len(locations)}.")
+    location = next(iter(locations))
+    for label in pack.owners.get(owner, ()):
+        if pack.mods[label].path == location.file and pack.mods[label].audit.source_version != mod.audit.source_version:
+            raise InputError(f"The pack provider {label!r} for {owner} has a conflicting or unknown Minecraft version.")
+    return location
 
 
-def _textures(entries: list[CatalogEntry], mod: PackMod, location: ClassLocation) -> dict[str, bytes]:
+def _textures(entries: list[CatalogEntry], mod: PackMod, locations: list[ClassLocation]) -> dict[str, bytes]:
     remaining = {entry.texture for entry in entries}
     textures = {}
-    for path in dict.fromkeys((mod.path, location.file)):
+    for path in dict.fromkeys([mod.path, *(location.file for location in locations)]):
         if not remaining:
             break
         with open_input(path) as source:
@@ -107,17 +113,42 @@ public final class CatalogPort {{
 '''
 
 
+def _recipe_files(namespace: str, entries: list[CatalogEntry]) -> tuple[dict[str, str], dict[str, str]]:
+    """Move unambiguous small component lists to 1.21.1 crafting recipes, not legacy machines."""
+    candidates = {entry.path: tuple(sorted(entry.components)) for entry in entries if entry.components}
+    pattern_counts = Counter(candidates.values())
+    files = {}
+    status = {}
+    for path, shape in candidates.items():
+        if sum(count for _, count in shape) > 9:
+            status[path] = "too_many_crafting_slots"
+        elif pattern_counts[shape] > 1:
+            status[path] = "ambiguous_ingredients"
+        else:
+            status[path] = "crafting_shapeless"
+            files[f"src/main/resources/data/{namespace}/recipe/combine/{path}.json"] = _document({
+                "type": "minecraft:crafting_shapeless",
+                "category": "misc",
+                "ingredients": [{"item": f"{namespace}:{item}"} for item, count in shape for _ in range(count)],
+                "result": {"id": f"{namespace}:{path}", "count": 1},
+            })
+    return files, status
+
+
 def _project_files(profile: Profile, entries: list[CatalogEntry], textures: dict[str, bytes],
-                   digest: str, dependency_summary: dict, provider: ClassLocation) -> dict[str, str | bytes]:
+                   digest: str, dependency_summary: dict, locations: list[ClassLocation],
+                   recipe_files: dict[str, str], recipe_status: dict[str, str]) -> dict[str, str | bytes]:
     namespace = profile.namespace
     package = f"mcmodup.generated.{namespace}"
     version = "1.0.0-partial"
     description = (f"Automatically recovered legacy catalog data for {profile.mod_id}. "
-                   f"This is a partial mod with new IDs. Not ported: {profile.not_ported}")
+                   f"This is a partial mod with new IDs and adapted component crafting recipes. Not ported: {profile.not_ported}")
     notice = f"""PARTIAL PORT — NOT A REPLACEMENT FOR THE ORIGINAL MOD.
 
 Legacy mod: {profile.mod_id} (Minecraft {profile.version}, binary SHA-256 {digest})
-Use: catalog-only data and inventory items. Old Minecraft worlds and dependent mods are not supported.
+Use: catalog items and adapted component crafting. Primitives are available via creative inventory
+or /give. Crafting-table recipes do not reproduce legacy research or machine requirements.
+Old Minecraft worlds and dependent mods are not supported.
 Not ported: {profile.not_ported}
 
 Original data and icons: {profile.attribution}
@@ -128,6 +159,7 @@ adaptations without the owner's permission. This JAR contains no legacy JVM clas
     src = "src/main/resources"
     prefix = f"{src}/assets/{namespace}"
     files: dict[str, str | bytes] = {
+        **recipe_files,
         "settings.gradle": f"pluginManagement {{ repositories {{ gradlePluginPortal() }} }}\nrootProject.name = '{namespace}'\n",
         "build.gradle": _build_gradle(namespace, package, version),
         "gradle.properties": "org.gradle.jvmargs=-Xmx2G\n",
@@ -136,10 +168,14 @@ adaptations without the owner's permission. This JAR contains no legacy JVM clas
         f"{src}/META-INF/MCModUp-NOTICE.txt": notice,
         f"{src}/data/{namespace}/mcmodup/catalog.json": _document({
             "profile": profile.name, "full_port": False, "source_minecraft": profile.version,
-            "source_sha256": digest, "catalog_class": provider.owner, "target_minecraft": MINECRAFT_VERSION,
+            "source_sha256": digest, "target_minecraft": MINECRAFT_VERSION,
             "target_neoforge": NEOFORGE_VERSION, "not_ported": profile.not_ported,
+            "catalog_classes": [location.owner for location in locations],
             "dependencies_observed": dependency_summary,
-            "entries": [{"new_id": f"{namespace}:{entry.path}", **entry.legacy} for entry in entries],
+            "entries": [{"new_id": f"{namespace}:{entry.path}", **entry.legacy,
+                         "ingredients": [{"id": f"{namespace}:{item}", "count": count} for item, count in entry.components],
+                         "recipe_status": recipe_status.get(entry.path, "primitive")}
+                        for entry in entries],
         }),
     }
     icon_ids = {}
@@ -209,11 +245,15 @@ def convert_catalog(pack: ModPack, mod: PackMod, profile: Profile, output: Path,
         raise InputError("Write the new JAR outside the legacy modpack.")
     if mod.audit.source_version != profile.version or profile.mod_id not in {info.mod_id.casefold() for info in mod.audit.mods}:
         raise InputError(f"This profile requires the {profile.mod_id!r} mod for Minecraft {profile.version}.")
-    location = _location(pack, mod, profile)
-    with open_input(location.file) as artifact:
-        info = read_class(artifact.read(location.entry, CLASS_LIMIT), collect_references=False, capture_initializer=True)
-    entries = recover_catalog(profile, info)
-    textures = _textures(entries, mod, location)
+    locations = [_location(pack, mod, owner) for owner in profile.owners]
+    classes = {}
+    for location in locations:
+        with open_input(location.file) as artifact:
+            classes[location.owner] = read_class(artifact.read(location.entry, CLASS_LIMIT), collect_references=False,
+                                                capture_initializer=True)
+    entries = recover_catalog(profile, classes)
+    textures = _textures(entries, mod, locations)
+    recipe_files, recipe_status = _recipe_files(profile.namespace, entries)
     with mod.path.open("rb") as stream:
         digest = hashlib.file_digest(stream, "sha256").hexdigest()
     report = pack.report(mod.archive)["archives"][0]
@@ -225,7 +265,8 @@ def convert_catalog(pack: ModPack, mod: PackMod, profile: Profile, output: Path,
     }
     with tempfile.TemporaryDirectory(prefix="mcmodup-convert-") as scratch:
         workspace = Path(scratch) / "project"
-        write_workspace(workspace, _project_files(profile, entries, textures, digest, observed, location))
+        write_workspace(workspace, _project_files(profile, entries, textures, digest, observed, locations,
+                                                   recipe_files, recipe_status))
         built = _gradle(workspace, timeout)
         _check_artifact(built, profile)
         output.parent.mkdir(parents=True, exist_ok=True)
@@ -240,4 +281,4 @@ def convert_catalog(pack: ModPack, mod: PackMod, profile: Profile, output: Path,
         finally:
             if staging_path is not None:
                 staging_path.unlink(missing_ok=True)
-    return Conversion(output, profile, len(entries))
+    return Conversion(output, profile, len(entries), len(recipe_files))

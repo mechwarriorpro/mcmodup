@@ -20,7 +20,7 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
-      - name: Test CLI, bytecode indexes, and the real decompiler
+      - name: Test the CLI, decompiler, and generated NeoForge mods
         shell: bash
         run: |
           echo '::group::Download pinned test decompiler'
@@ -29,7 +29,16 @@ jobs:
             --output "$jar" https://github.com/Vineflower/vineflower/releases/download/1.12.0/vineflower-1.12.0.jar
           printf '%s  %s\n' 1dfcfe974395734fa467ce620661c7623d05ba83670de0529b1fbd63ff548b9d "$jar" | sha256sum --check
           echo '::endgroup::'
-          MCMODUP_TEST_CONVERT_BUILD=1 MCMODUP_VINEFLOWER_JAR="$jar" python -m unittest discover -s tests -v
+          log="$RUNNER_TEMP/mcmodup-tests.log"
+          if ! MCMODUP_TEST_CONVERT_BUILD=1 MCMODUP_VINEFLOWER_JAR="$jar" python -m unittest discover -s tests -v 2>&1 | tee "$log"; then
+            python - "$log" <<'PY'
+          import pathlib
+          import sys
+          log = pathlib.Path(sys.argv[1]).read_text(errors="replace")[-6000:]
+          print("::error title=Test failures::" + log.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A"))
+          PY
+            exit 1
+          fi
       - name: Check catalog recovery on the historical Minechem release
         shell: bash
         run: |
@@ -37,8 +46,21 @@ jobs:
           curl --proto '=https' --proto-redir '=https' --fail --location --retry 2 \
             --output "$jar" https://github.com/iopleke/Minechem/releases/download/1.6.4-5.0.5-FINAL/Minechem-1.6.4-5.0.5.FINAL.jar
           printf '%s  %s\n' fd14166ff62e11701978c468976980f2 "$jar" | md5sum --check
-          python -m mcmodup convert-jar "$jar" --pack "$jar" --profile minechem-elements --allow-partial \
-            -o "$RUNNER_TEMP/minechem-elements-test-only.jar"
+          # Inspect/adapt data only. Do not run or upload the historical JAR or the adaptation.
+          sha256sum "$jar"
+          python -m mcmodup convert-jar "$jar" --pack "$jar" --profile minechem-chemistry --allow-partial \
+            -o "$RUNNER_TEMP/minechem-chemistry-test-only.jar"
+          python - "$RUNNER_TEMP/minechem-chemistry-test-only.jar" <<'PY'
+          import json
+          import sys
+          import zipfile
+          with zipfile.ZipFile(sys.argv[1]) as jar:
+              catalog = json.loads(jar.read("data/minechem_chemistry/mcmodup/catalog.json"))
+              assert sum("atomic_number" in item for item in catalog["entries"]) == 113
+              assert sum(item["new_id"].startswith("minechem_chemistry:molecule_") for item in catalog["entries"]) == 147
+              assert any(item["new_id"] == "minechem_chemistry:molecule_water" and item["recipe_status"] == "crafting_shapeless"
+                         for item in catalog["entries"])
+          PY
       - name: Generate the demo project
         run: python -m mcmodup port examples/retro-ruby -o ports/retro-ruby --plain-item ruby
       - name: Build the NeoForge 1.21.1 demo

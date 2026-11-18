@@ -1,3 +1,4 @@
+import gzip
 import hashlib
 import json
 import os
@@ -11,11 +12,14 @@ from unittest.mock import patch
 import zipfile
 
 from mcmodup.api import ApiContext
-from mcmodup.catalogs import ASPECT, CATEGORY, ELEMENT, PROFILES, RADIATION, TEXT, recover_catalog
+from mcmodup.catalogs import (ASPECT, CATEGORY, CHEMICAL, ELEMENT, MOLECULE, PROFILES, RADIATION, TEXT,
+                             CatalogEntry, recover_catalog)
 from mcmodup.classfiles import read_class
-from mcmodup.convert import convert_catalog
+from mcmodup.convert import _recipe_files, convert_catalog
 from mcmodup.inputs import InputError
 from mcmodup.pack import open_pack
+from mcmodup.audit import ModMetadata
+from mcmodup.port import _build_gradle, _metadata, write_workspace
 from test_cli import PNG, ROOT, run_cli
 from test_pack import fixture_class, jar, u2
 
@@ -77,7 +81,7 @@ class CatalogClass:
 
 def element_class(*, invalid=False):
     data = CatalogClass(ELEMENT)
-    for symbol, number, label in (("H", 0, "Hydrogen"), ("He", 1, "Helium")):
+    for symbol, number, label in (("H", 0, "Hydrogen"), ("O", 1, "Oxygen")):
         data.start()
         data.push(symbol)
         data.push(number)
@@ -87,6 +91,34 @@ def element_class(*, invalid=False):
         data.get(RADIATION, "stable")
         data.declare(symbol, f"({TEXT}I{TEXT}L{CATEGORY};L{CATEGORY};L{RADIATION};)V", 0x4019)
     return data.bytes(invalid=invalid)
+
+
+def molecule_class():
+    data = CatalogClass(MOLECULE)
+    for index, (name, parts) in enumerate((
+        ("water", ((ELEMENT, "H", 2), (ELEMENT, "O", 1))),
+        ("nested", ((MOLECULE, "water", 3),)),
+    )):
+        data.start()
+        data.push(name)
+        data.push(index)
+        data.push(index)
+        data.push(len(parts))
+        data.opcode(0xBD, data.cls(CHEMICAL))
+        for i, (owner, constant, count) in enumerate(parts):
+            obj = "minechem/item/element/Element" if owner == ELEMENT else "minechem/item/molecule/Molecule"
+            data.opcode(0x59)
+            data.push(i)
+            data.opcode(0xBB, data.cls(obj))
+            data.opcode(0x59)
+            data.get(owner, constant)
+            if count != 1:
+                data.push(count)
+            desc = f"(L{owner};{'I' if count != 1 else ''})V"
+            data.opcode(0xB7, data.ref(10, obj, "<init>", desc))
+            data.opcode(0x53)
+        data.declare(name, f"({TEXT}II[L{CHEMICAL};)V", 0x4019)
+    return data.bytes()
 
 
 def aspect_class():
@@ -119,16 +151,31 @@ class ConvertTests(unittest.TestCase):
         self.root = Path(tmp.name)
 
     def test_literal_catalog_shapes(self):
-        info = read_class(element_class(), collect_references=False, capture_initializer=True)
-        entries = recover_catalog(PROFILES["minechem-elements"], info)
-        self.assertEqual([row.path for row in entries], ["element_h", "element_he"])
+        classes = {owner: read_class(data, collect_references=False, capture_initializer=True)
+                   for owner, data in ((ELEMENT, element_class()), (MOLECULE, molecule_class()), (ASPECT, aspect_class()))}
+        entries = recover_catalog(PROFILES["minechem-chemistry"], classes)
+        self.assertEqual([row.path for row in entries], ["element_h", "element_o", "molecule_water", "molecule_nested"])
         self.assertEqual(entries[1].legacy["legacy_metadata"], 1)
         self.assertEqual(entries[1].legacy["atomic_number"], 2)
-        info = read_class(aspect_class(), collect_references=False, capture_initializer=True)
-        entries = recover_catalog(PROFILES["thaumcraft-aspects"], info)
+        self.assertEqual(entries[2].components, (("element_h", 2), ("element_o", 1)))
+        self.assertEqual(entries[3].components, (("molecule_water", 3),))
+        entries = recover_catalog(PROFILES["thaumcraft-aspects"], classes)
         self.assertEqual(entries[-1].path, "aspect_lux")
         self.assertEqual(entries[-1].legacy["components"], ["aer", "ignis"])
         self.assertEqual(entries[-1].legacy["color"], 0xFFF663)
+
+    def test_recipes_skip_ambiguous_and_oversized_inputs(self):
+        entries = [CatalogEntry(path, "Test", "", (), {}, ingredients) for path, ingredients in (
+            ("first", (("x", 1), ("y", 1))), ("second", (("y", 1), ("x", 1))),
+            ("third", (("x", 10),)), ("fourth", (("x", 2),)),
+        )]
+        files, statuses = _recipe_files("test", entries)
+        self.assertEqual(statuses, {"first": "ambiguous_ingredients", "second": "ambiguous_ingredients",
+                                    "third": "too_many_crafting_slots", "fourth": "crafting_shapeless"})
+        self.assertEqual(len(files), 1)
+        recipe = json.loads(files["src/main/resources/data/test/recipe/combine/fourth.json"])
+        self.assertEqual(recipe["ingredients"], [{"item": "test:x"}] * 2)
+        self.assertEqual(recipe["result"], {"id": "test:fourth", "count": 1})
 
     def test_branches_rejected_instead_of_guessing_catalog(self):
         with self.assertRaisesRegex(InputError, "unsupported control flow"):
@@ -137,20 +184,22 @@ class ConvertTests(unittest.TestCase):
     def test_full_port_requires_explicit_partial_opt_in(self):
         output = self.root / "out.jar"
         proc = run_cli("convert-jar", self.root / "old.jar", "--pack", self.root / "pack.zip",
-                       "--profile", "minechem-elements", "-o", output)
+                       "--profile", "minechem-chemistry", "-o", output)
         self.assertEqual(proc.returncode, 1)
         self.assertIn("Full automatic conversion is not supported", proc.stderr)
         self.assertFalse(output.exists())
 
     def test_catalog_provider_is_selected_from_pack_without_copying_old_bytecode(self):
-        profile = PROFILES["minechem-elements"]
+        profile = PROFILES["minechem-chemistry"]
         consumer = jar(self.root / "legacy.jar", **{
-            "entry/Mod.class": fixture_class("entry/Mod", refs=(ELEMENT,)),
+            "entry/Mod.class": fixture_class("entry/Mod", refs=(ELEMENT, MOLECULE)),
             "mcmod.info": '[{"modid":"minechem","mcversion":"1.6.4","requiredMods":["catalog_api"]}]',
         })
         library = jar(self.root / "provider.jar", **{
             f"{ELEMENT}.class": element_class(),
+            f"{MOLECULE}.class": molecule_class(),
             "assets/minechem/textures/items/filledTestTube.png": PNG,
+            "assets/minechem/textures/items/filledMolecule.png": PNG,
             "mcmod.info": '[{"modid":"catalog_api","mcversion":"1.6.4"}]',
         })
         pack_file = jar(self.root / "pack.zip", **{"mods/provider.jar": library.read_bytes()})
@@ -161,7 +210,7 @@ class ConvertTests(unittest.TestCase):
             files = {p.relative_to(workspace / "src/main/resources").as_posix(): p.read_bytes()
                      for p in (workspace / "src/main/resources").rglob("*") if p.is_file()}
             code = next((workspace / "src/main/java").rglob("*.java")).read_text()
-            self.assertIn('registerSimpleItem("element_he"', code)
+            self.assertIn('registerSimpleItem("element_o"', code)
             owner = f"mcmodup/generated/{profile.namespace}/CatalogPort"
             files[f"{owner}.class"] = fixture_class(owner, refs=("net/neoforged/fml/common/Mod",))
             return jar(workspace / "build/libs/output.jar", **files)
@@ -174,31 +223,50 @@ class ConvertTests(unittest.TestCase):
             self.assertFalse(output.exists())
             with patch("mcmodup.convert._gradle", side_effect=fake_gradle):
                 result = convert_catalog(pack, chosen, profile, output, 15)
-            self.assertEqual(result.entries, 2)
+            self.assertEqual(result.entries, 4)
+            self.assertEqual(result.recipes, 2)
             with self.assertRaisesRegex(InputError, "Existing files"):
                 convert_catalog(pack, chosen, profile, output, 15)
         with zipfile.ZipFile(output) as archive:
-            doc = json.loads(archive.read("data/minechem_elements/mcmodup/catalog.json"))
+            doc = json.loads(archive.read("data/minechem_chemistry/mcmodup/catalog.json"))
             self.assertFalse(doc["full_port"])
             self.assertEqual(doc["source_sha256"], hashlib.sha256(consumer.read_bytes()).hexdigest())
             self.assertEqual(doc["dependencies_observed"]["declared"][0]["status"], "present")
             self.assertFalse(doc["dependencies_observed"]["bundled_legacy_dependencies"])
             self.assertNotIn(f"{ELEMENT}.class", archive.namelist())
-            self.assertEqual(archive.read("assets/minechem_elements/textures/item/catalog/0.png"), PNG)
+            self.assertNotIn(f"{MOLECULE}.class", archive.namelist())
+            self.assertEqual(archive.read("assets/minechem_chemistry/textures/item/catalog/0.png"), PNG)
+            recipe = json.loads(archive.read("data/minechem_chemistry/recipe/combine/molecule_water.json"))
+            self.assertEqual([value["item"] for value in recipe["ingredients"]],
+                             ["minechem_chemistry:element_h"] * 2 + ["minechem_chemistry:element_o"])
 
     @unittest.skipUnless(os.environ.get("MCMODUP_TEST_CONVERT_BUILD") and shutil.which("javac"),
                          "set MCMODUP_TEST_CONVERT_BUILD with JDK 21 and Gradle network access")
-    def test_compiles_two_real_neoforge_catalog_jars(self):
+    def test_compiles_two_neoforge_jars_from_synthetic_inputs(self):
         sources = {
             ELEMENT + ".java": '''package minechem.item.element;
 import minechem.radiation.RadiationEnum;
 public enum ElementEnum {
     H("Hydrogen", ElementClassificationEnum.nonmetal, ElementClassificationEnum.gas, RadiationEnum.stable),
-    He("Helium", ElementClassificationEnum.nonmetal, ElementClassificationEnum.gas, RadiationEnum.stable);
+    O("Oxygen", ElementClassificationEnum.nonmetal, ElementClassificationEnum.gas, RadiationEnum.stable);
     ElementEnum(String text, ElementClassificationEnum category, ElementClassificationEnum state, RadiationEnum radiation) {}
 }''',
             CATEGORY + ".java": "package minechem.item.element; public enum ElementClassificationEnum {nonmetal, gas}",
             RADIATION + ".java": "package minechem.radiation; public enum RadiationEnum {stable}",
+            CHEMICAL + ".java": "package minechem.potion; public class PotionChemical {}",
+            "minechem/item/element/Element.java": """package minechem.item.element;
+public class Element extends minechem.potion.PotionChemical {
+    public Element(ElementEnum element) {}
+    public Element(ElementEnum element, int amount) {}
+}""",
+            MOLECULE + ".java": """package minechem.item.molecule;
+import minechem.item.element.Element;
+import minechem.item.element.ElementEnum;
+import minechem.potion.PotionChemical;
+public enum MoleculeEnum {
+    water(0, 0, 0, 1, 0, 0.5f, 1, new Element(ElementEnum.H, 2), new Element(ElementEnum.O));
+    MoleculeEnum(int id, float r, float g, float b, float r2, float g2, float b2, PotionChemical... parts) {}
+}""",
             ASPECT + ".java": '''package thaumcraft.api.aspects;
 public class Aspect {
     public static final Aspect AIR = new Aspect("aer", 0xffff7e, "e", 1);
@@ -218,13 +286,15 @@ public class Aspect {
         subprocess.run(["javac", "--release", "8", "-d", str(classes), *to_compile], check=True, timeout=30)
         library = jar(self.root / "pack.jar", **{"mods/dep.jar": jar(self.root / "dep.jar", **{
             "fake/Dep.class": fixture_class("fake/Dep")}).read_bytes()})
+        outputs = {}
         for profile in PROFILES.values():
             with self.subTest(profile=profile.name):
                 entries = {path.relative_to(classes).as_posix(): path.read_bytes()
                            for path in (classes / profile.mod_id).rglob("*.class")}
                 entries["mcmod.info"] = json.dumps([{"modid": profile.mod_id, "mcversion": profile.version}])
-                textures = ("assets/minechem/textures/items/filledTestTube.png",) if profile.mod_id == "minechem" else (
-                    f"assets/thaumcraft/textures/aspects/{key}.png" for key in ("aer", "ignis", "lux"))
+                textures = ([f"assets/minechem/textures/items/{name}.png" for name in ("filledTestTube", "filledMolecule")]
+                            if profile.mod_id == "minechem" else [f"assets/thaumcraft/textures/aspects/{key}.png"
+                                                                 for key in ("aer", "ignis", "lux")])
                 entries.update({path: PNG for path in textures})
                 mod = jar(self.root / f"{profile.mod_id}.jar", **entries)
                 output = self.root / f"{profile.namespace}-partial.jar"
@@ -235,5 +305,44 @@ public class Aspect {
                 self.assertIn("Built partial NeoForge 1.21.1 JAR", proc.stdout)
                 with zipfile.ZipFile(output) as built:
                     raw = json.loads(built.read(f"data/{profile.namespace}/mcmodup/catalog.json"))
-                    self.assertEqual(len(raw["entries"]), 2 if profile.mod_id == "minechem" else 3)
+                    self.assertEqual(len(raw["entries"]), 3)
+                    self.assertEqual(raw["entries"][-1]["recipe_status"], "crafting_shapeless")
                     self.assertTrue(built.read("META-INF/MCModUp-NOTICE.txt").startswith(b"PARTIAL PORT"))
+                outputs[profile.namespace] = output
+        if len(outputs) == len(PROFILES):
+            self.check_recipes_in_game(outputs)
+
+    def check_recipes_in_game(self, outputs):
+        namespace = "mcmodup_smoke"
+        project = self.root / "smoke"
+        # Register the separately built JARs as runtime mods, not as source sets.
+        runtime = ", ".join(f"'fixtures/{path.name}'" for path in outputs.values())
+        gradle = _build_gradle(namespace, "mcmodup.test", "1.0.0") + f"""
+dependencies {{ runtimeOnly files({runtime}) }}
+neoForge.runs.create('gameTestServer') {{
+    type = 'gameTestServer'
+    systemProperty 'neoforge.enabledGameTestNamespaces', '{namespace}'
+}}
+"""
+        # Minimal, empty 1x1x1 structure in named NBT. GameTest requires a template even when
+        # the test only exercises registries and recipes.
+        nbt = (b"\x0a\x00\x00"                         # root compound
+               b"\x03\x00\x0bDataVersion" + struct.pack(">i", 3955)
+               + b"\x09\x00\x04size\x03" + struct.pack(">4i", 3, 1, 1, 1)
+               + b"\x09\x00\x07palette\x0a\x00\x00\x00\x01\x08\x00\x04Name\x00\x0dminecraft:air\x00"
+               + b"\x09\x00\x06blocks\x0a\x00\x00\x00\x00"
+               + b"\x09\x00\x08entities\x0a\x00\x00\x00\x00\x00")
+        fixture = (Path(__file__).with_name("fixtures") / "CatalogSmoke.java").read_bytes()
+        write_workspace(project, {
+            "settings.gradle": "rootProject.name = 'catalog-smoke'\n",
+            "build.gradle": gradle,
+            "gradle.properties": "org.gradle.jvmargs=-Xmx2G\n",
+            "src/main/java/mcmodup/test/CatalogSmoke.java": fixture,
+            "src/main/resources/META-INF/neoforge.mods.toml": _metadata(ModMetadata(""), namespace, "Catalog smoke tests", "1.0.0", "Unlicense"),
+            f"src/main/resources/data/{namespace}/structure/empty.nbt": gzip.compress(nbt, mtime=0),
+            **{f"fixtures/{path.name}": path.read_bytes() for path in outputs.values()},
+        })
+        run = subprocess.run(["./gradlew", "--no-daemon", "--console=plain", "runGameTestServer"],
+                             cwd=project, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=420)
+        self.assertEqual(run.returncode, 0, run.stdout[-8000:])
+        self.assertIn("All 2 required tests passed", run.stdout, run.stdout[-8000:])

@@ -54,7 +54,7 @@ class Symbol:
 @dataclass(frozen=True)
 class Instruction:
     op: str
-    value: str | int | Symbol | None = None
+    value: str | int | float | Symbol | None = None
 
 
 @dataclass
@@ -109,11 +109,11 @@ class _Pool:
                     value = data.decode("utf-8")
                 except UnicodeDecodeError:
                     value = data.decode("utf-8", "surrogatepass").encode("utf-16-le", "surrogatepass").decode("utf-16-le", "replace")
-            elif tag == 3:
-                value = struct.unpack(">i", reader.take(4))[0]
-            elif tag in {4, 5, 6}:
-                reader.take(8 if tag in {5, 6} else 4)
-                if tag in {5, 6} and index + 1 >= count:
+            elif tag in {3, 4}:
+                value = struct.unpack(">i" if tag == 3 else ">f", reader.take(4))[0]
+            elif tag in {5, 6}:
+                reader.take(8)
+                if index + 1 >= count:
                     raise InputError("invalid two-slot constant")
             elif tag in {7, 8, 16, 19, 20}:
                 value = reader.u2()
@@ -148,6 +148,8 @@ class _Pool:
         tag, value = self.entries[index]
         if tag == 3:
             return Instruction("const", value)
+        if tag == 4:
+            return Instruction("float", value)
         if tag == 8:
             return Instruction("const", self.utf(value))
         return Instruction("other")
@@ -236,12 +238,14 @@ def _initializer(code_attr: memoryview, pool: _Pool) -> tuple[Instruction, ...]:
     two = {0x11, 0x13, 0x14, 0x84, *range(0xB2, 0xB9), 0xBB, 0xBD, 0xC0, 0xC1}
     while not reader.end():
         op = reader.u1()
-        if 0x99 <= op <= 0xAB or op in {0xC4, *range(0xC6, 0x100)}:
+        if 0x99 <= op <= 0xAB or op == 0xC4 or op >= 0xC6:
             raise InputError(f"unsupported control flow or opcode 0x{op:02x} in catalog initializer")
         if op in {0x10, 0x11}:
             ops.append(Instruction("const", int.from_bytes(reader.take(1 if op == 0x10 else 2), "big", signed=True)))
         elif 0x02 <= op <= 0x08:
             ops.append(Instruction("const", op - 3))
+        elif 0x0B <= op <= 0x0D:
+            ops.append(Instruction("float", float(op - 0x0B)))
         elif op == 0x01:
             ops.append(Instruction("const", None))
         elif op in {0x12, 0x13}:

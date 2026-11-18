@@ -1,14 +1,14 @@
 # mcmodup
 
-Move legacy Forge mods for **Minecraft 1.5.2, 1.6.4, or 1.7.10** into a source-porting workspace for **Minecraft 1.21.1 on NeoForge**. The tool migrates simple assets and metadata and tells you where to start rewriting the mod. It doesn't make an old JAR playable on a new loader.
+Analyze legacy Forge mods for **Minecraft 1.5.2, 1.6.4, or 1.7.10** and prepare ports for **Minecraft 1.21.1 on NeoForge**. Use the dependency and API reports, generate a source workspace, or build a new JAR from a supported subset. This is not a general-purpose converter for entire mods.
 
 ## Build a new JAR from a supported part of a legacy mod
 
-`convert-jar` takes the original mod JAR and a pack folder or archive. It runs a local JDK 21/Gradle build of **new** NeoForge Java code and emits a `.jar` at the requested path. Its first profiles are explicitly partial: Minechem **elements** (1.6.4) and Thaumcraft **aspects** (1.7.10). They recover static catalog values from the legacy binary, use its icons, and register real inventory entries with tooltips and a creative tab. They **do not replace** either original mod.
+`convert-jar` takes the original mod JAR and a pack folder or archive. It runs a local JDK 21/Gradle build of **new** NeoForge Java code and emits a `.jar` at the requested path. Its first profiles are explicitly partial: Minechem **elements and molecules** (1.6.4) and Thaumcraft **aspects** (1.7.10). They recover data and icons from the legacy binary, register usable inventory items, and turn unambiguous component combinations into crafting recipes. They **do not replace** either original mod. The recipes run at a vanilla crafting table, not in the original machines or research system.
 
 ```sh
 python3 -m mcmodup convert-jar Minechem-1.6.4-5.0.5.FINAL.jar --pack MyPack.zip \
-  --profile minechem-elements --allow-partial -o ports/minechem-elements-1.21.1.jar
+  --profile minechem-chemistry --allow-partial -o ports/minechem-chemistry-1.21.1.jar
 ```
 
 The command refuses to build without `--allow-partial`. It matches known bytecode declarations rather than executing legacy code. A class may be recovered from an unambiguous pack dependency if the primary JAR references it. Other dependencies are inventoried, not bundled or ported. A missing or mismatched input, unknown declaration shape, or failed Gradle build leaves no new output JAR. First-run Gradle downloads need internet access. See [both profiles and commands](docs/usage-examples.md) for scope and licensing before using private assets.
@@ -115,7 +115,7 @@ If you only have a compiled JAR, check for an existing 1.21.1 port or obtain aut
 
 ## Build reviewed changes with GitHub Actions
 
-Add `--github-actions` to `port` to generate `.github/workflows/build.yml` inside the new workspace. After you review the workspace and confirm redistribution rights, commit only authorized source and assets to your chosen branch in a repository you control. A push or pull request runs `./gradlew build` with JDK 21 and uploads the built mod JAR under **Actions**. The workflow does not commit, push, or release files for you. This repository's CI runs the Python tests, verifies Vineflower and both conversion profiles, and builds the included demo project, not any user's pack.
+Add `--github-actions` to `port` to generate `.github/workflows/build.yml` inside the new workspace. After you review the workspace and confirm redistribution rights, commit only authorized source and assets to your chosen branch in a repository you control. A push or pull request runs `./gradlew build` with JDK 21 and uploads the built mod JAR under **Actions**. The workflow does not commit, push, or release files for you. This repository's CI runs the Python tests, exercises Vineflower against a test dependency, builds both profiles from synthetic inputs, and runs their crafting recipes on a NeoForge GameTest server. It also checks the historical Minechem release, but only the included demo project's JAR is uploaded. It does not download the original Thaumcraft release or build any user's pack.
 
 ## Development
 
