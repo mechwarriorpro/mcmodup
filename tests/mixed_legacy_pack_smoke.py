@@ -39,8 +39,8 @@ ORIGINALS = (
     Original("1.6.4", "Voltz Atomic Science", "atomicscience.jar", ("atomicscience",)),
     Original("1.7.10", "Thaumcraft 4", "Thaumcraft-1.7.10-4.2.3.5.jar", ("thaumcraft",)),
     Original("1.6.4", "GeoStrata", "GeoStrata 1.6 v23b.zip", ("geostrata",)),
-    Original("1.6.4", "Mimicry", "Mimicry 1.6.4_965_1.3.9_final.zip", ()),
-    Original("1.6.4", "Random Things", "Random_Things_v._1.9__MC_1.6.4_.jar", ()),
+    Original("1.6.4", "Mimicry", "Mimicry 1.6.4_965_1.3.9_final.zip", ("mimicry",)),
+    Original("1.6.4", "Random Things", "Random_Things_v._1.9__MC_1.6.4_.jar", ("randomthings",)),
 )
 VOLTZ_FILES = (
     "mods/icbm-1.4.1.344.jar", "mods/atomicscience.jar",
@@ -82,7 +82,11 @@ def originals(root: Path) -> None:
     with ZipFile(root / "voltz.zip") as pack:
         for member in VOLTZ_FILES:
             (source / "mods/1.6.4" / Path(member).name).write_bytes(pack.read(member))
-    assert file_digest(source / ORIGINALS[3].label) == "80cf5bd9d485377ecde3822154a5db47804fab3e8f78c388cfcf529239655938"
+    voltz_pins = {
+        "icbm-1.4.1.344.jar": "34a0efec6a1d078d2d0f1b7681c1040d4d68cb096330f4db79bf569a00f75130",
+        "atomicscience.jar": "80cf5bd9d485377ecde3822154a5db47804fab3e8f78c388cfcf529239655938",
+    }
+    assert all(file_digest(source / "mods/1.6.4" / name) == expected for name, expected in voltz_pins.items())
     assert {path.name for path in (target / "mods").iterdir()} == PACK_MODS
     before = fingerprints(source, target)
     code, catalog = run("update-pack", source, "--target", target)
@@ -92,9 +96,7 @@ def originals(root: Path) -> None:
              "| Original | Minecraft | IDs found | SHA-256 | Updater catalog result |", "| --- | --- | --- | --- | --- |"]
     for artifact in ORIGINALS:
         row = lookup[artifact.label]
-        assert row["minecraft"] == artifact.minecraft and row["mods"], row
-        if artifact.ids:
-            assert set(artifact.ids) <= set(row["mods"]), row
+        assert row["minecraft"] == artifact.minecraft and set(row["mods"]) == set(artifact.ids), row
         checksum = before[source / artifact.label]
         ids = ", ".join(row["mods"]).replace("|", "\\|")
         lines.append(f"| {artifact.name} (`{artifact.filename}`) | {artifact.minecraft} | {ids} | `{checksum}` | {row['status']}: {row['reason']} |")
@@ -119,11 +121,24 @@ def originals(root: Path) -> None:
         assert {row["archive"] for row in conflict["archives"]} == {artifact.label for artifact in ORIGINALS[:2]}, conflict
         assert any("illegal NeoForge mod ID" in reason and "icbm|explosion" in reason and "icbm|sentry" in reason
                    for reason in report["problems"]), report["problems"]
+        if not preview:
+            for artifact in ORIGINALS[2:4]:
+                rows = report["legacy_requirements"]
+                declarations = [row for row in rows if row["consumer"] == artifact.label and row["id"] == "CalclaviaCore"]
+                assert any(row["status"] == "present" and row["provider"]["minecraft"] == "1.6.4" and
+                           row["provider"]["sha256"] == "0372d373993769264da00cef69c3814f89295856d5f14dd570d6a7aaac6c5585"
+                           for row in declarations), declarations
+                providers = report["legacy_class_providers"][artifact.label]["providers"]
+                assert any(row["sha256"] == "709d41f4d4345681170b01f5e15142b5843c5750765e2dff42bb9233b825b7b6"
+                           for row in providers), providers
+            note("Voltz dependency evidence", "Both selected Voltz archives resolve their CalclaviaCore declaration and reference classes from the pinned 1.6.4 Universal Electricity JAR. This is static evidence, not native linkage.")
         (root / f"{out.name}.json").write_text(json.dumps(report, indent=2) + "\n")
-        for reason in report["problems"]:
-            note("Combined plan blocked", reason)
+        if not preview:
+            for reason in report["problems"]:
+                note("Combined plan blocked", reason)
     assert fingerprints(source, target) == before, "Planning modified a source or target file"
-    summary([*lines, "", "**Combined plan blocked; no pack or converted JAR was staged.** The same selection also blocks with recipe previews opted in.",
+    summary([*lines, "", "**Combined plan blocked; 0 of 8 originals produced a converted JAR and no pack was staged.** "
+             "The same selection also blocks with recipe previews opted in.",
              f"The two original Minechem archives share `minechem`, {classes} `minechem/` class names, and {assets} `assets/minechem/` paths.",
              "The single Voltz ICBM archive still accounts for all three modules. The legacy archives were inspected, not executed.", ""])
 

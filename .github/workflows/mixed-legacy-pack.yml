@@ -60,15 +60,15 @@ jobs:
             printf '%s  %s\n' "$4" "$1" | "$3" --check
           }
           download voltz.zip https://raw.githubusercontent.com/TechnicPack/Technic/8c4e20f9225bcd6612fca4cb29c53366317d3e13/servers/voltz/Voltz_Server_v3.0.0c.zip sha256sum 2eda607746a22edbf45612243adce37a876251e36d46c692a48344fe98eec84e 76658094
-          download legacy/mods/1.6.4/Minechem-1.6.4-5.0.5.FINAL.jar https://edge.forgecdn.net/files/2214/881/Minechem-1.6.4-5.0.5.FINAL.jar sha1sum ac96f0fb50b967bff46f098cde941e1bd49bab23 1410748
-          download legacy/mods/1.7.10/Minechem-1.7.10-5.0.5.394.jar https://edge.forgecdn.net/files/2230/655/Minechem-1.7.10-5.0.5.394.jar sha1sum 2eadb1feda919c00fac2920cf08627ddb5cc59ce 1090147
-          download legacy/mods/1.7.10/Thaumcraft-1.7.10-4.2.3.5.jar https://edge.forgecdn.net/files/2227/552/Thaumcraft-1.7.10-4.2.3.5.jar sha1sum 3f51b473f9ef7a94d1a9e01f6784af1cfd811649 12565807
+          download legacy/mods/1.6.4/Minechem-1.6.4-5.0.5.FINAL.jar https://edge.forgecdn.net/files/2214/881/Minechem-1.6.4-5.0.5.FINAL.jar sha256sum 2443c7f91351f0e6c2323636be28a6fe8697704f20edf378dfe1a9d7a3070bea 1410748
+          download legacy/mods/1.7.10/Minechem-1.7.10-5.0.5.394.jar https://edge.forgecdn.net/files/2230/655/Minechem-1.7.10-5.0.5.394.jar sha256sum ea802167b760d43828a0648de3727a58d5c1f7737613123ae49f2743188cdae7 1090147
+          download legacy/mods/1.7.10/Thaumcraft-1.7.10-4.2.3.5.jar https://edge.forgecdn.net/files/2227/552/Thaumcraft-1.7.10-4.2.3.5.jar sha256sum 3dba9786966974701578a658d1bb369bf35bdf5f363079f5ac9c4910a39113be 12565807
           download legacy/mods/1.7.10/Baubles-1.7.10-1.0.1.10.jar https://edge.forgecdn.net/files/2224/857/Baubles-1.7.10-1.0.1.10.jar sha1sum b6e6ce2d0476d1d53686440f2fc70d2a27e289c2 95415
           download 'legacy/mods/1.7.10/CoFHLib-[1.7.10]1.0.1-151.jar' https://edge.forgecdn.net/files/2233/832/CoFHLib-%5b1.7.10%5d1.0.1-151.jar sha1sum 20617e7822e0217cd091867db681d940f682235b 271274
-          download 'legacy/mods/1.6.4/Mimicry 1.6.4_965_1.3.9_final.zip' https://edge.forgecdn.net/files/2214/561/Mimicry%201.6.4_965_1.3.9_final.zip sha1sum 595c012ed1253c3a29e3bfdb91607a7b94c2411a 128106
-          download legacy/mods/1.6.4/Random_Things_v._1.9__MC_1.6.4_.jar https://edge.forgecdn.net/files/787/782/Random_Things_v._1.9__MC_1.6.4_.jar sha1sum 9b2ed23513cf73d429e557bffcd1f97fd8094bd1 1396811
+          download 'legacy/mods/1.6.4/Mimicry 1.6.4_965_1.3.9_final.zip' https://edge.forgecdn.net/files/2214/561/Mimicry%201.6.4_965_1.3.9_final.zip sha256sum 4a3d6e72be0ae0f8929c11890dcf96b49750db48908c5bd5b5957d2d9542eada 128106
+          download legacy/mods/1.6.4/Random_Things_v._1.9__MC_1.6.4_.jar https://edge.forgecdn.net/files/787/782/Random_Things_v._1.9__MC_1.6.4_.jar sha256sum cc3b350aed5a41b48da68ebcea27cb156c4eed6347bf060bbdbb00b5109faa49 1396811
           # Paired originals from FTB's Monster 1.1.2 manifest (pack 66, version 194).
-          download 'legacy/mods/1.6.4/GeoStrata 1.6 v23b.zip' https://dist.modpacks.ch/Reika/GeoStrata/Gamma/a4c4318549d1ac6de878c5dce95ac9fa3f55dbb6 sha1sum a4c4318549d1ac6de878c5dce95ac9fa3f55dbb6 1138465
+          download 'legacy/mods/1.6.4/GeoStrata 1.6 v23b.zip' https://dist.modpacks.ch/Reika/GeoStrata/Gamma/a4c4318549d1ac6de878c5dce95ac9fa3f55dbb6 sha256sum afd68aa6ca1222a0f53ee25323c18bd3c2473c346a15345b216c9ef1042a0414 1138465
           download 'legacy/mods/1.6.4/DragonAPI 1.6 v23b.zip' https://dist.modpacks.ch/Reika/DragonAPI/release/2dbd889f480fe39c094575c8045b4f4652a33aa3 sha1sum 2dbd889f480fe39c094575c8045b4f4652a33aa3 1209419
       - name: Run the updater on the whole original selection
         run: python -m mixed_legacy_pack_smoke "$RUNNER_TEMP/mixed-legacy-pack" originals

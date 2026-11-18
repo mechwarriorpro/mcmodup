@@ -33,7 +33,7 @@ python3 -m mcmodup update-pack LegacyPack --target NeoForgePack \
 # Write a fresh instance with the selected mods, their add-ons/dependencies, and target runtime files
 python3 -m mcmodup update-pack LegacyPack --target NeoForgePack \
   --mod mods/1.7.10/OldMod.jar --mod coremods/Other.jar \
-  --output-pack .mcmodup/NewPack
+  --include-native cb_multipart --output-pack .mcmodup/NewPack
 
 # Alternatively, keep the target's other active mods and stage a replacement mods/ folder only
 python3 -m mcmodup update-pack LegacyPack --target NeoForgePack \
@@ -46,6 +46,7 @@ python3 -m mcmodup pack-ui LegacyPack --target NeoForgePack --output-pack .mcmod
 Both output modes require a new directory outside the input packs. Neither modifies either input. Open the local workbench URL (default `http://127.0.0.1:8765/`) to review the plan before writing; omit the destination for read-only use. Omit `--mod` in the CLI to list available selections.
 
 - **`--output-pack`** does not inherit unrelated target mods, disabled files, or configs. It copies a stock NeoForge server install's relative launch-argument files and the local libraries referenced by those files and NeoForge’s runtime locators. Start from the new folder with Java 21 using the command in `INSTALL.txt`. For a `bin/` target, it writes a new **game directory** with the identified modern JARs; point an existing 1.21.1 NeoForge launcher profile at it. It is not a standalone launcher or an installed server in this layout.
+- To carry an installed native mod into the new pack, pass **`--include-native MOD_ID`** (repeatable, CLI only). In the example, install the native CB Multipart JAR in `NeoForgePack/mods/` first, or omit the flag if you don't want it. The updater requires exactly one compatible installed JAR for that ID and copies the entire archive unchanged, including its other mod IDs. It resolves required dependencies such as CodeChickenLib normally and reports the explicit copy as `include-native`, not `convert`. You can also use this with no `--mod` selections for a native-only pack.
 - **`-o` / `--output`** keeps the existing mods-swap behavior. It stages the target's complete `mods/` folder and does not copy the runtime. A leftover non-native target mod is a blocker unless the plan replaces all of its IDs. Close the game, back up `mods/`, then **replace** that folder; do not merge it with stale JARs.
 
 `update-report.json` records file origins and SHA-256s, legacy declarations and class owners, native constraints and provider choices, and any runtime files copied. No saves, credentials, configs or license/EULA acceptance are copied. Start in a fresh world. A ready or staged plan is not a boot check, proof of saved-world migration, or proof of gameplay or resource parity.
@@ -59,7 +60,7 @@ python3 -m mcmodup update-pack LegacyPack --target NeoForgePack \
   --mod mods/Original.jar --allow-recipe-preview --output-pack .mcmodup/RecipePreview
 ```
 
-The same flag works with `pack-ui` and `--output-pack`. A recipe preview is not selected by “Select available,” cannot replace a target's installed mods folder, and cannot satisfy a native dependency or substitute for a full mod update. If a compatible local native build is available, the updater still prefers that build. For an original-only test, use a clean target without any replacement JARs in its scanned folders.
+The same flag works with `pack-ui` and `--output-pack`. A recipe preview is not selected by “Select available,” cannot be combined with `--include-native`, cannot replace a target's installed mods folder, and cannot satisfy a native dependency or substitute for a full mod update. If a compatible local native build is available, the updater still prefers that build. For an original-only test, use a clean target without any replacement JARs in its scanned folders.
 
 The translator reads bytecode without running it. It needs exact Minecraft release evidence and checks every method in a small, single-class FML archive. It supports literal shaped and shapeless recipes using a limited set of vanilla items, plus some numeric-ID furnace registrations. It maps known wool metadata to the corresponding modern colored items. Unknown calls, nontrivial initialization, custom assets, real dependency or network handlers, and unsupported item identities block translation. The result is a deterministic `lowcodefml` JAR, with no legacy classes. `META-INF/mcmodup/recipe-conversion.json` records the original SHA-256, recipe counts, and limitations. Generating it requires Python, not a Java compiler; launching the target requires Java 21.
 
@@ -75,7 +76,11 @@ The [original recipe workflow](../.github/workflows/recipe-conversion.yml) downl
 
 These hand-picked previews do not count toward full parity. The [random original-only benchmark](https://github.com/mechwarriorpro/mcmodup/actions/runs/44352029826) is separate: 0 of 3 originals produced a JAR in the normal updater. Two official native controls staged and booted; neither is an automatic conversion.
 
-## Different versions of the same dependency
+## Different releases of selected originals and their dependencies
+
+Keep legacy originals grouped by Minecraft release (for example, `mods/1.6.4/` and `mods/1.7.10/`). The updater resolves release evidence per archive; this is a workspace layout, not an old Forge installation that runs both releases. If distinct selected originals share an ID, the planner reports `legacy_selection_conflicts` and blocks staging even when one modern JAR matches. It will not silently count one native build as preserving both originals. Running both would require a native implementation that keeps their class, registry, resource, and save identities separate, or a verified combined migration. A global ID alias alone cannot achieve this.
+
+For legacy IDs with characters not allowed by NeoForge, such as `ICBM|Explosion`, the planner reports the invalid native ID. A reviewed map can name the corresponding IDs in an actual native port; it does not update the underlying module code.
 
 The planner resolves required old declarations per consumer. For example, an add-on demanding an exact Forge Multipart release is not automatically added when you select a *different* Multipart release. The report records each compatible local original provider and its digest, or records why it could not identify one. Old ranges are **not** applied to modern JARs. The native add-ons' declarations define which modern versions can run together.
 
@@ -120,5 +125,20 @@ The pack tests cover nested `mods/` and `coremods/`, launcher-era Forge/Minecraf
 In [the passing release smoke](https://github.com/mechwarriorpro/mcmodup/actions/runs/44342366654), the 1.7.10 inputs included Thaumic Energistics `1.1.3.0`, AE2 `rv3-beta-6`, Thaumcraft `4.2.3.5`, and Forge Multipart `1.2.0.345`. The updater staged the matching Reforged stack listed above, CB Multipart `3.5.0.155`, and CodeChickenLib `4.6.1.526` with a clean NeoForge `21.1.267` server runtime. The copied server reached its ready state and shut down cleanly. Separate GameTests using the same mod JARs verified that an AE2-backed cell preserved 37 units of fire essentia through serialization and reload, and that CB Microblock's item and diamond saw recipe registered.
 
 No input or staged JARs were published. These checks do not establish compatibility with Thaumcraft Reload or other forks, full gameplay or asset parity, graphical client behavior, or migration of an existing world.
+
+### Mixed original pack: Minechem, Voltz, Thaumcraft 4, GeoStrata, Mimicry and Random Things
+
+The [mixed-pack workflow](../.github/workflows/mixed-legacy-pack.yml) pins the actual original archives and runs **one** `update-pack` plan on all eight, with CB Multipart explicitly included. It supplies no existing ports for the legacy selections. The historical references are inspected without executing them or publishing any mod binaries. The selected filenames are:
+
+| Minecraft | Archives |
+| --- | --- |
+| 1.6.4 | `Minechem-1.6.4-5.0.5.FINAL.jar`, `icbm-1.4.1.344.jar`, `atomicscience.jar`, `GeoStrata 1.6 v23b.zip`, `Mimicry 1.6.4_965_1.3.9_final.zip`, `Random_Things_v._1.9__MC_1.6.4_.jar` |
+| 1.7.10 | `Minechem-1.7.10-5.0.5.394.jar`, `Thaumcraft-1.7.10-4.2.3.5.jar` |
+
+Use `--mod mods/<version>/<filename>` once for each of the eight original archives and `--include-native cb_multipart --output-pack NEW_DIR --json`. The ICBM and Atomic Science JARs come from the exact Voltz 3.0.0c distribution. The former contains `ICBM`, `ICBM|Explosion` and `ICBM|Sentry`. The GeoStrata and DragonAPI V23b originals are paired in FTB's Monster 1.1.2 manifest.
+
+In the [recorded run](https://github.com/mechwarriorpro/mcmodup/actions/runs/44355012705), **the whole pack was blocked; 0 of 8 originals produced a converted JAR.** Opting into recipe previews did not change that result. The two Minechem originals share the same mod ID, 223 class names under `minechem/`, and 118 paths under `assets/minechem/`. The two ICBM IDs with `|` also need explicit native counterparts. Neither a rename nor the partial Minechem and Thaumcraft profiles preserve the original executable behavior.
+
+**Separate native control:** CB Multipart `3.5.0.155` and CodeChickenLib `4.6.1.526` were copied byte-for-byte and booted on stock NeoForge `21.1.267`. A test-only server crafted two stone covers with the saw, checked multipart slot occupancy, and restored the item component and placed covers through serialization. No converted mods were loaded. This does not verify their interaction with microblocks, client rendering, or legacy saves.
 
 If no native target exists, use a [reviewed source build](source-port-builds.md) or [recover MCP-named references and plan the port](mapped-decompilation.md). The partial `convert-jar` profiles are not drop-in replacements.

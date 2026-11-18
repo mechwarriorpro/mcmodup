@@ -267,6 +267,29 @@ class RecipeConversionTests(unittest.TestCase):
             stage(candidate, self.root / "stale")
         self.assertFalse((self.root / "stale").exists())
 
+    def test_explicit_recipe_release_is_not_replaced_by_a_different_runtime(self):
+        source, target = self.root / "legacy", self.root / "target"
+        setup_platform(source, "1.6.4")
+        setup_platform(target)
+        typed = RecipeClass(source_version="1.7.10")
+        typed.craft(shape=("WL",))
+        typed.init("1.7.10")
+        plain = RecipeClass(mod_id="undated")
+        plain.craft(shape=("WL",))
+        plain.init("1.7.10")
+        label = "mods/1.7.10/Exact.jar"
+        ungrouped = "mods/Ungrouped.jar"
+        undated = "mods/1.7.10/Undated.jar"
+        for path, fixture in ((label, typed), (ungrouped, typed), (undated, plain)):
+            recipe_archive(source / path, fixture)
+        state = inventory(source, target, allow_recipe_preview=True)
+        self.assertEqual(state.source_platform.legacy, "1.6.4")
+        self.assertEqual(state.conversions[label].conversion.source_version, "1.7.10")
+        self.assertTrue(plan(state, [label], output_pack=True).report["ready"])
+        for path in (ungrouped, undated):
+            self.assertIn("exact original Minecraft version", state.conversion_issues[path])
+            self.assertFalse(plan(state, [path], output_pack=True).report["ready"])
+
     def test_version_evidence_and_real_native_provider_take_priority(self):
         source, target = self.root / "legacy", self.root / "target"
         setup_platform(target)

@@ -432,14 +432,26 @@ def inventory(source: Path, target: Path, build_options: BuildOptions | None = N
 def _with_recipe_conversions(state: UpdateInventory) -> None:
     for label, item in state.entries.items():
         ids = state.native_ids(item)
-        if (item.problem or not item.audit or item.audit.corrupt_classes or len(item.audit.classes) != 1 or
-                not label.startswith("mods/") or not ids or all(state.providers.get(key) for key in ids)):
+        if item.problem or not item.audit or not ids or all(state.providers.get(key) for key in ids):
+            continue
+        count = len(item.audit.classes)
+        if not label.startswith("mods/"):
+            state.conversion_issues[label] = "The literal recipe converter does not handle coremods."
+            continue
+        if item.audit.corrupt_classes or count != 1:
+            state.conversion_issues[label] = (f"Indexed {count} classes ({item.audit.corrupt_classes} unreadable). "
+                                              "Automatic translation supports only a single-class literal recipe archive, "
+                                              "not general legacy bytecode.")
             continue
         runtime_version = state.source_platform.legacy
-        if (item.version not in SOURCE_VERSIONS or (runtime_version and runtime_version != item.version) or
-                (runtime_version != item.version and not any(e.version == item.version and e.kind == "declared"
-                                                            for e in item.audit.audit.version_evidence))):
-            state.conversion_issues[label] = "The exact original Minecraft version needs a local runtime or a mod declaration."
+        evidence = {e.kind for e in item.audit.audit.version_evidence if e.version == item.version}
+        # A matching runtime is sufficient, but a mixed workspace can have a
+        # different loader in bin/. Require both a declaration and an explicitly
+        # versioned path before using a different release's symbols in that case.
+        if item.version not in SOURCE_VERSIONS or (runtime_version != item.version and (
+                "declared" not in evidence or (runtime_version and "versioned folder" not in evidence))):
+            state.conversion_issues[label] = ("The exact original Minecraft version needs a matching local runtime or a mod declaration. "
+                                              "When bin/ has another release, also use a matching versioned mods/ folder.")
             continue
         try:
             conversion = analyze_recipes(item.path, item.version)
