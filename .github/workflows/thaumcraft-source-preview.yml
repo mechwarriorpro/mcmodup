@@ -2,6 +2,11 @@ name: Build exact Thaumcraft 4 native preview
 
 on:
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      with-tinkerer:
+        type: boolean
+        default: false
   push:
     paths:
       - '.github/workflows/thaumcraft-source-preview.yml'
@@ -31,6 +36,8 @@ jobs:
           java-version: '21'
       - name: Build and exercise exact Thaumcraft from source without publishing inputs or outputs
         shell: bash
+        env:
+          TEST_TINKERER: ${{ inputs.with-tinkerer && 'true' || 'false' }}
         run: |
           scratch=$(mktemp -d "$RUNNER_TEMP/tc4-preview.XXXXXX")
           trap 'rm -rf -- "$scratch"' EXIT
@@ -54,13 +61,23 @@ jobs:
             https://maven.neoforged.net/releases/net/neoforged/neoforge/21.1.267/neoforge-21.1.267-universal.jar
           curl "${curl_opts[@]}" -o "$target/lib/architectury-neoforge-13.0.11.jar" \
             https://maven.architectury.dev/dev/architectury/architectury-neoforge/13.0.11/architectury-neoforge-13.0.11.jar
-          python -m mcmodup update-pack "$old" --target "$target" --source-ports examples/thaumcraft4-reload-preview.json \
+          recipe=examples/thaumcraft4-reload-preview.json
+          smoke=()
+          if [[ "$TEST_TINKERER" == true ]]; then
+            curl "${curl_opts[@]}" -o "$old/mods/ThaumicTinkerer-2.13.0.jar" \
+              https://github.com/GTNewHorizons/ThaumicTinkerer/releases/download/2.13.0/ThaumicTinkerer-2.13.0.jar
+            curl "${curl_opts[@]}" -o "$scratch/tinkerer.zip" \
+              https://codeload.github.com/acak1221/Thaumic-Tinkerer-1.21.1/zip/c2e67665446ffada85ec9342384f578875cabb12
+            recipe=$(PYTHONPATH=.:tests python -m prepare_tinkerer_preview "$scratch/tinkerer.zip" "$scratch/pair")
+            smoke+=(--with-tinkerer)
+          fi
+          python -m mcmodup update-pack "$old" --target "$target" --source-ports "$recipe" \
             --allow-preview-ports --json
           python -m mcmodup update-pack "$old" --target "$target" --mod "mods/$(basename "$old_jar")" \
-            --source-ports examples/thaumcraft4-reload-preview.json --allow-preview-ports -o "$scratch/staged"
-          evidence=$(PYTHONPATH=.:tests python -m thaumcraft_pack_smoke "$scratch/staged")
+            --source-ports "$recipe" --allow-preview-ports -o "$scratch/staged"
+          evidence=$(PYTHONPATH=.:tests python -m thaumcraft_pack_smoke "$scratch/staged" "${smoke[@]}")
           printf '%s\n' "$evidence" | tee -a "$GITHUB_STEP_SUMMARY"
-          printf '::notice title=Native Thaumcraft preview verified::%s Not full parity or add-on compatibility.\n' "${evidence%%$'\n'*}"
+          printf '::notice title=Native Thaumcraft preview verified::%s Staged runtime checks passed; this does not certify full parity.\n' "${evidence//$'\n'/ }"
           BUILD
           result=$?
           cat "$log"

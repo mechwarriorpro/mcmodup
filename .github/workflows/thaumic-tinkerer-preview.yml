@@ -1,0 +1,18 @@
+name: Check experimental native Thaumic Tinkerer pair
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/thaumic-tinkerer-preview.yml'
+      - 'tests/prepare_tinkerer_preview.py'
+      - 'tests/fixtures/TinkererPackSmoke.java'
+
+permissions:
+  contents: read
+
+jobs:
+  candidate:
+    uses: ./.github/workflows/thaumcraft-source-preview.yml
+    with:
+      with-tinkerer: true
