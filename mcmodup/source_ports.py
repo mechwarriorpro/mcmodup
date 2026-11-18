@@ -80,6 +80,7 @@ class BuildOptions:
     manifest: Path
     allow_preview: bool = False
     timeout: int = 1200
+    additional_manifests: tuple[Path, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -293,27 +294,31 @@ def _list(value: object) -> list:
 
 
 def load_ports(options: BuildOptions) -> dict[str, SourcePort]:
-    manifest = options.manifest.expanduser().resolve()
     if not 1 <= options.timeout <= 3600:
         raise InputError("Use a source build timeout between 1 and 3600 seconds per project")
-    if not manifest.is_file() or manifest.stat().st_size > 2 * 1024 * 1024:
-        raise InputError("Specify a trusted local source-port JSON manifest (maximum 2 MiB)")
-    try:
-        data = _object(json.loads(manifest.read_text(encoding="utf-8-sig"), object_pairs_hook=_unique))
-        if set(data) != {"schema_version", "ports"} or type(data["schema_version"]) is not int or data["schema_version"] != 1:
-            raise InputError("Expected a version 1 source port manifest")
-        result = {}
-        for index, row in enumerate(_list(data["ports"]), 1):
-            try:
-                port = _parse_port(row, manifest.parent)
-                if port.legacy_sha256 in result:
-                    raise InputError("Multiple recipes for the same legacy SHA-256")
-                result[port.legacy_sha256] = port
-            except InputError as exc:
-                raise InputError(f"Recipe {index}: {exc}") from exc
-        return result
-    except (ValueError, RecursionError) as exc:
-        raise InputError(f"Invalid source port manifest: {exc}") from exc
+    manifests = (options.manifest, *options.additional_manifests)
+    if len(manifests) > 32:
+        raise InputError("Supply at most 32 trusted local source port manifests")
+    result = {}
+    for path in manifests:
+        manifest = path.expanduser().resolve()
+        if not manifest.is_file() or manifest.stat().st_size > 2 * 1024 * 1024:
+            raise InputError(f"Specify a trusted local source-port JSON manifest (maximum 2 MiB): {manifest.name!r}")
+        try:
+            data = _object(json.loads(manifest.read_text(encoding="utf-8-sig"), object_pairs_hook=_unique))
+            if set(data) != {"schema_version", "ports"} or type(data["schema_version"]) is not int or data["schema_version"] != 1:
+                raise InputError("Expected a version 1 source port manifest")
+            for index, row in enumerate(_list(data["ports"]), 1):
+                try:
+                    port = _parse_port(row, manifest.parent)
+                    if port.legacy_sha256 in result:
+                        raise InputError("Multiple recipes for the same legacy SHA-256")
+                    result[port.legacy_sha256] = port
+                except InputError as exc:
+                    raise InputError(f"Recipe {index}: {exc}") from exc
+        except (ValueError, RecursionError) as exc:
+            raise InputError(f"Invalid source port manifest {manifest.name!r}: {exc}") from exc
+    return result
 
 
 class _NoRedirect(HTTPRedirectHandler):

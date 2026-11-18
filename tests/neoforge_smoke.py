@@ -35,11 +35,11 @@ def check_minechem_artifacts(final: Path, release394: Path) -> None:
 
 
 def check_recipes_in_game(project: Path, outputs: list[Path], *, minechem_394: Path | None = None,
-                          multipart_control: list[Path] | None = None) -> None:
+                          multipart_control: list[Path] | None = None, icbm_plate: Path | None = None) -> None:
     namespace = "mcmodup_smoke"
     assert len(outputs) in (1, 2), "Supply the FINAL-based (or fixture) JAR with an optional aspect JAR"
     include_aspects = len(outputs) == 2
-    jars = [*outputs, minechem_394] if minechem_394 else outputs
+    jars = [*outputs, *([minechem_394] if minechem_394 else []), *([icbm_plate] if icbm_plate else [])]
     # Load the separately built production JARs as runtime mods, not as source sets.
     inputs = {f"fixtures/{i}.jar": path.read_bytes() for i, path in enumerate(jars)}
     controls = {}
@@ -72,18 +72,28 @@ neoForge.runs.create('gameTestServer') {{
         assert buffered, "The paired tests require the actual FINAL-based build"
         check_minechem_artifacts(outputs[0], minechem_394)
         tests["src/main/java/mcmodup/test/MinechemPairChecks.java"] = (FIXTURES / "MinechemPairChecks.java").read_bytes()
+    def integrate_fixture(filename, code, package, own_namespace):
+        # The standalone fixtures normally own independent test mod IDs.
+        name = filename.removesuffix(".java")
+        tests[f"src/main/java/mcmodup/test/{filename}"] = (code
+            .replace(f"package {package};", "package mcmodup.test;")
+            .replace("import net.neoforged.fml.common.Mod;\n", "")
+            .replace(f"@Mod({name}.ID)\n", "")
+            .replace(f'"{own_namespace}"', f'"{namespace}"')
+            .replace('template = "empty"', 'template = "test_room"'))
+
     if controls:
         compile_jars = ", ".join(f"'{relative}'" for relative in controls)
         gradle += f"\ndependencies {{ compileOnly files({compile_jars}) }}\n"
-        # Keep the unchanged native control in the same GameTest server, without
-        # introducing another test mod ID (the fixture normally owns its own).
-        multipart = (FIXTURES / "MultipartControlSmoke.java").read_text(encoding="utf-8")
-        tests["src/main/java/mcmodup/test/MultipartControlSmoke.java"] = (multipart
-            .replace("package mcmodup.multipartcheck;", "package mcmodup.test;")
-            .replace("import net.neoforged.fml.common.Mod;\n", "")
-            .replace("@Mod(MultipartControlSmoke.ID)\n", "")
-            .replace('"mcmodup_multipart_control"', f'"{namespace}"')
-            .replace('template = "empty"', 'template = "test_room"'))
+        integrate_fixture("MultipartControlSmoke.java", (FIXTURES / "MultipartControlSmoke.java").read_text(encoding="utf-8"),
+                          "mcmodup.multipartcheck", "mcmodup_multipart_control")
+    if icbm_plate:
+        assert controls, "Plate integration checks require the unchanged native controls"
+        from mcmodup.icbm_plate import checks
+
+        integrate_fixture("PlateChecks.java", checks(namespace), "mcmodup.icbmplate", namespace)
+        integrate_fixture("PlateMultipartSmoke.java", (FIXTURES / "PlateMultipartSmoke.java").read_text(encoding="utf-8"),
+                          "mcmodup.plateintegration", "mcmodup_plate_integration")
     write_workspace(project, {
         "settings.gradle": "rootProject.name = 'catalog-smoke'\n",
         "build.gradle": gradle,
@@ -97,7 +107,7 @@ neoForge.runs.create('gameTestServer') {{
     })
     run = subprocess.run(["./gradlew", "--no-daemon", "--console=plain", "runGameTestServer"],
                          cwd=project, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=420)
-    count = 7 + include_aspects + (2 if minechem_394 else 0) + bool(controls)
+    count = 7 + include_aspects + (2 if minechem_394 else 0) + bool(controls) + (3 if icbm_plate else 0)
     if run.returncode or f"All {count} required tests passed" not in run.stdout:
         raise AssertionError(run.stdout[-8000:])
     parsing_errors = [line for line in run.stdout.splitlines() if "Parsing error loading recipe" in line

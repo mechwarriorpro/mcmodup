@@ -133,8 +133,8 @@ def _parser() -> argparse.ArgumentParser:
         command.add_argument("--id-map", type=Path, metavar="JSON", help="reviewed legacy-to-native mod ID map, instead of the input's mcmodup-updates.json")
         command.add_argument("--provider", action="append", default=[], metavar="ID=SHA256",
                              help="pin a reviewed local native provider by its JAR fingerprint (repeatable)")
-        command.add_argument("--source-ports", type=Path, metavar="TRUSTED_JSON",
-                             help="build selected exact legacy releases and add-ons using this trusted source recipe manifest")
+        command.add_argument("--source-ports", type=Path, action="append", metavar="TRUSTED_JSON",
+                             help="build selected exact legacy releases and add-ons from a trusted recipe manifest (repeatable)")
         command.add_argument("--allow-recipe-preview", action="store_true",
                              help="try automatic recipe translation for one original in a fresh --output-pack; not full parity")
         command.add_argument("--allow-preview-ports", action="store_true",
@@ -212,7 +212,8 @@ def main(argv: list[str] | None = None) -> int:
 
             if args.allow_preview_ports and not args.source_ports:
                 raise InputError("--allow-preview-ports requires --source-ports.")
-            options = BuildOptions(args.source_ports, args.allow_preview_ports, args.build_timeout) if args.source_ports else None
+            options = (BuildOptions(args.source_ports[0], args.allow_preview_ports, args.build_timeout, tuple(args.source_ports[1:]))
+                       if args.source_ports else None)
             state = native_pack.inventory(args.input, args.target or args.input, options, id_map=args.id_map,
                                           allow_recipe_preview=args.allow_recipe_preview)
             pins = native_pack.parse_pins(args.provider)

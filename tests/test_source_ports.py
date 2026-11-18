@@ -278,6 +278,27 @@ class SourcePortTests(unittest.TestCase):
         with self.assertRaisesRegex(InputError, "task paths only"):
             load_ports(BuildOptions(self.manifest))
 
+    def test_multiple_manifests_resolve_sources_locally_and_reject_duplicate_sha(self):
+        addon = legacy(self.src, "mods/Tools.jar", "techtools", refs=("old/example/TechBase",))
+        other = self.root / "other"
+        other.mkdir()
+        addon_zip = jar(other / self.base_src.name, **{"settings.gradle": "rootProject.name='tools'"})
+        tool = recipe(addon, addon_zip, "techtools", dependencies=(("techbase", "[2.0]"),))
+        write_manifest(self.manifest, self.base)
+        second = write_manifest(other / "tool.json", tool)
+        args = ("update-pack", self.src, "--target", self.target, "--source-ports", self.manifest,
+                "--source-ports", second, "--mod", "mods/OldBase.jar", "--mod", "mods/Tools.jar", "--json")
+        proc = run_cli(*args)
+        self.assertEqual(proc.returncode, 0, proc.stderr or proc.stdout)
+        self.assertEqual(json.loads(proc.stdout)["build_order"], ["mods/OldBase.jar", "mods/Tools.jar"])
+        ports = load_ports(BuildOptions(self.manifest, additional_manifests=(second,)))
+        self.assertEqual(ports[digest(self.old_base)].archive, self.base_src)
+        self.assertEqual(ports[digest(addon)].archive, addon_zip)
+        write_manifest(second, {**tool, "legacy_sha256": self.base["legacy_sha256"]})
+        proc = run_cli(*args)
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn("Multiple recipes for the same legacy SHA-256", proc.stderr)
+
     def test_detects_build_dependency_cycle_before_executing_projects(self):
         addon = legacy(self.src, "mods/Tools.jar", "techtools", refs=("old/example/TechBase",))
         tool = recipe(addon, self.base_src, "techtools", dependencies=(("techbase", "[2.0]"),))
