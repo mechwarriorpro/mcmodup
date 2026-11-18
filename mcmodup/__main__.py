@@ -74,7 +74,7 @@ def _parser() -> argparse.ArgumentParser:
     refs.add_argument("--max-classes", type=int, default=250, help="cap staged classes, including nested classes (default: 250)")
     refs.add_argument("--timeout", type=int, default=180, help="limit decompiler runtime in seconds (default: 180)")
     refs.add_argument("--output", "-o", type=Path, required=True, help="new local reference folder outside the modpack")
-    convert = commands.add_parser("convert-jar", help="build an explicitly partial NeoForge catalog JAR from legacy binaries")
+    convert = commands.add_parser("convert-jar", help="build a partial NeoForge JAR for a supported legacy profile")
     convert.add_argument("input", type=Path, help="the original legacy mod JAR")
     convert.add_argument("--pack", required=True, type=Path, help="installed modpack folder or a .jar/.zip with embedded mods")
     convert.add_argument("--profile", required=True, choices=tuple(PROFILES), help="which verified static catalog to convert")
@@ -100,7 +100,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.command == "convert-jar":
             if not args.allow_partial:
-                raise InputError("Full automatic conversion is not supported. These profiles build partial catalog JARs; "
+                raise InputError("Full automatic conversion is not supported. These profiles build partial JARs; "
                                  "use --allow-partial only if that is what you want. No JAR was written.")
             profile = PROFILES[args.profile]
             args.source_version = args.source_version or profile.version

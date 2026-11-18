@@ -39,7 +39,17 @@ jobs:
           PY
             exit 1
           fi
-      - name: Check catalog recovery on the historical Minechem release
+      - name: Verify Atomic Science and ICBM dependency examples against the original Voltz pack
+        shell: bash
+        run: |
+          # Read pack and class bytes only; don't launch or upload any of these inputs or references.
+          archive="$RUNNER_TEMP/Voltz_Server_v3.0.0c.zip"
+          curl --proto '=https' --proto-redir '=https' --fail --location --retry 2 \
+            --max-time 90 --max-filesize 76658094 --header 'Accept: application/vnd.github.raw+json' \
+            --output "$archive" https://api.github.com/repos/TechnicPack/Technic/git/blobs/359f4e1909c4c91511dc32bef4364f11b0cf07f9
+          MCMODUP_VOLTZ_ARCHIVE="$archive" MCMODUP_VINEFLOWER_JAR="$RUNNER_TEMP/vineflower-1.12.0.jar" \
+            python -m unittest discover -s tests -p test_voltz.py -v
+      - name: Check machine recipe recovery on the historical Minechem release
         shell: bash
         run: |
           jar="$RUNNER_TEMP/Minechem-1.6.4-5.0.5.FINAL.jar"

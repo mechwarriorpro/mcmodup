@@ -4,14 +4,14 @@ Analyze legacy Forge mods for **Minecraft 1.5.2, 1.6.4, or 1.7.10** and prepare 
 
 ## Build a new JAR from a supported part of a legacy mod
 
-`convert-jar` takes the original mod JAR and a pack folder or archive. It runs a local JDK 21/Gradle build of **new** NeoForge Java code and emits a `.jar` at the requested path. Its first profiles are explicitly partial: Minechem **elements and molecules** (1.6.4) and Thaumcraft **aspects** (1.7.10). They recover data and icons from the legacy binary, register usable inventory items, and turn unambiguous component combinations into crafting recipes. They **do not replace** either original mod. The recipes run at a vanilla crafting table, not in the original machines or research system.
+`convert-jar` takes the original mod JAR and a pack folder or archive. It runs a local JDK 21/Gradle build of **new** NeoForge Java code and emits a `.jar` at the requested path. There are two explicitly partial profiles: Minechem **elements, molecules, powered synthesis and decomposition** (1.6.4), and Thaumcraft **aspect items and crafting** (1.7.10). They recover data and icons from the legacy binary and generate new NeoForge code. Neither profile can replace the original mod, load original saves, or support original add-ons. Other mods, including the Atomic Science and ICBM examples, have inspection and dependency decompilation but no JAR conversion.
 
 ```sh
 python3 -m mcmodup convert-jar Minechem-1.6.4-5.0.5.FINAL.jar --pack MyPack.zip \
   --profile minechem-chemistry --allow-partial -o ports/minechem-chemistry-1.21.1.jar
 ```
 
-The command refuses to build without `--allow-partial`. It matches known bytecode declarations rather than executing legacy code. A class may be recovered from an unambiguous pack dependency if the primary JAR references it. Other dependencies are inventoried, not bundled or ported. A missing or mismatched input, unknown declaration shape, or failed Gradle build leaves no new output JAR. First-run Gradle downloads need internet access. See [both profiles and commands](docs/usage-examples.md) for scope and licensing before using private assets.
+The command refuses to build without `--allow-partial`. It matches known bytecode declarations rather than executing legacy code. A class may be recovered from an unambiguous pack dependency if the primary JAR references it. Other dependencies are inventoried, not bundled or ported. A missing or mismatched input, unknown declaration shape, or failed Gradle build leaves no new output JAR. First-run Gradle downloads need internet access. See [example commands and coverage](docs/usage-examples.md) for scope and licensing before using private assets.
 
 ## Try it
 
@@ -38,7 +38,7 @@ You can also install the tool into a Python environment with `python -m pip inst
 
 ## Scan a modpack for dependencies and API changes
 
-See [the Thaumcraft 1.7.10 and Minechem 1.6.4 usage examples](docs/usage-examples.md) for the original JAR + selected pack workflow and what still needs a manual port.
+See the [Minechem, Thaumcraft, Atomic Science, and ICBM examples](docs/usage-examples.md) for the original JAR + selected pack workflow and what still needs a manual port.
 
 Point `scan-pack` at an installed instance, its `mods` folder, or a `.jar`/`.zip` with embedded mod archives. It scans `mods/` and `coremods/` recursively (including versioned subfolders such as `mods/1.7.10/`) and accepts legacy `.zip` mods. It does not run the pack or change your inputs. A launcher export with only a download manifest is not a dependency source; use the installed instance.
 
@@ -50,7 +50,7 @@ python3 -m mcmodup scan-pack /path/to/pack.jar --source-version 1.7.10 \
   --mod-jar /path/to/OldMod.jar --json > pack-report.json
 ```
 
-Use `--mod` for a mod already in the pack, or `--mod-jar` to check a separately selected file against the pack. Both options also work with `decompile-deps`. An identical copy already present in the pack is not counted twice.
+Use `--mod` for a mod already in the pack, or `--mod-jar` to check a separately selected file against the pack. Both options also work with `decompile-deps`. An identical copy already present in the pack is not counted twice. Patched Minecraft/Forge classes buried in coremods are not treated as game API providers; supply those APIs explicitly.
 
 The report separates **declared dependencies** (`mcmod.info` and compiled FML `@Mod` annotations) from **binary dependencies** identified by JVM class references. It shows missing or duplicate providers, class and member references, and which legacy API patterns need a rewrite. Declaration presence isn't version-range resolution. Reflection, dynamically loaded classes, shaded or nested libraries, and behavior won't all be visible in a static scan.
 
@@ -115,7 +115,7 @@ If you only have a compiled JAR, check for an existing 1.21.1 port or obtain aut
 
 ## Build reviewed changes with GitHub Actions
 
-Add `--github-actions` to `port` to generate `.github/workflows/build.yml` inside the new workspace. After you review the workspace and confirm redistribution rights, commit only authorized source and assets to your chosen branch in a repository you control. A push or pull request runs `./gradlew build` with JDK 21 and uploads the built mod JAR under **Actions**. The workflow does not commit, push, or release files for you. This repository's CI verifies Vineflower against a test dependency, builds both profiles from synthetic inputs and the official legacy releases, and checks crafting on a headless NeoForge GameTest server. The original releases and their adaptations are used only in runner storage; **only** the synthetic Retro Ruby demo JAR is uploaded. It does not build any user's pack or test the original gameplay.
+Add `--github-actions` to `port` to generate `.github/workflows/build.yml` inside the new workspace. After you review the workspace and confirm redistribution rights, commit only authorized source and assets to your chosen branch in a repository you control. A push or pull request runs `./gradlew build` with JDK 21 and uploads the built mod JAR under **Actions**. The workflow does not commit, push, or release files for you. This repository's CI checks scoped decompilation with synthetic inputs and the archived Voltz pack. It builds both conversion profiles from fixtures and the original Minechem and Thaumcraft releases, and tests power, recipe results, blocked outputs, and serialized machine state on a headless NeoForge GameTest server. Original releases and adaptations stay in runner storage; **only** the synthetic Retro Ruby demo JAR is uploaded. These tests do not establish legacy gameplay parity or test a user pack.
 
 ## Development
 

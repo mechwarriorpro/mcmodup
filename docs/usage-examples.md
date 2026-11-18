@@ -1,10 +1,10 @@
-# Porting examples: Thaumcraft and Minechem
+# Porting examples: Minechem, Thaumcraft, Atomic Science, and ICBM
 
-**Current capability:** `convert-jar` builds new NeoForge JARs with recovered items and adapted crafting recipes. It is not a complete rewrite of either mod. The machines, research, and other gameplay still require separate ports.
+**Current capability:** `convert-jar` builds partial NeoForge 1.21.1 JARs for Minechem and Thaumcraft. Atomic Science and ICBM have verified legacy input and dependency examples only. There is no complete port for any of these mods.
 
 Run the examples from the mcmodup checkout with Python 3.11+. Put your local inputs under `.mcmodup/` (ignored by Git). You can substitute an installed pack folder for either pack archive. A `.jar` or `.zip` pack must contain the actual mod files under `mods/` or `coremods/` (an enclosing instance folder is fine), or at the archive root. If a launcher export has only a download manifest, point to the installed instance instead.
 
-## Automatically build the partial catalog JARs
+## Build the partial Minechem and Thaumcraft JARs
 
 With **JDK 21** on `PATH` or in `JAVA_HOME`, and Gradle network access. These examples use the released [Minechem 5.0.5 FINAL JAR](https://github.com/iopleke/Minechem/releases/tag/1.6.4-5.0.5-FINAL) and [Thaumcraft 4.2.3.5 JAR](https://www.curseforge.com/minecraft/mc-mods/thaumcraft/files/2227552).
 
@@ -18,10 +18,18 @@ python3 -m mcmodup convert-jar .mcmodup/Thaumcraft-1.7.10-4.2.3.5.jar \
   -o ports/thaumcraft-aspects-1.21.1.jar
 ```
 
-- **Minechem Chemistry:** Imports elements, molecule formulas, and legacy metadata; registers vials using the legacy icons. Put two hydrogen vials and an oxygen vial in separate crafting slots to make a water vial. This adapts the molecule synthesizer's ingredient counts to table crafting. It does **not** recover ore or fluid processing, powered machines, reactors, radiation effects, or other legacy recipes.
-- **Thaumcraft Aspects:** Imports the built-in aspect tags, colors, and component relationships and registers icon items. Try combining `aspect_aer` and `aspect_ignis` to make `aspect_lux` in the crafting grid. This uses the original aspect relationships but is **not** a port of the research table, essentia system, or magic. It does not support old Thaumcraft add-ons.
-- Both JARs use separate namespaces and a **Partial Port** creative tab. In a **new** NeoForge 1.21.1 world get primitives from the creative tab or with `/give @s minechem_chemistry:element_h` or `/give @s thaumcraft_aspects:aspect_aer`. No survival acquisition is added. Recipes that take more than nine slots or share an identical input with another output are not generated; the item and ingredients are still listed in `data/<namespace>/mcmodup/catalog.json` with a skip reason. No original code or old dependency JAR is included.
+- **Minechem Chemistry:** Recovers 113 elements and 147 molecule formulas from the verified release. The new Chemical Synthesizer and Chemical Decomposer process those formulas in both directions. The latter also accepts water buckets, iron ingots, and gold ingots; the synthesizer can make the two ingots from their elements. These are a subset of the old recipes, plus new machine crafting recipes. The input bucket is consumed. See the survival walkthrough below.
+- **Thaumcraft Aspects:** Imports the 48 built-in aspect tags, colors, and component relationships and registers icon items. Combine `aspect_aer` and `aspect_ignis` to craft `aspect_lux`. There is no survival source for primal aspects. The recipes do not port Thaumcraft research, essentia, or magic, and they do not support old add-ons.
+- Both JARs have new IDs and a **Partial Port** creative tab. Test them in a **new** NeoForge 1.21.1 world. Minechem's powered recipes and Thaumcraft's crafting recipe status are recorded in `data/<namespace>/mcmodup/catalog.json`. For Thaumcraft, duplicate ingredient combinations are skipped instead of silently overriding each other. No original JVM code or legacy dependency JAR is included.
 - Only use sources and assets you are allowed to modify. A generated Thaumcraft adaptation is for private use unless the author has given permission to distribute it. `convert-jar` does not upload an artifact or publish a release.
+
+### Try the Minechem machines
+
+1. Craft a Chemical Decomposer. The recipe is `III / IPI / IRI`: `I` is iron ingot, `P` piston, `R` redstone dust. For the Synthesizer, use `IRI / IPI / IDI`, with `D` a diamond. The machine recipes use vanilla ingredients because the original Atomic Manipulator is not ported.
+2. Put a water bucket into the Decomposer's first input and redstone dust into its isolated fuel slot. Click **Process** to produce 16 water vials. Decompose one vial to get two hydrogen vials and one oxygen vial. An external NeoForge FE source can replace the dust; extract output from the bottom.
+3. In the Synthesizer, use **<** / **>** to select Water (hold Shift to skip ten; hover over the result name for inputs). Add two hydrogen and one oxygen vial, supply FE or a redstone dust, and click **Process**. The machine saves its inventory, stored FE, selection, and an in-flight job in **new** worlds.
+
+These are adapted machines: new menus, manual processing, no journal/ghost pattern, and a redstone fallback (+500 FE). FE is not a conversion of Universal Electricity voltage or power units. Most material, ore dictionary/tag, chance, and fluid recipes are not implemented, nor are integrations, radiation, reactors, the rest of Minechem's machines, and legacy-world migration. Only recovered formulas and the listed starter materials can be processed.
 
 ## Thaumcraft 4.2.3.5: Forge 1.7.10 → NeoForge 1.21.1
 
@@ -71,7 +79,40 @@ python3 -m mcmodup port .mcmodup/minechem-1.6.4-source.zip -o ports/minechem-1.2
   --mod-version 5.0.5-port --license CC-BY-SA-3.0
 ```
 
-Start with the elements and compounds, then port **one** decomposer or synthesizer recipe end to end. The machine needs modern block entity, menu, energy, and recipe implementations. Replace `@NetworkMod` packets with NeoForge payloads. Check dependencies against your report rather than copying any 1.6.4 API JARs into the new project. Follow the source tag's attribution and share-alike terms, and check bundled dependencies separately.
+Use the tested Decomposer and Synthesizer as references when porting another machine end to end. It needs modern block entity, menu, energy, recipe, and save implementations. Replace old custom packets with NeoForge payloads where needed. Check dependencies against your report rather than copying any 1.6.4 API JARs into the new project. Follow the source tag's attribution and share-alike terms, and check bundled dependencies separately.
+
+## Atomic Science 1.2.0 and ICBM 1.4.1.344: Forge 1.6.4 input examples
+
+The original [Voltz 3.0.0c server ZIP in Technic's archive](https://github.com/TechnicPack/Technic/blob/8c4e20f9225bcd6612fca4cb29c53366317d3e13/servers/voltz/Voltz_Server_v3.0.0c.zip) contains both JARs. The archive's SHA-256 is `2eda607746a22edbf45612243adce37a876251e36d46c692a48344fe98eec84e`. Use a copy you are allowed to inspect. Do not run the legacy server, commit its files, or assume download availability establishes permission to redistribute a derivative. These binaries have no conversion profile yet.
+
+| Input inside the pack | FML declaration | Resolved dependency evidence |
+| --- | --- | --- |
+| `mods/atomicscience.jar` | `AtomicScience` 1.2.0 | Requires Calclavia Core; references 74 classes in the pack's `calclavia-core-development-1.2.0.6-main.jar`. |
+| `mods/icbm-1.4.1.344.jar` | `ICBM`, `ICBM\|Explosion`, `ICBM\|Sentry` 1.4.1 | Same Calclavia Core (73 class references); `EulerAngle` is in `universal-electricity-3.1.0.74-core.jar`. Atomic Science is an optional ordering dependency and is present. |
+
+The `.344` is from the packaged filename, not the FML version string. Neither JAR declares an exact Minecraft version in the inspected mod metadata; use the pack's 1.6.4 profile. Installed packs may have different builds and dependencies. The ICBM Classic source tag `mc/1.6.4` is not an established exact match for this binary.
+
+```sh
+pack=.mcmodup/Voltz_Server_v3.0.0c.zip
+mkdir -p .mcmodup/reports
+python3 -m mcmodup scan-pack "$pack" --mod mods/atomicscience.jar \
+  --source-version 1.6.4 --json > .mcmodup/reports/atomicscience.json
+python3 -m mcmodup scan-pack "$pack" --mod mods/icbm-1.4.1.344.jar \
+  --source-version 1.6.4 --json > .mcmodup/reports/icbm.json
+```
+
+If you already have the individual mod JAR, replace `--mod mods/<name>.jar` with `--mod-jar /path/to/<name>.jar`, keeping your pack as the first argument. To inspect the dependencies (where permitted):
+
+```sh
+python3 -m mcmodup decompile-deps "$pack" --mod mods/atomicscience.jar \
+  --source-version 1.6.4 --vineflower /path/to/vineflower-1.12.0.jar \
+  --class calclavia.lib.prefab.tile.TileElectricalInventory -o .mcmodup/references/atomicscience
+python3 -m mcmodup decompile-deps "$pack" --mod mods/icbm-1.4.1.344.jar \
+  --source-version 1.6.4 --vineflower /path/to/vineflower-1.12.0.jar \
+  --class universalelectricity.api.vector.EulerAngle -o .mcmodup/references/icbm
+```
+
+Provider presence is not a check for signature or behavioral compatibility. For exact legacy or target signature checks, supply the corresponding compiled loader/game/dependency APIs with `--legacy-api` or `--target-api`; pass the matching MCP/SRG mappings when names are obfuscated. The outputs above are analysis, not NeoForge gameplay or new JARs. Calclavia Core/UE power, ticking and networking need separate replacements before the game features can be ported.
 
 ## Build a manual source port
 

@@ -15,6 +15,7 @@ import zlib
 
 from . import MINECRAFT_VERSION, NEOFORGE_VERSION
 from .api import ApiContext, ClassLocation
+from .api_rules import platform_symbol
 from .audit import Audit, VersionEvidence, audit
 from .classfiles import CLASS_LIMIT, Symbol, class_entries, read_class
 from .inputs import IGNORED_DIRS, MOD_ARCHIVE_LIMIT, InputError, open_input
@@ -158,11 +159,18 @@ class ModPack:
             return matches[0]
         raise InputError(f"Select an unambiguous relative archive path from scan-pack (got {selection!r}).")
 
+    def _pack_providers(self, owner: str, version: str | None) -> tuple[str, ...]:
+        # Coremods sometimes ship patched copies of Minecraft classes. Those do not
+        # establish which version/signature the game or Forge actually declares.
+        if any(platform_symbol(symbol) for symbol in self.context.spellings(Symbol(owner), version)):
+            return ()
+        return tuple(self.owners.get(owner, ()))
+
     def dependency_locations(self, mod: PackMod, owner: str) -> set[ClassLocation]:
         if owner in mod.classes:
             return set()
         return {ClassLocation(self.mods[path].path, self.mods[path].classes[owner], owner)
-                for path in self.owners.get(owner, ())} | self.context.legacy_locations(owner, mod.audit.source_version)
+                for path in self._pack_providers(owner, mod.audit.source_version)} | self.context.legacy_locations(owner, mod.audit.source_version)
 
     def _report_mod(self, mod: PackMod) -> dict:
         version = mod.audit.source_version
@@ -173,7 +181,7 @@ class ModPack:
         for ref in sorted(mod.references):
             if ref.owner in mod.classes:
                 continue
-            providers = self.owners.get(ref.owner, ())
+            providers = self._pack_providers(ref.owner, version)
             if len(providers) == 1:
                 dependencies[providers[0]].add(ref.owner)
             elif providers:

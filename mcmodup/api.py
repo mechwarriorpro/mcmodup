@@ -155,7 +155,7 @@ class ApiContext:
 
     def is_api(self, symbol: Symbol, version: str | None) -> bool:
         return bool(self.legacy_locations(symbol.owner, version)) or any(
-            platform_symbol(ref) or (self.port_map is not None and version == self.port_map.source_version
+            platform_symbol(ref) or bool(rules_for(ref, version)) or (self.port_map is not None and version == self.port_map.source_version
                                      and ref in self.port_map.entries)
             for ref in self.spellings(symbol, version))
 

@@ -114,6 +114,22 @@ class PackTests(unittest.TestCase):
         self.assertEqual(declared["forge"]["status"], "loader")
         self.assertTrue(any(c["symbol"] == "cpw/mods/fml/common/Mod" for c in result["api_checks"]))
 
+    def test_pack_patches_are_not_platform_api_providers(self):
+        owner = "net/minecraft/tileentity/TileEntity"
+        self.consumer(refs=(owner, "provider/Widget"))
+        patch_jar = jar(self.mods / "Patches.jar", **{f"{owner}.class": fixture_class(owner)})
+        result = self.scan("--mod", "Consumer.jar", "--source-version", "1.7.10")["archives"][0]
+        self.assertEqual([row["archive"] for row in result["binary_dependencies"]], ["mods/1.7.10/Library.zip"])
+        self.assertTrue(any(row["symbol"] == owner for row in result["api_checks"]))
+        # Only an explicit API input can act as a source of platform bytecode.
+        from mcmodup.api import ApiContext
+        from mcmodup.pack import open_pack
+        with open_pack(self.pack, ApiContext(profile="1.7.10")) as pack:
+            self.assertFalse(pack.dependency_locations(pack.select("Consumer.jar"), owner))
+        with open_pack(self.pack, ApiContext(legacy=ApiIndex.load([patch_jar]), profile="1.7.10")) as pack:
+            locations = pack.dependency_locations(pack.select("Consumer.jar"), owner)
+            self.assertEqual({loc.file for loc in locations}, {patch_jar})
+
     def test_scan_pack_archive_with_separate_mod_jar(self):
         consumer = self.consumer(refs=("provider/Widget#open()V",), dependency="required-after:widgets;after:BuildCraft|Energy")
         pack = jar(self.root / "selected-pack.jar", **{
