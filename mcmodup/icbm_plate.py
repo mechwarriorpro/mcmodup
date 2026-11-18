@@ -113,8 +113,8 @@ def prepare(output: Path) -> Path:
                   "ids": {MOD_ID: VERSION}, "legacy_ids": {"icbm": MOD_ID, "icbm|explosion": None, "icbm|sentry": None},
                   "neoforge": f"[{NEOFORGE_VERSION}]", "artifact": f"build/libs/{ARCHIVE}", "tasks": ["jar", "runGameTestServer"],
                   "game_report": "build/gametest.xml", "minimum_tests": 2, "features": {
-                      "Glass plate recipe and break behavior": "platechecks.craftinganddrop",
-                      "Original pressure-plate redstone updates and release timing": "platechecks.contactandrelease"},
+                      "Glass plate recipe and break behavior": "craftinganddrop",
+                      "Original pressure-plate redstone updates and release timing": "contactandrelease"},
                   "status": "preview", "limitations": [
                       "Only the glass pressure plate from ICBM Core is implemented. Explosion, Sentry, and the rest of Core are absent.",
                       "Separate registry IDs for fresh worlds. Old saves and add-ons expecting ICBM are not supported.",

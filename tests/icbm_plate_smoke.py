@@ -10,7 +10,7 @@ import sys
 import traceback
 from zipfile import ZipFile
 
-from legacy_recipe_fixture import java8, run_server
+from legacy_recipe_fixture import java8, pinned, run_server
 from mixed_legacy_pack_smoke import CCL, MULTIPART, note
 from native_pack_smoke import run_gradle
 from pack_release_smoke import boot
@@ -67,7 +67,14 @@ def legacy(root: Path) -> None:
     with ZipFile(server / "mods/mcmodup-plate-check.jar", "x") as probe:
         for path in classes.rglob("*.class"):
             probe.write(path, path.relative_to(classes).as_posix())
-    observed = run_server(server, [java8("java"), "-Xmx1G", "-Djava.awt.headless=true", "-jar", "Voltz.jar", "nogui"],
+    # The bundled LaunchWrapper 1.8 throws ConcurrentModificationException while
+    # finding coremod tweakers. Prepend the pinned launcher fix, leaving the
+    # historical game, Forge patches, selected mods and gameplay classes intact.
+    bootstrap = "launchwrapper-1.12.jar"
+    pinned(f"https://libraries.minecraft.net/net/minecraft/launchwrapper/1.12/{bootstrap}", server / bootstrap,
+           "111e7bea9c968cdb3d06ef4632bf7ff0824d0f36")
+    observed = run_server(server, [java8("java"), "-Xmx1G", "-Djava.awt.headless=true", "-cp", f"{bootstrap}{os.pathsep}Voltz.jar",
+                                  "cpw.mods.fml.relauncher.ServerLaunchWrapper", "nogui"],
                           legacy=True, success_marker="MCMODUP_PLATE_PASS", failure_marker="MCMODUP_PLATE_FAIL")
     note("Exact Voltz glass plate baseline", observed)
 
