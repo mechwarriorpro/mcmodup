@@ -40,7 +40,7 @@ import net.neoforged.neoforge.common.NeoForge;
 /** Runs on a real client with a fresh integrated server and unmodified staged JARs in mods/. */
 @Mod("mcmodup_thaumcraft_client")
 public final class ThaumcraftClientSmoke {
-    private static final String[] MODS = {"thaumcraft", "architectury", "thaumictinkerer"};
+    private static final String[] MODS = {"thaumcraft", "architectury", "thaumictinkerer", "computercraft"};
     private static final Map<String, String> WARP = Map.of(
             "blurred_vision", "warp_blurred", "death_gaze", "warp_death_gaze",
             "sun_scorned", "warp_sun_scorned", "unnatural_hunger", "warp_hunger");
@@ -52,6 +52,7 @@ public final class ThaumcraftClientSmoke {
     private static final String ENCHANTING = "thaumic.tinkerer.client.gui.GuiEnchanting";
     private static final int ACTIVE_FRAMES = 5;
     private final boolean paired = Boolean.getBoolean("mcmodup.withTinkerer");
+    private final boolean withComputercraft = Boolean.getBoolean("mcmodup.withComputercraft");
     private Stage stage = Stage.START;
     private int ticks, frames;
     private CompletableFuture<?> operation;
@@ -215,8 +216,8 @@ public final class ThaumcraftClientSmoke {
         var modsDir = client.gameDirectory.toPath().resolve("mods").toRealPath();
         for (var mod : MODS) {
             var file = ModList.get().getModFileById(mod);
-            if (mod.equals("thaumictinkerer") && !paired) {
-                require(file == null, "Unexpected Tinkerer installation");
+            if ((mod.equals("thaumictinkerer") && !paired) || (mod.equals("computercraft") && !withComputercraft)) {
+                require(file == null, "Unexpected " + mod + " installation");
                 continue;
             }
             require(file != null, "Missing mod " + mod);

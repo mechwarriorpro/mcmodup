@@ -1,5 +1,8 @@
 package mcmodup.thaumcraftcheck;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.gametest.framework.GameTest;
@@ -17,10 +20,20 @@ public final class ThaumcraftPackSmoke {
     public static final String ID = "mcmodup_thaumcraft_check";
 
     @GameTest(template = "empty")
-    public static void standalonePortLoadsFromItsStagedJar(GameTestHelper helper) {
-        helper.assertTrue(ModList.get().isLoaded("thaumcraft"), "Thaumcraft native port was not loaded");
-        helper.assertTrue(ModList.get().isLoaded("architectury"), "Staged Architectury library was not loaded");
-        helper.assertTrue(!ModList.get().isLoaded("legacyconnector"), "Found the Connector in the native pack");
+    public static void standalonePortLoadsFromItsStagedJar(GameTestHelper helper) throws IOException {
+        var mods = ModList.get();
+        helper.assertTrue(mods.isLoaded("thaumcraft"), "Thaumcraft native port was not loaded");
+        helper.assertTrue(mods.isLoaded("architectury"), "Staged Architectury library was not loaded");
+        helper.assertTrue(!mods.isLoaded("legacyconnector"), "Found the Connector in the native pack");
+        helper.assertTrue(mods.isLoaded("computercraft") == Boolean.getBoolean("mcmodup.withComputercraft"),
+            "The optional ComputerCraft mod must be present only in its dedicated test run");
+        var dir = Path.of("mods").toRealPath();
+        for (var id : new String[]{"thaumcraft", "architectury", "thaumictinkerer", "computercraft"}) {
+            if (!mods.isLoaded(id)) continue;
+            var path = mods.getModFileById(id).getFile().getFilePath().toRealPath();
+            helper.assertTrue(Files.isRegularFile(path) && dir.equals(path.getParent()),
+                "Expected " + id + " to come from a staged production JAR: " + path);
+        }
         helper.assertTrue(BuiltInRegistries.ITEM.containsKey(ResourceLocation.parse("thaumcraft:thaumometer")),
             "The staged release did not register a thaumometer");
         var crucible = ResourceLocation.parse("thaumcraft:crucible");

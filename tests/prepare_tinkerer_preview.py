@@ -9,6 +9,7 @@ import hashlib
 import json
 from pathlib import Path
 import shutil
+from typing import Callable
 from zipfile import ZipFile, ZipInfo
 
 from mcmodup.inputs import InputError
@@ -53,6 +54,11 @@ def asset_mappings(upstream: ZipFile) -> dict:
 def prepare(archive: Path, output: Path) -> Path:
     if archive.stat().st_size > 8 * 1024 * 1024 or digest(archive) != TT_SOURCE_HASH:
         raise InputError("Need the exact Thaumic Tinkerer alpha.7 source ZIP")
+    return prepare_pair(archive, output)
+
+
+def prepare_pair(archive: Path, output: Path, *, configure: Callable[[Path, dict, dict], None] | None = None) -> Path:
+    """Wire an already-verified add-on source (or its reviewed CC backport) to the pair recipe."""
     output.mkdir(parents=True, exist_ok=False)
     try:
         local = output / "tinkerer-neoforge-source.zip"
@@ -95,7 +101,7 @@ plugins { id 'dev.architectury.loom' version '1.11.458' apply false }
                     source_sha256=TC_SOURCE_HASH, source_root=f"Thaumcraft-1.21.1-{TC_COMMIT}", minimum_tests=543)
         base["features"]["Legacy obsidian tile ingredients use the native item"] = "legacyblockstacksmatchthestacksplayershold"
         base["limitations"].append("This pair uses a pinned post-release Reload commit with the obsidian tile fix, not the alpha.24 release tag.")
-        manifest["ports"].append({
+        add_on = {
             "legacy_sha256": TT_LEGACY_HASH, "source_zip": local.name,
             "source_sha256": digest(local), "source_root": TT_ROOT,
             "ids": {"thaumictinkerer": "0.1.0-alpha.7"}, "neoforge": "[21.1.259,21.2)",
@@ -123,7 +129,10 @@ plugins { id 'dev.architectury.loom' version '1.11.458' apply false }
                 "Known omissions include ComputerCraft, OpenComputers and IC2 integrations; old worlds, client parity and other add-ons are unverified.",
                 "The add-on is CC BY-NC-SA 3.0. Thaumcraft code and assets have separate terms. Keep these outputs local.",
             ],
-        })
+        }
+        if configure is not None:
+            configure(output, base, add_on)
+        manifest["ports"].append(add_on)
         recipe = output / "thaumcraft-tinkerer-preview.json"
         recipe.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
         return recipe

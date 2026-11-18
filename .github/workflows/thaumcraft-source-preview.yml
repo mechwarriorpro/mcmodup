@@ -7,6 +7,9 @@ on:
       with-tinkerer:
         type: boolean
         default: false
+      with-computercraft:
+        type: boolean
+        default: false
   push:
     paths:
       - '.github/workflows/thaumcraft-source-preview.yml'
@@ -43,6 +46,7 @@ jobs:
         shell: bash
         env:
           TEST_TINKERER: ${{ inputs.with-tinkerer && 'true' || 'false' }}
+          TEST_COMPUTERCRAFT: ${{ inputs.with-computercraft && 'true' || 'false' }}
         run: |
           scratch=$(mktemp -d "$RUNNER_TEMP/tc4-preview.XXXXXX")
           trap 'rm -rf -- "$scratch"' EXIT
@@ -71,9 +75,18 @@ jobs:
           if [[ "$TEST_TINKERER" == true ]]; then
             curl "${curl_opts[@]}" -o "$old/mods/ThaumicTinkerer-2.13.0.jar" \
               https://github.com/GTNewHorizons/ThaumicTinkerer/releases/download/2.13.0/ThaumicTinkerer-2.13.0.jar
-            curl "${curl_opts[@]}" -o "$scratch/tinkerer.zip" \
-              https://codeload.github.com/acak1221/Thaumic-Tinkerer-1.21.1/zip/c2e67665446ffada85ec9342384f578875cabb12
-            recipe=$(PYTHONPATH=.:tests python -m prepare_tinkerer_preview "$scratch/tinkerer.zip" "$scratch/pair")
+            if [[ "$TEST_COMPUTERCRAFT" == true ]]; then
+              read -r cc_jar cc_sha512 < <(PYTHONPATH=.:tests python -c 'from tinkerer_computercraft import CC_JAR, CC_SHA512; print(CC_JAR, CC_SHA512)')
+              curl "${curl_opts[@]}" --max-filesize 3102370 -o "$target/mods/$cc_jar" \
+                "https://cdn.modrinth.com/data/gu7yAYhd/versions/SQI2qmh5/$cc_jar"
+              printf '%s  %s\n' "$cc_sha512" "$target/mods/$cc_jar" | sha512sum --check
+              recipe=$(PYTHONPATH=.:tests python -m tinkerer_computercraft "$scratch/pair")
+              smoke+=(--computercraft-source "$scratch/pair/tinkerer-neoforge-source.zip")
+            else
+              curl "${curl_opts[@]}" -o "$scratch/tinkerer.zip" \
+                https://codeload.github.com/acak1221/Thaumic-Tinkerer-1.21.1/zip/c2e67665446ffada85ec9342384f578875cabb12
+              recipe=$(PYTHONPATH=.:tests python -m prepare_tinkerer_preview "$scratch/tinkerer.zip" "$scratch/pair")
+            fi
             smoke+=(--with-tinkerer)
           fi
           python -m mcmodup update-pack "$old" --target "$target" --source-ports "$recipe" \

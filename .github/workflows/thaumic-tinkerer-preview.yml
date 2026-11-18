@@ -5,8 +5,12 @@ on:
   push:
     paths:
       - '.github/workflows/thaumic-tinkerer-preview.yml'
+      - '.github/workflows/thaumcraft-source-preview.yml'
       - 'tests/prepare_tinkerer_preview.py'
+      - 'tests/tinkerer_computercraft.py'
+      - 'tests/thaumcraft_pack_smoke.py'
       - 'examples/port-patches/thaumic-tinkerer/**'
+      - 'tests/fixtures/Thaumcraft*Smoke.java'
       - 'tests/fixtures/TinkererPackSmoke.java'
 
 permissions:
@@ -17,3 +21,4 @@ jobs:
     uses: ./.github/workflows/thaumcraft-source-preview.yml
     with:
       with-tinkerer: true
+      with-computercraft: true
