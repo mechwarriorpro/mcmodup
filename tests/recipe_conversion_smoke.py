@@ -182,10 +182,12 @@ def modern_verify(root: Path, output: Path, report: dict, cases: Path) -> str:
         installed.unlink()
 
 
-def main(root: Path) -> None:
+def main(root: Path, only: str | None) -> None:
     failures = []
     expected_errors = (AssertionError, OSError, ValueError, subprocess.SubprocessError, BadZipFile)
     for version, (name, mod_id) in CASES.items():
+        if only and only != version:
+            continue
         try:
             output, report = convert(root, version, name, mod_id)
             boot(output, report["instance_runtime"]["launch"]["unix"])
@@ -207,4 +209,6 @@ def main(root: Path) -> None:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("scratch", type=Path)
-    main(parser.parse_args().scratch.resolve())
+    parser.add_argument("--version", choices=CASES)
+    args = parser.parse_args()
+    main(args.scratch.resolve(), args.version)

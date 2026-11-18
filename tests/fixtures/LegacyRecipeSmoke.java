@@ -169,7 +169,7 @@ public final class LegacyRecipeSmoke {
             "Wrong legacy furnace result at tick " + ticks);
         require(stackCount(slot(furnace, 0)) == 1, "Legacy furnace consumed the wrong amount");
         Object manager = type("item.ItemInWorldManager").getConstructor(type("world.World")).newInstance(world);
-        Object player = type("entity.player.EntityPlayerMP").getConstructor(type("server.MinecraftServer"), type("world.WorldServer"), String.class, manager.getClass())
+        Object player = type("entity.player.EntityPlayerMP").getConstructor(type("server.MinecraftServer"), type("world.World"), String.class, manager.getClass())
             .newInstance(server, world, "RecipeProbe", manager);
         final Class<?> playerType = type("entity.player.EntityPlayer");
         final Object resultSlot = type("inventory.SlotFurnace").getConstructor(playerType, type("inventory.IInventory"), int.class, int.class, int.class)
