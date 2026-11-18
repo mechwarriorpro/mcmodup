@@ -105,6 +105,7 @@ The third run assumes the exact CC: Tweaked release was staged. It checks the pe
 | Thaumcraft 4.2.3.5 | Exact native source-build preview, plus the paired Tinkerer preview | Visual, localization, survival, multiplayer and compatibility gaps remain, even with complete asset accounting. |
 | GTNH Thaumic Tinkerer 2.13.0 | Exact native add-on preview, with optional CC: Tweaked and Ender Storage runtime support | OpenComputers and other legacy integrations, some behaviors and some effects are still missing. |
 | Minechem 1.6.4 5.0.5 FINAL | [Original tagged source](https://github.com/iopleke/Minechem/tree/1.6.4-5.0.5-FINAL) and a [partial chemistry profile](usage-examples.md#try-the-minechem-machines), including the adapted Microscope and Chemist's Journal | Not all machines, recipes, effects, worldgen, graphics or integrations have been ported. |
+| Minechem 1.7.10 5.0.5.394 | [Checksum-pinned catalog and iron decomposer preview](usage-examples.md#minechem-505394-iron-decomposer-preview), separate from FINAL | One decomposer recipe, no other machines or original integrations; not an updater source recipe. |
 | Atomic Science 1.6.4 and ICBM 1.6.4 | [Exact Voltz archives and dependency audits](usage-examples.md#atomic-science-120-and-icbm-141344-forge-164-input-examples) | No reviewed native source build for these originals or their required old dependency APIs. Later mods with similar features aren't replacements. |
 
 ## What the source-build test covers

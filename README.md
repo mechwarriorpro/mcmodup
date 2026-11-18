@@ -39,7 +39,13 @@ For a build that reuses executable code from an original JAR, see the [Voltz gla
 
 ## Build a new JAR from a supported part of a legacy mod
 
-`convert-jar` takes the original mod JAR and a pack folder or archive. It runs a local JDK 21/Gradle build of **new** NeoForge Java code and emits a `.jar` at the requested path. There are two explicitly partial profiles: Minechem **elements, molecules, powered synthesis and decomposition, and microscope and journal research for the recovered recipes** (1.6.4), and Thaumcraft **aspect items and crafting** (1.7.10). They recover data and icons from the legacy binary and generate new NeoForge code. Neither profile can replace the original mod, load original saves, or support original add-ons. Atomic Science and ICBM do not have a `convert-jar` profile.
+`convert-jar` takes the original mod JAR and a pack folder or archive. With JDK 21 and Gradle, it recovers data and icons from the legacy binary and compiles **new** NeoForge Java code. The explicitly partial profiles are:
+
+- **Minechem 1.6.4:** chemistry catalog, powered synthesis and decomposition, and research for the recovered recipes.
+- **Minechem 1.7.10 5.0.5.394:** checksum-pinned catalog and iron-ingot decomposer, under a separate mod ID from the 1.6.4 build.
+- **Thaumcraft 4 1.7.10:** aspect items and crafting.
+
+None replaces the original mod, loads original saves, or supports original add-ons. Atomic Science and ICBM do not have a `convert-jar` profile.
 
 ```sh
 python3 -m mcmodup convert-jar Minechem-1.6.4-5.0.5.FINAL.jar --pack MyPack.zip \
@@ -156,7 +162,7 @@ The [sampled updater workflow](.github/workflows/legacy-update-sample.yml) measu
 
 ## Build reviewed changes with GitHub Actions
 
-Add `--github-actions` to `port` to generate `.github/workflows/build.yml` inside the new workspace. After you review the workspace and confirm redistribution rights, commit only authorized source and assets to your chosen branch in a repository you control. A push or pull request runs `./gradlew build` with JDK 21 and uploads the built mod JAR under **Actions**. The workflow does not commit, push, or release files for you. This repository's CI checks scoped decompilation with synthetic inputs and the archived Voltz pack. It builds both conversion profiles from fixtures and the original Minechem and Thaumcraft releases, and tests power, automation, blocked outputs, machine saves, microscope discoveries, and journal recipe selection on a headless NeoForge GameTest server. Original releases and adaptations stay in runner storage; **only** the synthetic Retro Ruby demo JAR is uploaded. These tests do not establish legacy gameplay parity or test a user pack.
+Add `--github-actions` to `port` to generate `.github/workflows/build.yml` inside the new workspace. After you review the workspace and confirm redistribution rights, commit only authorized source and assets to your chosen branch in a repository you control. A push or pull request runs `./gradlew build` with JDK 21 and uploads the built mod JAR under **Actions**. The workflow does not commit, push, or release files for you. This repository's CI checks scoped decompilation with synthetic inputs and the archived Voltz pack. It builds the conversion profiles from the released originals and exercises the fixture-supported profiles on synthetic inputs as well. The headless NeoForge GameTests check power, automation, blocked outputs, machine saves, microscope discoveries, and journal recipe selection. They also test the two distinct Minechem decomposers side by side. Original releases and adaptations stay in runner storage; **only** the synthetic Retro Ruby demo JAR is uploaded. These tests do not establish legacy gameplay parity or test a user pack.
 
 ## Development
 
