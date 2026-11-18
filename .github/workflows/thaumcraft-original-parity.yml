@@ -1,0 +1,47 @@
+name: Observe exact original Thaumcraft behavior
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/thaumcraft-original-parity.yml'
+      - 'tests/thaumcraft_original_smoke.py'
+      - 'tests/fixtures/LegacyThaumcraftParity.java'
+      - 'tests/legacy_recipe_fixture.py'
+
+permissions:
+  contents: read
+
+jobs:
+  original:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      PYTHONPATH: .:tests
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.11'
+      - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
+        with:
+          distribution: temurin
+          java-version: '8'
+      - name: Download checksum-pinned original, Baubles and Forge
+        shell: bash
+        run: |
+          root="$RUNNER_TEMP/tc4-original"
+          mkdir -p "$root/original/mods" "$root/original/bin"
+          cd "$root"
+          download() {
+            curl --proto '=https' --proto-redir '=https' --fail --silent --show-error --location \
+              --retry 2 --max-time 100 --max-filesize "$5" -o "$1" "$2"
+            printf '%s  %s\n' "$4" "$1" | "$3" --check
+          }
+          download original/mods/Thaumcraft-1.7.10-4.2.3.5.jar https://edge.forgecdn.net/files/2227/552/Thaumcraft-1.7.10-4.2.3.5.jar sha256sum 3dba9786966974701578a658d1bb369bf35bdf5f363079f5ac9c4910a39113be 12565807
+          download Baubles-1.7.10-1.0.1.10.jar https://edge.forgecdn.net/files/2224/857/Baubles-1.7.10-1.0.1.10.jar sha1sum b6e6ce2d0476d1d53686440f2fc70d2a27e289c2 95415
+          download original/bin/modpack.jar https://maven.minecraftforge.net/net/minecraftforge/forge/1.7.10-10.13.4.1614-1.7.10/forge-1.7.10-10.13.4.1614-1.7.10-universal.jar sha1sum 25fd97f72beca728112256938e03e8105b1b78cc 4000000
+      - name: Observe original item aspects and node identity on a dedicated server
+        run: python -m thaumcraft_original_smoke "$RUNNER_TEMP/tc4-original"
