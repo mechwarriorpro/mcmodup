@@ -114,18 +114,20 @@ public final class LegacyMinechemDecomposer {
                 require((Integer) receive.invoke(replica, 1_000, true) == 100 && energy(replica) == 0L,
                         "Wrong original .394 simulated energy reception");
                 Class<?> items = type("item.Item");
-                Method find = Class.forName("cpw.mods.fml.common.registry.GameRegistry").getMethod("findItem", String.class, String.class);
-                Object stone = find.invoke(null, "minecraft", "stone");
                 Method item = itemStack.getMethod("func_77973_b");
+                Object blocker = item.invoke(nextInput); // Use a known valid, non-tube item.
                 Method copy = itemStack.getMethod("func_77946_l");
                 java.lang.reflect.Field quantity = itemStack.getField("field_77994_a");
                 // Use the actual previous batch's stack, including any item tag the binary attached.
-                Object matching = copy.invoke(get.invoke(replica, 1));
+                Object priorOutput = get.invoke(replica, 1);
+                require(priorOutput != null, ".394 cleared stored output when returning to idle");
+                Object matching = copy.invoke(priorOutput);
                 Object partial = copy.invoke(matching), full = copy.invoke(matching);
                 quantity.setInt(partial, 63);
                 quantity.setInt(full, 64);
                 set.invoke(replica, 1, (Object) null);
                 set.invoke(replica, slots - 1, partial);
+                require(get.invoke(replica, slots - 1) != null, "Writing via the setter didn't populate the last .394 slot");
                 fill(replica, 1_000);
                 set.invoke(replica, 0, nextInput);
                 tick.invoke(replica);
@@ -133,12 +135,13 @@ public final class LegacyMinechemDecomposer {
                 tick.invoke(replica);
                 Object first = get.invoke(replica, 1);
                 int front = first == null ? 0 : quantity.getInt(first);
-                int back = quantity.getInt(get.invoke(replica, slots - 1));
+                Object trailing = get.invoke(replica, slots - 1);
+                int back = trailing == null ? 0 : quantity.getInt(trailing);
                 require(front >= 0 && front <= 1 && back + front == 64 && (first == null || item.invoke(first) == element),
                         "Expected one new .394 tube with a free slot before a matching stack; front=" + front + "; back=" + back + "; state=" + state(replica));
                 String ordering = front == 0 ? "merge_before_empty" : "first_usable_slot";
                 for (int slot = 1; slot < slots - 1; slot++) {
-                    set.invoke(replica, slot, itemStack.getConstructor(items, int.class, int.class).newInstance(stone, 64, 0));
+                    set.invoke(replica, slot, itemStack.getConstructor(items, int.class, int.class).newInstance(blocker, 64, 0));
                 }
                 set.invoke(replica, slots - 1, full);
                 tick.invoke(replica);
@@ -147,7 +150,8 @@ public final class LegacyMinechemDecomposer {
                 quantity.setInt(partial, 63);
                 set.invoke(replica, slots - 1, partial);
                 tick.invoke(replica);
-                int merged = quantity.getInt(get.invoke(replica, slots - 1)) - 63;
+                trailing = get.invoke(replica, slots - 1);
+                int merged = (trailing == null ? 0 : quantity.getInt(trailing)) - 63;
                 require(merged == 0 || merged == 1, "Unexpected .394 jam release size: " + merged);
                 set.invoke(replica, slots - 1, full);
                 set.invoke(replica, 1, (Object) null);
@@ -169,7 +173,10 @@ public final class LegacyMinechemDecomposer {
             System.out.println("MCMODUP_MINECHEM_ORIGINAL_PASS slots=" + slots + "; start_charge=" + capacity + "; start_cost=" + paidAtStart
                     + "; input_consumed_on_start; saved_queue_emits_16_iron_tubes_one_per_tick; remaining_charge=0" + jam);
         } catch (Throwable failure) {
-            System.err.println("MCMODUP_MINECHEM_ORIGINAL_FAIL " + failure);
+            Throwable cause = failure.getCause() == null ? failure : failure.getCause();
+            System.err.println("MCMODUP_MINECHEM_ORIGINAL_FAIL " + cause + " at " +
+                    (cause.getStackTrace().length == 0 ? "unknown" : cause.getStackTrace()[0]) +
+                    " (probe: " + failure.getStackTrace()[0] + ")");
             failure.printStackTrace();
         }
     }
