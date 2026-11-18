@@ -29,6 +29,10 @@ SOURCE_URL = re.compile(r"https://codeload\.github\.com/[\w.-]+/[\w.-]+/zip/[a-f
 TASK = re.compile(r":?(?:[A-Za-z0-9_-]+:)*[A-Za-z0-9_][A-Za-z0-9_-]*", re.ASCII)
 MAX_PROJECT_BYTES = 512 * 1024 * 1024
 MAX_PROJECT_FILES = 30_000
+LEGACY_ASSET_EXTENSIONS = frozenset({
+    ".png", ".jpeg", ".jpg", ".gif", ".bmp", ".tga", ".ogg", ".wav", ".ttf", ".otf", ".lang",
+    ".obj", ".mtl", ".fsh", ".vsh", ".glsl", ".frag", ".vert",
+})
 
 
 def digest(path: Path, algorithm: str = "sha256") -> str:
@@ -104,6 +108,7 @@ class SourcePort:
     asset_map: dict[str, tuple[str, str | None]] = field(default_factory=dict)
     locale_imports: dict[str, str] = field(default_factory=dict)
     original_jar_checks: OriginalJarChecks | None = None
+    merge_locale_keys: bool = False
 
     def describe(self) -> dict:
         result = {"original_sha256": self.legacy_sha256, "source_sha256": self.source_sha256,
@@ -118,7 +123,8 @@ def _parse_port(data: object, base: Path) -> SourcePort:
     row = _object(data)
     allowed = {"legacy_sha256", "source_sha256", "source_zip", "source_url", "source_root", "ids", "neoforge",
                "dependencies", "artifact", "tasks", "game_report", "minimum_tests", "features", "limitations",
-               "status", "target_property", "import_assets", "asset_map", "locale_imports", "original_jar_checks"}
+               "status", "target_property", "import_assets", "asset_map", "locale_imports", "original_jar_checks",
+               "merge_locale_keys"}
     if extra := set(row) - allowed:
         raise InputError(f"Unknown recipe fields: {', '.join(sorted(extra))}")
     legacy, source = row.get("legacy_sha256"), row.get("source_sha256")
@@ -181,7 +187,7 @@ def _parse_port(data: object, base: Path) -> SourcePort:
     imports = _object(row.get("import_assets", {}))
     asset_map = {}
     for old, entry in _object(row.get("asset_map", {})).items():
-        _asset(old)
+        _original_asset(old)
         entry = _object(entry)
         if set(entry) - {"path", "sha256"}:
             raise InputError(f"Unknown resource mapping fields for {old!r}")
@@ -191,9 +197,9 @@ def _parse_port(data: object, base: Path) -> SourcePort:
         asset_map[old] = (new, checksum)
     outputs = set()
     for old, dest in imports.items():
-        _asset(old)
+        _original_asset(old)
         dest = _relative(dest)
-        new = asset_map.get(old, (old, None))[0]
+        new = _asset(asset_map.get(old, (old, None))[0])
         if not _resource_dest(dest, new):
             raise InputError(f"Import destination for {old!r} must be its mapped path under src/main/resources/")
         if dest.casefold() in outputs:
@@ -204,6 +210,9 @@ def _parse_port(data: object, base: Path) -> SourcePort:
         _asset(old)
         if old.count("/") != 2 or not old.endswith("/lang") or not _resource_dest(_relative(dest), old):
             raise InputError("locale_imports must map assets/<namespace>/lang to a module's matching src/main/resources directory")
+    merge_locale_keys = row.get("merge_locale_keys", False)
+    if type(merge_locale_keys) is not bool or (merge_locale_keys and not locale_imports):
+        raise InputError("merge_locale_keys must be a boolean; true requires locale_imports")
     original_checks = None
     if "original_jar_checks" in row:
         check = _object(row["original_jar_checks"])
@@ -221,7 +230,7 @@ def _parse_port(data: object, base: Path) -> SourcePort:
         original_checks = OriginalJarChecks(jar_name, report, cases)
     return SourcePort(legacy, archive, source, root, ids, neoforge, tuple(dependencies), artifact, tasks,
                       game_report, minimum, features, limitations, status == "preview", target_property, imports, asset_map,
-                      locale_imports, original_checks)
+                      locale_imports, original_checks, merge_locale_keys)
 
 
 def _resource_dest(dest: str, asset: str) -> bool:
@@ -233,6 +242,21 @@ def _asset(value: object) -> str:
     if not value.startswith("assets/") or value.count("/") < 2 or value.casefold().endswith((".class", ".jar", ".zip")):
         raise InputError(f"Expected an asset member path (assets/NAMESPACE/FILE): {value!r}")
     return value
+
+
+def is_legacy_asset(path: str) -> bool:
+    parts = path.split("/")
+    suffix = Path(path).suffix.lower()
+    if suffix in {".class", ".jar", ".zip"} or parts[0].casefold() == "meta-inf":
+        return False
+    return ((len(parts) >= 3 and parts[0] == "assets") or suffix in LEGACY_ASSET_EXTENSIONS or
+            (len(parts) >= 4 and parts[0] == "mods" and parts[2] in {"lang", "textures", "sounds", "models", "shaders"}))
+
+
+def _original_asset(value: object) -> None:
+    path = _relative(value)
+    if not is_legacy_asset(path):
+        raise InputError(f"Expected a legacy resource, not archive metadata or code: {path!r}")
 
 
 def _list(value: object) -> list:
@@ -383,7 +407,7 @@ def _original_jar_evidence(workspace: Path, check: OriginalJarChecks, checksum: 
 
 
 def _import_locales(source: ModInput, workspace: Path, port: SourcePort) -> tuple[dict, list]:
-    """Convert original UTF-8 key=value files that lack an authored JSON locale; never guess key aliases."""
+    """Convert UTF-8 key=value files, optionally filling missing keys in authored native locales."""
     adapted, evidence = {}, []
     generated = set()
     for prefix, directory in sorted(port.locale_imports.items()):
@@ -397,16 +421,28 @@ def _import_locales(source: ModInput, workspace: Path, port: SourcePort) -> tupl
             dest = workspace / directory / leaf
             if dest in generated:
                 raise InputError(f"More than one legacy locale would generate {leaf!r}")
-            if dest.exists():
-                continue  # Start with the authored native translation if there is one.
+            authored = dest.exists()
+            if authored and not port.merge_locale_keys:
+                continue
             pairs, skipped = _read_lang(source.text(member))
             values = dict(pairs)  # As in the legacy language registry, the last duplicate wins.
             duplicates = len(pairs) - len(values)
             if not values or (not port.preview and (skipped or duplicates)):
                 raise InputError(f"Locale {member!r} needs review: {skipped} unsupported lines, {duplicates} duplicate entries")
+            missing, kept = len(values), 0
+            if authored:
+                try:
+                    native = _object(json.loads(_project_output(workspace, directory + "/" + leaf, 2 * 1024 * 1024)
+                                               .read_text(encoding="utf-8-sig"), object_pairs_hook=_unique))
+                except (ValueError, RecursionError) as exc:
+                    raise InputError(f"Invalid authored locale {leaf!r}: {exc}") from exc
+                if not all(isinstance(value, str) for value in native.values()):
+                    raise InputError(f"Authored locale values must be strings in {leaf!r}")
+                missing, kept = len(values.keys() - native.keys()), len(native)
+                values.update(native)
             data = (json.dumps(values, ensure_ascii=False, sort_keys=True, indent=2) + "\n").encode("utf-8")
             dest.parent.mkdir(parents=True, exist_ok=True)
-            with dest.open("xb") as stream:
+            with dest.open("wb" if authored else "xb") as stream:
                 stream.write(data)
             output = prefix + "/" + leaf
             checksum = hashlib.sha256(data).hexdigest()
@@ -415,15 +451,30 @@ def _import_locales(source: ModInput, workspace: Path, port: SourcePort) -> tupl
             adapted[member] = (output, checksum)
             generated.add(dest)
             evidence.append({"original": member, "path": output, "keys": len(values), "sha256": checksum,
+                             "added_legacy_keys": missing, "preserved_authored_keys": kept,
                              "unsupported_lines": skipped, "duplicate_entries": duplicates})
     return adapted, evidence
+
+
+def prepare_assets(source: ModInput, workspace: Path, port: SourcePort) -> tuple[dict, list]:
+    if source.warnings:
+        raise InputError("Cannot verify assets of an original archive with duplicate/unsafe entries")
+    for member, dest in port.imports.items():
+        if member not in source.files:
+            raise InputError(f"Original asset {member!r} not found")
+        target = workspace / dest
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with target.open("xb") as handle:
+            handle.write(source.read(member, MOD_ARCHIVE_LIMIT))
+    return _import_locales(source, workspace, port)
 
 
 def _asset_evidence(original: Path, modern: Path, port: SourcePort, converted: dict) -> dict:
     counts = Counter()
     unverified = []
+    mapped = []
     with open_input(original) as before, open_input(modern) as after:
-        old_assets = {name for name in before.files if name.startswith("assets/") and name.count("/") >= 2}
+        old_assets = {name for name in before.files if is_legacy_asset(name)}
         if absent := (port.asset_map.keys() | port.imports.keys()) - old_assets:
             raise InputError(f"Reviewed mappings expect missing original assets: {', '.join(sorted(absent)[:5])}")
         mappings = port.asset_map | converted
@@ -434,12 +485,17 @@ def _asset_evidence(original: Path, modern: Path, port: SourcePort, converted: d
             if expected and actual != expected:
                 raise InputError(f"Adapted asset {new!r} is missing or does not match its reviewed SHA-256")
             if actual == old:
+                status = "retained" if new == name else "relocated"
                 counts["retained"] += 1
             elif expected:
+                status = "adapted"
                 counts["adapted"] += 1
             else:
                 counts["unmapped"] += 1
                 unverified.append({"original": name, "expected_path": new, "status": "missing" if actual is None else "changed"})
+                continue
+            if name in mappings or name in port.imports:
+                mapped.append({"original": name, "path": new, "status": status, "original_sha256": old, "sha256": actual})
         if port.original_jar_checks:
             for name, info in after.files.items():
                 if info.file_size == original.stat().st_size and hashlib.sha256(
@@ -460,7 +516,8 @@ def _asset_evidence(original: Path, modern: Path, port: SourcePort, converted: d
         examples = ", ".join(item["original"] for item in unverified[:5])
         raise InputError(f"{len(unverified)} legacy asset path(s) missing or changed without a reviewed mapping: {examples}")
     return {"original_count": len(old_assets), "retained": counts["retained"], "adapted": counts["adapted"],
-            "unmapped": counts["unmapped"], "unmapped_examples": unverified[:30]}
+            "unmapped": counts["unmapped"], "unmapped_examples": unverified[:30], "mappings": mapped,
+            "unmapped_paths": unverified}
 
 
 def _java_bin(name: str) -> str:
@@ -537,16 +594,7 @@ def build(port: SourcePort, original: Path, task_dir: Path, dependencies: list[t
         with orig.open("rb") as src:
             _copy_limited(src, workspace / original_checks.jar_name, MOD_ARCHIVE_LIMIT)
     with open_input(orig) as source:
-        if source.warnings:
-            raise InputError("Cannot verify assets of an original archive with duplicate/unsafe entries")
-        for member, dest in port.imports.items():
-            if member not in source.files:
-                raise InputError(f"Original asset {member!r} not found")
-            target = workspace / dest
-            target.parent.mkdir(parents=True, exist_ok=True)
-            with target.open("xb") as handle:
-                handle.write(source.read(member, MOD_ARCHIVE_LIMIT))
-        converted, locales = _import_locales(source, workspace, port)
+        converted, locales = prepare_assets(source, workspace, port)
     deps.mkdir()
     copied = {}
     for path, checksum in dependencies:

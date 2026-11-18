@@ -6,6 +6,7 @@ on:
     paths:
       - '.github/workflows/thaumcraft-asset-audit.yml'
       - 'tests/thaumcraft_asset_probe.py'
+      - 'examples/thaumcraft4-reload-preview.json'
 
 permissions:
   contents: read
@@ -31,4 +32,4 @@ jobs:
           curl "${opts[@]}" --max-filesize 12565807 -o "$scratch/original.jar" \
             https://edge.forgecdn.net/files/2227/552/Thaumcraft-1.7.10-4.2.3.5.jar
           curl "${opts[@]}" --max-filesize 100000000 -o "$scratch/source.zip" "$(jq -er '.ports[0].source_url' "$recipe")"
-          PYTHONPATH=.:tests python -m thaumcraft_asset_probe "$scratch/original.jar" "$scratch/source.zip" "$recipe" --annotations
+          PYTHONPATH=.:tests python -m thaumcraft_asset_probe "$scratch/original.jar" "$scratch/source.zip" "$recipe" --annotations --require-coverage

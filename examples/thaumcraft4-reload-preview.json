@@ -6,17 +6,38 @@
       "source_url": "https://codeload.github.com/acak1221/Thaumcraft-1.21.1/zip/1417e30fa04ce349a8d811d8f1b3d7515cc58643",
       "source_sha256": "729c1ed1fcb6d22f04744c9cf68105b279699128e1f4bb587027944a970173bf",
       "source_root": "Thaumcraft-1.21.1-1417e30fa04ce349a8d811d8f1b3d7515cc58643",
-      "ids": {"thaumcraft": "0.1.0-alpha.24"},
+      "ids": {
+        "thaumcraft": "0.1.0-alpha.24"
+      },
       "neoforge": "[21.1.259,21.2)",
       "target_property": "neoforge_version",
       "dependencies": [
-        {"id": "architectury", "range": "[13.0.11,)"},
-        {"id": "emi", "range": "*", "type": "optional"},
-        {"id": "jade", "range": "*", "type": "optional"},
-        {"id": "jei", "range": "*", "type": "optional"}
+        {
+          "id": "architectury",
+          "range": "[13.0.11,)"
+        },
+        {
+          "id": "emi",
+          "range": "*",
+          "type": "optional"
+        },
+        {
+          "id": "jade",
+          "range": "*",
+          "type": "optional"
+        },
+        {
+          "id": "jei",
+          "range": "*",
+          "type": "optional"
+        }
       ],
       "artifact": "neoforge/build/libs/Thaumcraft-neoforge-0.1.0-alpha.24.jar",
-      "tasks": [":common:test", ":neoforge:build", ":neoforge:runGameTest"],
+      "tasks": [
+        ":common:test",
+        ":neoforge:build",
+        ":neoforge:runGameTest"
+      ],
       "game_report": "neoforge/build/gametest-results.xml",
       "minimum_tests": 539,
       "features": {
@@ -39,13 +60,183 @@
           "primeSeedIsNotAnOriginalTaintSpreadProduct()"
         ]
       },
-      "locale_imports": {"assets/thaumcraft/lang": "common/src/main/resources/assets/thaumcraft/lang"},
+      "locale_imports": {
+        "assets/thaumcraft/lang": "common/src/main/resources/assets/thaumcraft/lang"
+      },
       "status": "preview",
       "limitations": [
         "Thaumcraft 4 Reload alpha.24 is an unofficial source port. Keep this a personal local build; the port license does not relicense Azanor's original code or assets.",
-        "Original extra locales are converted from local files with legacy keys. New key coverage, rendering, survival progression, and NeoForge multiplayer parity are not established.",
+        "Original assets are retained, relocated, or mapped to native resources. Legacy translation keys are restored without replacing authored translations. Rendered equivalence, renamed key coverage, survival progression and multiplayer parity are not established.",
         "Original Thaumcraft add-on binaries and worlds do not work as-is. Each detected add-on needs its own exact source recipe. The native port has integrated accessory slots."
-      ]
+      ],
+      "asset_map": {
+        "TCLogo.png": {
+          "path": "assets/thaumcraft/textures/gui/legacy_tc_logo.png"
+        },
+        "assets/minecraft/shaders/post/blurtc.json": {
+          "path": "assets/thaumcraft/shaders/post/warp_blurred.json",
+          "sha256": "d4c1cf6d09a7f455ac2e7374d11ba7c0135d1ea8abc7a80e61ea408ccb802ea2"
+        },
+        "assets/minecraft/shaders/post/desaturatetc.json": {
+          "path": "assets/thaumcraft/shaders/post/warp_death_gaze.json",
+          "sha256": "1e37e46add3257f48f08feeb2bfd3e6ddccde086e0645a14b7d1c04cc358f2cd"
+        },
+        "assets/minecraft/shaders/post/hunger.json": {
+          "path": "assets/thaumcraft/shaders/post/warp_hunger.json",
+          "sha256": "57c3c0e657af415566ea4f6fe9726493cb65d17ff762f3541619f39e4169f0ae"
+        },
+        "assets/minecraft/shaders/post/sunscorned.json": {
+          "path": "assets/thaumcraft/shaders/post/warp_sun_scorned.json",
+          "sha256": "ca433c9abeaa326460e538bdb983ae1ffbca2702514707b084a2d91d53bbe717"
+        },
+        "assets/minecraft/shaders/program/bloom2.fsh": {
+          "path": "assets/minecraft/shaders/program/thaumcraft_bloom2.fsh",
+          "sha256": "89e39474875723962831722fcca7faf92b21631cc14e153bcffacb5e3a960af6"
+        },
+        "assets/minecraft/shaders/program/bloom2.json": {
+          "path": "assets/minecraft/shaders/program/thaumcraft_bloom2.json",
+          "sha256": "a6adf21e1e110af0e2212da8533f7e8ca6541c74ae871b7285b39cf56dabb0ed"
+        },
+        "assets/minecraft/shaders/program/bloomColor.fsh": {
+          "path": "assets/minecraft/shaders/program/thaumcraft_bloom_color.fsh",
+          "sha256": "94ff220d896cc2c5001310a2d165a4ec77c38ddccfadf331638a362c94584f22"
+        },
+        "assets/minecraft/shaders/program/bloomColor.json": {
+          "path": "assets/minecraft/shaders/program/thaumcraft_bloom_color.json",
+          "sha256": "a0c8ae41c313191041db9277e3befe17011ad9045dd06640a01db6b228cce9b7"
+        },
+        "assets/minecraft/shaders/program/bloomVertexBase.vsh": {
+          "path": "assets/minecraft/shaders/program/thaumcraft_bloom_vertex_base.vsh",
+          "sha256": "b38b0e2133772f8ef648cc79297059a555714feec15fb522b299f9be2df591b0"
+        },
+        "assets/minecraft/shaders/program/color_convolve2.fsh": {
+          "path": "assets/minecraft/shaders/program/thaumcraft_color_convolve2.fsh",
+          "sha256": "7d67e50d8356c4b45b2f9e839d2178b8c26b79d8ba863459af3315816c77a841"
+        },
+        "assets/minecraft/shaders/program/color_convolve2.json": {
+          "path": "assets/minecraft/shaders/program/thaumcraft_color_convolve2.json",
+          "sha256": "c6fb6f9c74b6efccc3521ab15f774f7fc7aa8e1b1831907273e832f82689a4f1"
+        },
+        "assets/thaumcraft/lang/README.md": {
+          "path": "assets/thaumcraft/lang/legacy_readme.md"
+        },
+        "assets/thaumcraft/sounds.json": {
+          "path": "assets/thaumcraft/sounds.json",
+          "sha256": "f5813bedb43077b4cc4b5c0b97b7b4c447a17b74f84397c5c86e95cf59f12900"
+        },
+        "assets/thaumcraft/sounds/runicShieldCharge.ogg": {
+          "path": "assets/thaumcraft/sounds/runicshieldcharge.ogg"
+        },
+        "assets/thaumcraft/sounds/runicShieldEffect.ogg": {
+          "path": "assets/thaumcraft/sounds/runicshieldeffect.ogg"
+        },
+        "assets/thaumcraft/textures/blocks/es_i_1 - Copy.png": {
+          "path": "assets/thaumcraft/textures/blocks/es_i_1_-_copy.png"
+        },
+        "assets/thaumcraft/textures/items/eldritch_object_2.png.mcmeta": {
+          "path": "assets/thaumcraft/textures/items/eldritch_object_2.png.mcmeta",
+          "sha256": "6a19bef21d66aac8fdcd8032751057733e321446b304d38f5ee8ba35efe99a1d"
+        },
+        "assets/thaumcraft/textures/misc/potions.png": {
+          "path": "assets/thaumcraft/textures/misc/potions.png",
+          "sha256": "3c70ecbf06ca3e7af763dc3106144ce4e37ddda54c2a55414ea3a2ac75db5949"
+        },
+        "assets/thaumcraft/textures/misc/vignette.png.mcmeta": {
+          "path": "assets/thaumcraft/textures/misc/vignette.png.mcmeta",
+          "sha256": "14972e242987e4be84336806bc1f08e61480110a1668718688def1be06787f1b"
+        },
+        "assets/thaumcraft/textures/models/Bore.png": {
+          "path": "assets/thaumcraft/textures/models/bore.png"
+        },
+        "assets/thaumcraft/textures/models/Thaumaturge_eyes.png": {
+          "path": "assets/thaumcraft/textures/models/thaumaturge_eyes.png"
+        },
+        "assets/thaumcraft/textures/models/adv_alch_furnace.obj": {
+          "path": "assets/thaumcraft/textures/models/adv_alch_furnace.obj",
+          "sha256": "b30b35a83c3d20c8b034dc8b3a78cecb4b800f039c94d40bd8babea0fab0a592"
+        },
+        "assets/thaumcraft/textures/models/alchemyblock.mtl": {
+          "path": "assets/thaumcraft/textures/models/alchemyblock.mtl",
+          "sha256": "3236caf02b3674b8800ab6d0f75df6e7100b6f6e78a92970fb61ffcfbe1a1ca0"
+        },
+        "assets/thaumcraft/textures/models/alembic.mtl": {
+          "path": "assets/thaumcraft/textures/models/alembic.mtl",
+          "sha256": "05f3c3829a48bd472ff5ecd3568e7c2e87d9f4918259aee5a1922e3298dbe803"
+        },
+        "assets/thaumcraft/textures/models/alembic.obj": {
+          "path": "assets/thaumcraft/textures/models/alembic.obj",
+          "sha256": "21bdc24ae4231221dd5b595e5c655454e007a9f53f6cf5bc5f02b7ded82957db"
+        },
+        "assets/thaumcraft/textures/models/bucket.obj": {
+          "path": "assets/thaumcraft/textures/models/bucket.obj",
+          "sha256": "e587de6e13fca523ef08a89926dc49c49b024a1c5bcdd08fa02429c16c34f2c5"
+        },
+        "assets/thaumcraft/textures/models/crabvent.obj": {
+          "path": "assets/thaumcraft/textures/models/crabvent.obj",
+          "sha256": "0d4d386868491486d3a04c70ebe2c2ebcff7d828fa12c7df7550d61d4a463d34"
+        },
+        "assets/thaumcraft/textures/models/crystalizer.obj": {
+          "path": "assets/thaumcraft/textures/models/crystalizer.obj",
+          "sha256": "ed1c6145f52af1ef55ca354a6ac40897fc9ad1a36734978c5a0422b0724c7284"
+        },
+        "assets/thaumcraft/textures/models/hemis.obj": {
+          "path": "assets/thaumcraft/textures/models/hemis.obj",
+          "sha256": "56c0166e382a5375a80e87ea41d0cdea48d4c467e1ecc4aafda7deb4cc8988bc"
+        },
+        "assets/thaumcraft/textures/models/hoverharness.obj": {
+          "path": "assets/thaumcraft/textures/models/hoverharness.obj",
+          "sha256": "5fb205ef1f119d92b15bd026cd7baa4a7e8c53a41580806061a23f891fb99e4d"
+        },
+        "assets/thaumcraft/textures/models/node_stabilizer.obj": {
+          "path": "assets/thaumcraft/textures/models/node_stabilizer.obj",
+          "sha256": "667ce9cf9bd098934971986e88375f62b55e3dc390b432634fb3481fdc267529"
+        },
+        "assets/thaumcraft/textures/models/obelisk_cap.obj": {
+          "path": "assets/thaumcraft/textures/models/obelisk_cap.obj",
+          "sha256": "1aea78828d38bc8752abd314e0e23c0eb884b285ea0f59a42d212122577f351a"
+        },
+        "assets/thaumcraft/textures/models/orb.obj": {
+          "path": "assets/thaumcraft/textures/models/orb.obj",
+          "sha256": "30f6b5b337c31d5716d6d6461519ca90486bebc6b21eb296d05cedee61d3066d"
+        },
+        "assets/thaumcraft/textures/models/pillar.obj": {
+          "path": "assets/thaumcraft/textures/models/pillar.obj",
+          "sha256": "5639b40acd12bc039518e18b5925305af8a936d3f5f7053b39f0579522f391a0"
+        },
+        "assets/thaumcraft/textures/models/reservoir.obj": {
+          "path": "assets/thaumcraft/textures/models/reservoir.obj",
+          "sha256": "94a933da5d24147041f42e0e4f1f3687bc3771f367220e8222d0a4a976552e06"
+        },
+        "assets/thaumcraft/textures/models/scanner.obj": {
+          "path": "assets/thaumcraft/textures/models/scanner.obj",
+          "sha256": "65e59c067fcd3fbda4211d6b2c036811d7cbf9ca4cf3cd7c49f41cd0c96aec88"
+        },
+        "assets/thaumcraft/textures/models/thaumatorium.mtl": {
+          "path": "assets/thaumcraft/textures/models/thaumatorium.mtl",
+          "sha256": "99c2d364d069660ca411350ae6fe00143d545882ced9981047e74f181a523aff"
+        },
+        "assets/thaumcraft/textures/models/thaumatorium.obj": {
+          "path": "assets/thaumcraft/textures/models/thaumatorium.obj",
+          "sha256": "8c323496d7dd2f8ac9655d8ffc63626e93dcdbb14e9210107f3f2a781397ae26"
+        },
+        "assets/thaumcraft/textures/models/vcrystal.obj": {
+          "path": "assets/thaumcraft/textures/models/vcrystal.obj",
+          "sha256": "a55d137e18aa546d8da9dc2bf6d30ffeb3d8bbde2451febca75227c585dbcf83"
+        },
+        "assets/thaumcraft/textures/models/vis_relay.obj": {
+          "path": "assets/thaumcraft/textures/models/vis_relay.obj",
+          "sha256": "3c47a2573bd403084266b730d263944ab855fe1a7aca832d63ed57f51f73bca3"
+        }
+      },
+      "import_assets": {
+        "TCLogo.png": "common/src/main/resources/assets/thaumcraft/textures/gui/legacy_tc_logo.png",
+        "assets/thaumcraft/lang/README.md": "common/src/main/resources/assets/thaumcraft/lang/legacy_readme.md",
+        "assets/thaumcraft/lang/contributing.md": "common/src/main/resources/assets/thaumcraft/lang/contributing.md",
+        "assets/thaumcraft/shader/test.frag": "common/src/main/resources/assets/thaumcraft/shader/test.frag",
+        "assets/thaumcraft/shader/test2.frag": "common/src/main/resources/assets/thaumcraft/shader/test2.frag",
+        "assets/thaumcraft/shader/test2.vert": "common/src/main/resources/assets/thaumcraft/shader/test2.vert"
+      },
+      "merge_locale_keys": true
     }
   ]
 }

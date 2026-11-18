@@ -177,6 +177,38 @@ class SourcePortTests(unittest.TestCase):
             self.assertEqual(json.loads(archive.read(locale["path"])),
                              {"item.techbase.gear": "Zahnrad", "tooltip.techbase.gear": "Größe = klein"})
 
+    def test_fills_legacy_keys_and_checks_art_outside_assets(self):
+        lang = "assets/techbase/lang/"
+        logo = "assets/techbase/textures/gui/original_logo.png"
+        with zipfile.ZipFile(self.old_base, "a") as archive:
+            archive.writestr("LegacyLogo.png", b"original logo bytes")
+            archive.writestr(lang + "en_US.lang", "legacy.item.name=Old\nlegacy.tooltip=Old detail\n")
+        with zipfile.ZipFile(self.base_src, "a") as project:
+            project.writestr("src/main/resources/" + lang + "en_us.json", '{"legacy.item.name":"Native", "native.name":"New"}')
+        row = {**self.base, "legacy_sha256": digest(self.old_base), "source_sha256": digest(self.base_src),
+               "locale_imports": {lang.rstrip("/"): "src/main/resources/" + lang.rstrip("/")},
+               "merge_locale_keys": True}
+        write_manifest(self.manifest, row)
+        with patch("mcmodup.native_pack.require_jdk", return_value="unused"), patch(
+                "mcmodup.source_ports._gradle", self._fake_gradle):
+            with self.assertRaisesRegex(InputError, "LegacyLogo.png"):
+                stage(plan(self._list(), ["mods/OldBase.jar"]), self.output)
+            self.assertFalse(self.output.exists())
+            row["asset_map"] = {"LegacyLogo.png": {"path": logo}}
+            row["import_assets"] = {**row["import_assets"], "LegacyLogo.png": "src/main/resources/" + logo}
+            write_manifest(self.manifest, row)
+            stage(plan(self._list(), ["mods/OldBase.jar"]), self.output)
+        report = json.loads((self.output / REPORT_NAME).read_text())["native_builds"]["techbase.jar"]
+        [locale] = report["converted_locales"]
+        self.assertEqual(locale["added_legacy_keys"], 1)
+        self.assertEqual(locale["preserved_authored_keys"], 2)
+        self.assertEqual(report["legacy_assets"]["original_count"], 3)
+        self.assertEqual(report["legacy_assets"]["unmapped"], 0)
+        with zipfile.ZipFile(self.output / "mods/techbase.jar") as archive:
+            self.assertEqual(archive.read(logo), b"original logo bytes")
+            self.assertEqual(json.loads(archive.read(locale["path"])), {
+                "legacy.item.name": "Native", "legacy.tooltip": "Old detail", "native.name": "New"})
+
     def test_exact_original_jar_is_used_only_for_a_fresh_named_test_report(self):
         checks = {"jar_name": "Original.jar", "report": "build/oracle.xml", "cases": ["sameOriginalData()"]}
         write_manifest(self.manifest, {**self.base, "original_jar_checks": checks})
