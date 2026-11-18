@@ -44,9 +44,14 @@ jobs:
         run: |
           # Read pack and class bytes only; don't launch or upload any of these inputs or references.
           archive="$RUNNER_TEMP/Voltz_Server_v3.0.0c.zip"
-          curl --proto '=https' --proto-redir '=https' --fail --location --retry 2 \
-            --max-time 90 --max-filesize 76658094 --header 'Accept: application/vnd.github.raw+json' \
-            --output "$archive" https://api.github.com/repos/TechnicPack/Technic/git/blobs/359f4e1909c4c91511dc32bef4364f11b0cf07f9
+          # Prefer the pinned raw object over the rate-limited unauthenticated API.
+          options=(--proto '=https' --proto-redir '=https' --fail --location --retry 2
+                   --max-time 90 --max-filesize 76658094 --output "$archive")
+          if ! curl "${options[@]}" \
+            https://raw.githubusercontent.com/TechnicPack/Technic/8c4e20f9225bcd6612fca4cb29c53366317d3e13/servers/voltz/Voltz_Server_v3.0.0c.zip; then
+            curl "${options[@]}" --header 'Accept: application/vnd.github.raw+json' \
+              https://api.github.com/repos/TechnicPack/Technic/git/blobs/359f4e1909c4c91511dc32bef4364f11b0cf07f9
+          fi
           MCMODUP_VOLTZ_ARCHIVE="$archive" MCMODUP_VINEFLOWER_JAR="$RUNNER_TEMP/vineflower-1.12.0.jar" \
             python -m unittest discover -s tests -p test_voltz.py -v
       - name: Check machine recipe recovery on the historical Minechem release
