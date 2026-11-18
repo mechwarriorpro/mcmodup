@@ -1,4 +1,4 @@
-name: Test and build NeoForge demo
+name: Test and build NeoForge ports
 
 on: [push, pull_request, workflow_dispatch]
 
@@ -60,6 +60,37 @@ jobs:
               assert sum(item["new_id"].startswith("minechem_chemistry:molecule_") for item in catalog["entries"]) == 147
               assert any(item["new_id"] == "minechem_chemistry:molecule_water" and item["recipe_status"] == "crafting_shapeless"
                          for item in catalog["entries"])
+          PY
+      - name: Verify catalog recovery on the official Thaumcraft 4 release
+        shell: bash
+        run: |
+          # The original and the adapted JAR are only used in runner scratch. Never upload either.
+          scratch="$(mktemp -d "$RUNNER_TEMP/thaumcraft-check.XXXXXX")"
+          trap 'rm -rf -- "$scratch"' EXIT
+          jar="$scratch/Thaumcraft-1.7.10-4.2.3.5.jar"
+          curl --proto '=https' --proto-redir '=https' --fail --location --retry 2 \
+            --max-time 60 --max-filesize 12565807 --output "$jar" \
+            https://edge.forgecdn.net/files/2227/552/Thaumcraft-1.7.10-4.2.3.5.jar
+          test "$(wc -c < "$jar")" -eq 12565807
+          if ! python -m mcmodup convert-jar "$jar" --pack "$jar" --profile thaumcraft-aspects --allow-partial \
+            -o "$scratch/test-only.jar" > "$scratch/test.log" 2>&1; then
+            python - "$scratch/test.log" <<'PY'
+          import pathlib
+          import sys
+          log = pathlib.Path(sys.argv[1]).read_text(errors="replace")[:2000]
+          print("::error title=Thaumcraft check failed::" + log.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A"))
+          PY
+            exit 1
+          fi
+          python - "$scratch/test-only.jar" <<'PY'
+          import json
+          import sys
+          import zipfile
+          with zipfile.ZipFile(sys.argv[1]) as jar:
+              catalog = json.loads(jar.read("data/thaumcraft_aspects/mcmodup/catalog.json"))
+              assert any(item["tag"] == "lux" and item["components"] == ["aer", "ignis"]
+                         and item["recipe_status"] == "crafting_shapeless" for item in catalog["entries"])
+              print(f"::notice title=Thaumcraft catalog verified::{len(catalog['entries'])} aspects; no JAR uploaded")
           PY
       - name: Generate the demo project
         run: python -m mcmodup port examples/retro-ruby -o ports/retro-ruby --plain-item ruby
