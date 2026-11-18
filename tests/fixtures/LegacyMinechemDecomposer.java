@@ -78,8 +78,31 @@ public final class LegacyMinechemDecomposer {
             }
             tick.invoke(replica);
             require(state(replica).equals("idle"), "Original did not return to idle after emptying its buffer");
+            String jam = "";
+            if (FINAL_164) {
+                Method receive = tile.getMethod("onReceiveEnergy", direction(), long.class, boolean.class);
+                require((Long) receive.invoke(replica, unknown(), 100L, false) == 20L && energy(replica) == 0L,
+                        "Wrong original simulated energy reception");
+                fill(replica, 1);
+                for (int slot = 1; slot < slots - 1; slot++) {
+                    set.invoke(replica, slot, itemStack.getConstructor(int.class, int.class, int.class).newInstance(1, 64, 0));
+                }
+                set.invoke(replica, slots - 1, itemStack.getConstructor(type("item.Item"), int.class, int.class).newInstance(element, 63, 25));
+                set.invoke(replica, 0, itemStack.getConstructor(int.class, int.class, int.class).newInstance(265, 1, 0));
+                for (int i = 0; i < 3; i++) tick.invoke(replica);
+                require(state(replica).equals("jammed") && energy(replica) == 0L, "Original did not jam after the final paid unit filled the output");
+                set.invoke(replica, slots - 1, null);
+                tick.invoke(replica);
+                require(state(replica).equals("jammed") && get.invoke(replica, slots - 1) == null, "Original jam cleared without charge");
+                fill(replica, 1);
+                for (int i = 0; i < 15; i++) tick.invoke(replica);
+                Object remaining = get.invoke(replica, slots - 1);
+                require(remaining != null && itemStack.getField("field_77994_a").getInt(remaining) == 15 && energy(replica) == 0L,
+                        "Original did not preserve the remaining buffer across a jam");
+                jam = "; receive_limit=20; jam_clears_only_when_charged_and_slot_empty";
+            }
             System.out.println("MCMODUP_MINECHEM_ORIGINAL_PASS slots=" + slots + "; start_charge=" + capacity + "; start_cost=" + paidAtStart
-                    + "; input_consumed_on_start; saved_queue_emits_16_iron_tubes_one_per_tick; remaining_charge=0");
+                    + "; input_consumed_on_start; saved_queue_emits_16_iron_tubes_one_per_tick; remaining_charge=0" + jam);
         } catch (Throwable failure) {
             System.err.println("MCMODUP_MINECHEM_ORIGINAL_FAIL " + failure);
             failure.printStackTrace();

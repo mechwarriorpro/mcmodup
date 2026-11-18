@@ -14,9 +14,9 @@ from mcmodup.api import ApiContext
 from mcmodup.catalogs import (ASPECT, CATEGORY, CHEMICAL, ELEMENT, MOLECULE, PROFILES, RADIATION, TEXT,
                              CatalogEntry, recover_catalog)
 from mcmodup.classfiles import read_class
-from mcmodup.convert import _recipe_files, convert_catalog
+from mcmodup.convert import _project_files, _recipe_files, convert_catalog
 from mcmodup.inputs import InputError
-from mcmodup.machines import JAVA_CLASSES, machine_recipes
+from mcmodup.machines import BUFFERED_DECOMPOSER, FINAL_LEGACY_SHA256, JAVA_CLASSES, machine_recipes
 from mcmodup.pack import open_pack
 from neoforge_smoke import check_recipes_in_game
 from test_cli import PNG, ROOT, run_cli
@@ -185,6 +185,18 @@ class ConvertTests(unittest.TestCase):
         self.assertEqual(rules[1].outputs, (("test:element_h", 65),))
         self.assertEqual(rules[1].energy, 65)
         self.assertEqual(rules[2].inputs, rules[0].inputs)
+
+    def test_buffered_decomposer_is_bound_to_exact_final_archive(self):
+        profile = PROFILES["minechem-chemistry"]
+        path = "src/main/java/mcmodup/generated/minechem_chemistry/ChemistryMachines.java"
+        report = "src/main/resources/data/minechem_chemistry/mcmodup/catalog.json"
+        for checksum, mode, enabled in ((FINAL_LEGACY_SHA256, BUFFERED_DECOMPOSER, "true"),
+                                         ("1" * 64, "batch-adaptation", "false")):
+            with self.subTest(mode=mode):
+                files, _ = _project_files(profile, [], {}, checksum, {}, [])
+                self.assertIn(f"ORIGINAL_DECOMPOSER = {enabled};", files[path])
+                self.assertEqual(json.loads(files[report])["decomposer_mode"], mode)
+                self.assertFalse(json.loads(files[report])["full_port"])
 
     def test_branches_rejected_instead_of_guessing_catalog(self):
         with self.assertRaisesRegex(InputError, "unsupported control flow"):

@@ -47,10 +47,12 @@ public final class ChemistryScreen extends AbstractContainerScreen<ChemistryMenu
     public void render(GuiGraphics gui, int mouseX, int mouseY, float delta) {
         mode.setMessage(Component.translatable(menu.automatic() ? "gui.@NAMESPACE@.auto" : "gui.@NAMESPACE@.manual"));
         before.visible = after.visible = menu.synthesis();
+        run.visible = mode.visible = !menu.bufferedDecomposer();
         before.active = after.active = run.active = menu.remaining() == 0;
         super.render(gui, mouseX, mouseY, delta);
         renderTooltip(gui, mouseX, mouseY);
-        if (isHovering(8, 80, 16, 16, mouseX, mouseY) && !menu.getSlot(ChemistryMachines.Machine.CHARGE).hasItem()) {
+        if (!menu.bufferedDecomposer() && isHovering(8, 80, 16, 16, mouseX, mouseY)
+                && !menu.getSlot(ChemistryMachines.Machine.CHARGE).hasItem()) {
             gui.renderTooltip(font, Component.translatable("gui.@NAMESPACE@.charge"), mouseX, mouseY);
         }
         if (menu.synthesis() && isHovering(152, 16, 16, 16, mouseX, mouseY)

@@ -112,9 +112,8 @@ jobs:
           jar="$RUNNER_TEMP/Minechem-1.6.4-5.0.5.FINAL.jar"
           curl --proto '=https' --proto-redir '=https' --fail --location --retry 2 \
             --output "$jar" https://github.com/iopleke/Minechem/releases/download/1.6.4-5.0.5-FINAL/Minechem-1.6.4-5.0.5.FINAL.jar
-          printf '%s  %s\n' fd14166ff62e11701978c468976980f2 "$jar" | md5sum --check
-          # Inspect/adapt data only. Do not run or upload the historical JAR or the adaptation.
-          sha256sum "$jar"
+          printf '%s  %s\n' 2443c7f91351f0e6c2323636be28a6fe8697704f20edf378dfe1a9d7a3070bea "$jar" | sha256sum --check
+          # Inspect/adapt data only. Do not run or upload the original JAR.
           python -m mcmodup convert-jar "$jar" --pack "$RUNNER_TEMP/Voltz_Server_v3.0.0c.zip" --profile minechem-chemistry --allow-partial \
             -o "$RUNNER_TEMP/minechem-chemistry-test-only.jar"
           python - "$RUNNER_TEMP/minechem-chemistry-test-only.jar" <<'PY'
@@ -129,7 +128,8 @@ jobs:
                          for item in catalog["entries"])
               recipes = len(catalog["machine_recipes"])
               assert recipes == 299
-              print(f"::notice title=Minechem port checked::113 elements, 147 molecules, {recipes} machine recipes")
+              assert catalog["decomposer_mode"] == "5.0.5-final-output-buffer" and not catalog["full_port"]
+              print(f"::notice title=Minechem catalog and buffer mode checked::113 elements, 147 molecules, {recipes} machine recipes")
           PY
       - name: Verify catalog recovery on the official Thaumcraft 4 release
         shell: bash

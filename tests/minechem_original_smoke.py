@@ -57,7 +57,8 @@ def original(root: Path, version: str) -> None:
     else:
         name, checksum = RELEASE_394, RELEASE_394_HASH
         assert file_digest(source / "mods" / name) == checksum
-        assert file_digest(source / "bin/modpack.jar", "sha1") == "b1cdc3c2a9be174a4abac48b39d235817620bfdc"
+        # 1360 changes the fluid registry used by this mod and crashes before world load.
+        assert file_digest(source / "bin/modpack.jar", "sha1") == "e992c65ece8fd396c6b36ffffa4965c1ebb96ffd"
         assert file_digest(root / COFH, "sha1") == "20617e7822e0217cd091867db681d940f682235b"
         forge = prepare(server, source, "1.7.10")
         shutil.copyfile(root / COFH, server / "mods" / COFH)

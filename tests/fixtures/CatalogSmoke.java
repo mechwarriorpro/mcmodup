@@ -29,7 +29,9 @@ import net.minecraft.world.item.Items;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.EntityBlock;
 import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.neoforged.neoforge.capabilities.Capabilities;
 import net.neoforged.neoforge.energy.IEnergyStorage;
 import net.neoforged.neoforge.items.IItemHandler;
@@ -66,6 +68,7 @@ public final class CatalogSmoke {
     }
 
     private static final String MINECHEM = "minechem_chemistry";
+    private static final boolean FINAL_BUFFER = @BUFFERED_DECOMPOSER@;
     private static final int WATER_INDEX = @WATER_INDEX@;
 
     private record Machine(BlockEntity entity, Player user, AbstractContainerMenu menu, IItemHandler input,
@@ -133,6 +136,7 @@ public final class CatalogSmoke {
 
     @GameTest(template = "empty")
     public static void poweredDecomposition(GameTestHelper helper) {
+        if (FINAL_BUFFER) { finalDecompositionTimeline(helper); return; }
         var machine = placeMachine(helper, "decomposer", false);
         put(helper, machine.input, 0, new ItemStack(Items.WATER_BUCKET));
         put(helper, machine.input, 18, new ItemStack(Items.REDSTONE));
@@ -155,6 +159,75 @@ public final class CatalogSmoke {
                 helper.succeed();
             });
         });
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void tick(Machine machine) {
+        var entity = machine.entity;
+        var state = entity.getBlockState();
+        var ticker = ((EntityBlock) state.getBlock()).getTicker(entity.getLevel(), state, (BlockEntityType<BlockEntity>) entity.getType());
+        if (ticker == null) throw new AssertionError("Missing registered production block ticker");
+        ticker.tick(entity.getLevel(), entity.getBlockPos(), state, entity);
+    }
+
+    private static void finalDecompositionTimeline(GameTestHelper helper) {
+        var machine = placeMachine(helper, "decomposer", false);
+        var level = helper.getLevel();
+        var pos = machine.entity.getBlockPos();
+        helper.assertTrue(machine.input.getSlots() == 1 && machine.output.getSlots() == 9
+                && level.getCapability(Capabilities.ItemHandler.BLOCK, pos, Direction.NORTH) == machine.output,
+                "FINAL must expose one top input and nine lateral/downward outputs");
+        helper.assertTrue(machine.power.receiveEnergy(100, true) == 20 && machine.power.getEnergyStored() == 0,
+                "FINAL must accept up to 20 energy per receive without mutating during simulation");
+        put(helper, machine.input, 0, new ItemStack(Items.IRON_INGOT));
+        tick(machine);
+        helper.assertTrue(machine.input.getStackInSlot(0).is(Items.IRON_INGOT) && machine.output.getStackInSlot(0).isEmpty(),
+                "An unpowered FINAL decomposer started intake");
+        charge(helper, machine.power, 1);
+        tick(machine);
+        helper.assertTrue(machine.input.getStackInSlot(0).isEmpty() && machine.output.getStackInSlot(0).isEmpty() && machine.power.getEnergyStored() == 1,
+                "Intake should consume exactly one ingot without producing or charging on the same tick");
+        var tag = machine.entity.saveWithFullMetadata(level.registryAccess());
+        level.removeBlockEntity(pos);
+        level.setBlockAndUpdate(pos, Blocks.AIR.defaultBlockState());
+        var restored = placeMachine(helper, "decomposer", false);
+        helper.assertTrue(restored.entity != machine.entity, "Need a new block entity to test persistence");
+        restored.entity.loadWithComponents(tag, level.registryAccess());
+        var iron = stack(helper, MINECHEM, "element_fe");
+        for (int i = 1; i <= 16; i++) {
+            tick(restored);
+            var output = restored.output.getStackInSlot(0);
+            helper.assertTrue(output.is(iron.getItem()) && output.getCount() == i && restored.power.getEnergyStored() == 0,
+                    "Saved FINAL queue did not emit exactly one iron unit on tick " + i + ": " + output);
+        }
+        tick(restored);
+        helper.assertTrue(restored.output.getStackInSlot(0).getCount() == 16 && restored.input.getStackInSlot(0).isEmpty(),
+                "The paid queue produced an extra item");
+        helper.succeed();
+    }
+
+    private static void finalDecompositionJam(GameTestHelper helper) {
+        var machine = placeMachine(helper, "decomposer", false);
+        var iron = stack(helper, MINECHEM, "element_fe");
+        var outputs = (IItemHandlerModifiable) machine.output;
+        for (int slot = 0; slot < outputs.getSlots() - 1; slot++) outputs.setStackInSlot(slot, new ItemStack(Items.STONE, 64));
+        int last = outputs.getSlots() - 1;
+        outputs.setStackInSlot(last, iron.copyWithCount(63));
+        charge(helper, machine.power, 1);
+        put(helper, machine.input, 0, new ItemStack(Items.IRON_INGOT));
+        tick(machine); // take one ingot
+        tick(machine); // releases one item and consumes the last unit of charge
+        tick(machine); // jammed, 15 units stay in the buffer
+        helper.assertTrue(outputs.getStackInSlot(last).getCount() == 64 && machine.power.getEnergyStored() == 0,
+                "The jammed machine did not spend only for the released unit");
+        outputs.setStackInSlot(last, ItemStack.EMPTY);
+        tick(machine);
+        helper.assertTrue(outputs.getStackInSlot(last).isEmpty(), "An empty slot alone restarted a jammed unpowered FINAL decomposer");
+        charge(helper, machine.power, 1);
+        for (int i = 1; i <= 15; i++) tick(machine);
+        helper.assertTrue(outputs.getStackInSlot(last).is(iron.getItem()) && outputs.getStackInSlot(last).getCount() == 15
+                && machine.power.getEnergyStored() == 0, "The original resume rule did not preserve the remaining queue");
+        helper.succeed();
     }
 
     @GameTest(template = "empty")
@@ -200,6 +273,7 @@ public final class CatalogSmoke {
 
     @GameTest(template = "empty")
     public static void automaticDecompositionResumes(GameTestHelper helper) {
+        if (FINAL_BUFFER) { finalDecompositionJam(helper); return; }
         var machine = placeMachine(helper, "decomposer", false);
         var water = stack(helper, MINECHEM, "molecule_water");
         helper.assertTrue(machine.output.insertItem(0, water.copy(), false).getCount() == 1, "Output accepted inserts");

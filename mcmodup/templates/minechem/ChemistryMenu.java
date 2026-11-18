@@ -33,7 +33,10 @@ final class ChemistryMenu extends AbstractContainerMenu {
         addDataSlots(values);
         for (int i = 0; i < SLOTS; i++) {
             final int slot = i;
-            if (i == CHARGE) addSlot(new SlotItemHandler(inventory, i, 8, 80));
+            if (i == CHARGE) addSlot(new SlotItemHandler(inventory, i, 8, 80) {
+                @Override public boolean isActive() { return !bufferedDecomposer(); }
+                @Override public boolean mayPlace(ItemStack item) { return isActive() && super.mayPlace(item); }
+            });
             else if (i == JOURNAL) addSlot(new SlotItemHandler(inventory, i, 152, 16) {
                 @Override public boolean isActive() { return synthesis(); }
                 @Override public boolean mayPlace(ItemStack item) {
@@ -46,6 +49,7 @@ final class ChemistryMenu extends AbstractContainerMenu {
             else {
                 int n = i - FIRST_OUTPUT;
                 addSlot(new SlotItemHandler(inventory, i, 8 + (n % 9) * 18, 115 + (n / 9) * 18) {
+                    @Override public boolean isActive() { return !bufferedDecomposer() || n < FINAL_OUTPUTS; }
                     @Override public boolean mayPlace(ItemStack item) { return false; }
                 });
             }
@@ -55,6 +59,7 @@ final class ChemistryMenu extends AbstractContainerMenu {
     }
 
     boolean synthesis() { return values.get(0) != 0; }
+    boolean bufferedDecomposer() { return ORIGINAL_DECOMPOSER && !synthesis(); }
     int selected() { return values.get(1); }
     int energy() { return values.get(2); }
     int status() { return values.get(3); }

@@ -1,6 +1,8 @@
 package @PACKAGE@;
 
 import com.mojang.serialization.MapCodec;
+import java.util.ArrayDeque;
+import java.util.Deque;
 import java.util.List;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -8,6 +10,8 @@ import net.minecraft.core.HolderLookup;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
+import net.minecraft.nbt.Tag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.Containers;
 import net.minecraft.world.InteractionResult;
@@ -65,8 +69,10 @@ public final class ChemistryMachines {
 
     private static void registerCapabilities(RegisterCapabilitiesEvent event) {
         event.registerBlockEntity(Capabilities.EnergyStorage.BLOCK, MACHINE.get(), (machine, side) -> machine.power);
-        event.registerBlockEntity(Capabilities.ItemHandler.BLOCK, MACHINE.get(),
-            (machine, side) -> side == Direction.DOWN ? machine.outputs : machine.inputs);
+        event.registerBlockEntity(Capabilities.ItemHandler.BLOCK, MACHINE.get(), (machine, side) -> {
+            if (machine.bufferedDecomposer()) return side == null || side == Direction.UP ? machine.inputs : machine.outputs;
+            return side == Direction.DOWN ? machine.outputs : machine.inputs;
+        });
     }
 
     public static final class MachineBlock extends BaseEntityBlock {
@@ -104,6 +110,8 @@ public final class ChemistryMachines {
     static final class Machine extends BlockEntity implements MenuProvider {
         static final int CHARGE = 18, FIRST_OUTPUT = 19, JOURNAL = 37, SLOTS = JOURNAL + 1;
         static final int CAPACITY = 10_000, DUST_FE = 500;
+        static final boolean ORIGINAL_DECOMPOSER = @BUFFERED_DECOMPOSER@;
+        static final int FINAL_OUTPUTS = 9;
         static final int IDLE = 0, WORKING = 1, NEED_INPUT = 2, NEED_POWER = 3, OUTPUT_FULL = 4, DONE = 5;
 
         private int selected;
@@ -111,6 +119,7 @@ public final class ChemistryMachines {
         private int status;
         private boolean automatic;
         private String job = "";
+        private final Deque<ItemStack> decompositionBuffer = new ArrayDeque<>();
 
         final ItemStackHandler inventory = new ItemStackHandler(SLOTS) {
             @Override protected void onContentsChanged(int slot) {
@@ -128,17 +137,17 @@ public final class ChemistryMachines {
                 if (stack.isEmpty()) return false;
                 if (slot == JOURNAL) return synthesis() && remaining == 0 && ChemistryResearch.isJournal(stack);
                 if (slot >= FIRST_OUTPUT) return false;
-                if (slot == CHARGE) return stack.is(Items.REDSTONE);
+                if (slot == CHARGE) return !bufferedDecomposer() && stack.is(Items.REDSTONE);
                 String key = BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
                 return synthesis() ? ChemistryRecipes.CHEMICALS.contains(key) : slot == 0 && ChemistryRecipes.DECOMPOSE.containsKey(key);
             }
         };
-        final RangedWrapper inputs = new RangedWrapper(inventory, 0, FIRST_OUTPUT);
-        final RangedWrapper outputs = new RangedWrapper(inventory, FIRST_OUTPUT, JOURNAL);
-        private final Power power = new Power();
+        final RangedWrapper inputs;
+        final RangedWrapper outputs;
+        private final Power power;
 
         private final class Power extends EnergyStorage {
-            Power() { super(CAPACITY, 200, 0); }
+            Power(int maxReceive) { super(CAPACITY, maxReceive, 0); }
             @Override public int receiveEnergy(int amount, boolean simulate) {
                 if (amount <= 0) return 0;
                 int received = super.receiveEnergy(amount, simulate);
@@ -148,8 +157,19 @@ public final class ChemistryMachines {
             void restore(int amount) { this.energy = Math.clamp(amount, 0, CAPACITY); }
         }
 
-        Machine(BlockPos pos, BlockState state) { super(MACHINE.get(), pos, state); }
+        Machine(BlockPos pos, BlockState state) {
+            super(MACHINE.get(), pos, state);
+            boolean buffered = bufferedDecomposer();
+            inputs = new RangedWrapper(inventory, 0, buffered ? 1 : FIRST_OUTPUT);
+            outputs = new RangedWrapper(inventory, FIRST_OUTPUT, buffered ? FIRST_OUTPUT + FINAL_OUTPUTS : JOURNAL);
+            power = new Power(buffered ? 20 : 200);
+        }
         boolean synthesis() { return getBlockState().is(SYNTHESIZER.get()); }
+        boolean bufferedDecomposer() { return ORIGINAL_DECOMPOSER && !synthesis(); }
+
+        private ChemistryRecipes.Recipe currentDecomposition() {
+            return ChemistryRecipes.DECOMPOSE.get(BuiltInRegistries.ITEM.getKey(inventory.getStackInSlot(0).getItem()).toString());
+        }
 
         @Override public Component getDisplayName() { return getBlockState().getBlock().getName(); }
         @Override public AbstractContainerMenu createMenu(int id, Inventory player, Player user) { return new ChemistryMenu(id, player, this); }
@@ -162,8 +182,8 @@ public final class ChemistryMachines {
                         case 1 -> selected;
                         case 2 -> power.getEnergyStored();
                         case 3 -> status;
-                        case 4 -> remaining;
-                        case 5 -> automatic ? 1 : 0;
+                        case 4 -> bufferedDecomposer() ? decompositionBuffer.stream().mapToInt(ItemStack::getCount).sum() : remaining;
+                        case 5 -> (bufferedDecomposer() || automatic) ? 1 : 0;
                         default -> 0;
                     };
                 }
@@ -181,15 +201,15 @@ public final class ChemistryMachines {
         }
 
         boolean toggleAutomatic() {
+            if (bufferedDecomposer()) return false;
             automatic = !automatic;
             setChanged();
             return true;
         }
 
         boolean request() {
-            if (remaining > 0) return false;
-            ChemistryRecipes.Recipe recipe = synthesis() ? ChemistryRecipes.SYNTHESIZE.get(selected)
-                : ChemistryRecipes.DECOMPOSE.get(BuiltInRegistries.ITEM.getKey(inventory.getStackInSlot(0).getItem()).toString());
+            if (bufferedDecomposer() || remaining > 0) return false;
+            ChemistryRecipes.Recipe recipe = synthesis() ? ChemistryRecipes.SYNTHESIZE.get(selected) : currentDecomposition();
             if (recipe == null) {
                 status = NEED_INPUT;
                 return true;
@@ -245,7 +265,58 @@ public final class ChemistryMachines {
             return new Plan(WORKING, stacks, energy - recipe.energy());
         }
 
+        private void tickBufferedDecomposer() {
+            int energy = power.getEnergyStored();
+            if (decompositionBuffer.isEmpty()) {
+                var recipe = energy > 0 ? currentDecomposition() : null;
+                if (recipe == null) {
+                    if (status != IDLE) { status = IDLE; setChanged(); }
+                    return;
+                }
+                for (var part : recipe.outputs()) {
+                    ItemStack product = new ItemStack(part.item());
+                    for (int count = part.count(); count > 0;) {
+                        int batch = Math.min(count, product.getMaxStackSize());
+                        decompositionBuffer.addLast(product.copyWithCount(batch));
+                        count -= batch;
+                    }
+                }
+                inventory.extractItem(0, 1, false);
+                status = WORKING;
+                setChanged();
+                return; // Intake and the first output occur on different ticks.
+            }
+            if (status == OUTPUT_FULL) {
+                // FINAL only clears a jam with power and an empty slot, even if
+                // an occupied matching stack could otherwise accept an item.
+                if (energy <= 0) return;
+                boolean hasEmptySlot = false;
+                for (int slot = FIRST_OUTPUT; slot < FIRST_OUTPUT + FINAL_OUTPUTS; slot++) {
+                    if (inventory.getStackInSlot(slot).isEmpty()) { hasEmptySlot = true; break; }
+                }
+                if (!hasEmptySlot) return;
+            }
+            ItemStack next = decompositionBuffer.getFirst();
+            for (int slot = FIRST_OUTPUT; slot < FIRST_OUTPUT + FINAL_OUTPUTS; slot++) {
+                ItemStack stored = inventory.getStackInSlot(slot);
+                if (stored.isEmpty() || (ItemStack.isSameItemSameComponents(stored, next) && stored.getCount() < stored.getMaxStackSize())) {
+                    inventory.setStackInSlot(slot, next.copyWithCount(stored.getCount() + 1));
+                    next.shrink(1);
+                    if (next.isEmpty()) decompositionBuffer.removeFirst();
+                    // An already active FINAL machine continues discharging even
+                    // after its charge reaches zero; only intake/unjam need power.
+                    power.restore(Math.max(0, energy - 1));
+                    status = WORKING;
+                    setChanged();
+                    return;
+                }
+            }
+            status = OUTPUT_FULL;
+            setChanged();
+        }
+
         static void tick(Level level, BlockPos pos, BlockState state, Machine machine) {
+            if (machine.bufferedDecomposer()) { machine.tickBufferedDecomposer(); return; }
             if (machine.remaining <= 0) {
                 // Periodically retry with current hopper contents and FE. Stagger across positions.
                 if (machine.automatic && (level.getGameTime() + pos.hashCode()) % 5 == 0) machine.request();
@@ -273,6 +344,13 @@ public final class ChemistryMachines {
             super.saveAdditional(tag, registries);
             tag.put("Inventory", inventory.serializeNBT(registries));
             tag.putInt("Energy", power.getEnergyStored());
+            if (bufferedDecomposer()) {
+                ListTag queue = new ListTag();
+                for (ItemStack stack : decompositionBuffer) queue.add(stack.save(registries));
+                tag.put("DecompositionBuffer", queue);
+                tag.putBoolean("DecomposerJammed", status == OUTPUT_FULL);
+                return;
+            }
             tag.putString("Selected", ChemistryRecipes.SYNTHESIZE.get(selected).id());
             tag.putString("Job", job);
             tag.putInt("Remaining", remaining);
@@ -286,6 +364,15 @@ public final class ChemistryMachines {
             stored.putInt("Size", SLOTS);
             inventory.deserializeNBT(registries, stored);
             power.restore(tag.getInt("Energy"));
+            if (bufferedDecomposer()) {
+                decompositionBuffer.clear();
+                for (Tag entry : tag.getList("DecompositionBuffer", Tag.TAG_COMPOUND)) {
+                    ItemStack stack = ItemStack.parseOptional(registries, (CompoundTag) entry);
+                    if (!stack.isEmpty()) decompositionBuffer.addLast(stack);
+                }
+                status = decompositionBuffer.isEmpty() ? IDLE : tag.getBoolean("DecomposerJammed") ? OUTPUT_FULL : WORKING;
+                return;
+            }
             automatic = tag.getBoolean("Automatic");
             selected = ChemistryRecipes.indexOf(tag.getString("Selected"));
             job = tag.getString("Job");

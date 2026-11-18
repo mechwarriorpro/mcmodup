@@ -19,7 +19,7 @@ from .audit import ModMetadata
 from .catalogs import CatalogEntry, Profile, recover_catalog
 from .classfiles import CLASS_LIMIT, Symbol, read_class
 from .inputs import InputError, open_input
-from .machines import JAVA_CLASSES as MACHINE_CLASSES, machine_project, machine_recipes
+from .machines import BUFFERED_DECOMPOSER, FINAL_LEGACY_SHA256, JAVA_CLASSES as MACHINE_CLASSES, machine_project, machine_recipes
 from .pack import ModPack, PackMod
 from .port import _build_gradle, _metadata, write_workspace
 
@@ -143,11 +143,12 @@ def _project_files(profile: Profile, entries: list[CatalogEntry], textures: dict
                    digest: str, dependency_summary: dict, locations: list[ClassLocation]) -> tuple[dict[str, str | bytes], int]:
     namespace = profile.namespace
     package = f"mcmodup.generated.{namespace}"
-    version = "1.2.0-partial" if profile.name == "minechem-chemistry" else "1.0.0-partial"
     machines = profile.name == "minechem-chemistry"
+    buffered = machines and digest == FINAL_LEGACY_SHA256
+    version = "1.3.0-partial" if buffered else "1.2.0-partial" if machines else "1.0.0-partial"
     machine_rules = machine_recipes(namespace, entries) if machines else []
     if machines:
-        recipe_files, extra_locales = machine_project(namespace, package, entries, machine_rules)
+        recipe_files, extra_locales = machine_project(namespace, package, entries, machine_rules, buffered_decomposer=buffered)
         recipe_status = {entry.path: "powered_synthesis" for entry in entries if entry.components}
         count = len(machine_rules)
         features = ("Recovered items, powered synthesis/decomposition, and microscope and journal discovery for the recovered recipes. "
@@ -185,6 +186,7 @@ adaptations without the owner's permission. This JAR contains no legacy JVM clas
             "source_sha256": digest, "target_minecraft": MINECRAFT_VERSION,
             "target_neoforge": NEOFORGE_VERSION, "not_ported": profile.not_ported,
             "catalog_classes": [location.owner for location in locations],
+            **({"decomposer_mode": BUFFERED_DECOMPOSER if buffered else "batch-adaptation"} if machines else {}),
             "dependencies_observed": dependency_summary,
             "machine_recipes": [recipe.describe() for recipe in machine_rules],
             "entries": [{"new_id": f"{namespace}:{entry.path}", **entry.legacy,

@@ -67,6 +67,7 @@ jobs:
           }
           download original/mods/Minechem-1.7.10-5.0.5.394.jar https://edge.forgecdn.net/files/2230/655/Minechem-1.7.10-5.0.5.394.jar sha256sum ea802167b760d43828a0648de3727a58d5c1f7737613123ae49f2743188cdae7 1090147
           download 'CoFHLib-[1.7.10]1.0.1-151.jar' https://edge.forgecdn.net/files/2233/832/CoFHLib-%5b1.7.10%5d1.0.1-151.jar sha1sum 20617e7822e0217cd091867db681d940f682235b 271274
-          download original/bin/modpack.jar https://maven.minecraftforge.net/net/minecraftforge/forge/1.7.10-10.13.3.1360-1.7.10/forge-1.7.10-10.13.3.1360-1.7.10-universal.jar sha1sum b1cdc3c2a9be174a4abac48b39d235817620bfdc 4000000
+          # The original release tag builds against 1291; its fluid registration fails on 1360.
+          download original/bin/modpack.jar https://maven.minecraftforge.net/net/minecraftforge/forge/1.7.10-10.13.2.1291/forge-1.7.10-10.13.2.1291-universal.jar sha1sum e992c65ece8fd396c6b36ffffa4965c1ebb96ffd 4000000
       - name: Run the original recipe through power, ticks and a buffer save round trip
         run: python -m minechem_original_smoke "$RUNNER_TEMP/minechem" '${{ matrix.minecraft }}'

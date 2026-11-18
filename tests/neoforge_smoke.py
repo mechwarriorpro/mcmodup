@@ -6,6 +6,7 @@ import subprocess
 import zipfile
 
 from mcmodup.audit import ModMetadata
+from mcmodup.machines import BUFFERED_DECOMPOSER, FINAL_LEGACY_SHA256
 from mcmodup.port import _build_gradle, _metadata, empty_test_structure, write_workspace
 
 
@@ -26,7 +27,9 @@ neoForge.runs.create('gameTestServer') {{
     synth = [recipe["id"] for recipe in catalog["machine_recipes"] if recipe["machine"] == "synthesizer"]
     water_index = synth.index("minechem_chemistry:molecule_water")  # Orders menu selections exactly like the generated class.
     fixture = (Path(__file__).with_name("fixtures") / "CatalogSmoke.java").read_text(encoding="utf-8")
-    fixture = fixture.replace("@WATER_INDEX@", str(water_index))
+    buffered = catalog["decomposer_mode"] == BUFFERED_DECOMPOSER
+    assert buffered == (catalog["source_sha256"] == FINAL_LEGACY_SHA256), "The buffered machine is bound to the exact original"
+    fixture = fixture.replace("@WATER_INDEX@", str(water_index)).replace("@BUFFERED_DECOMPOSER@", str(buffered).lower())
     write_workspace(project, {
         "settings.gradle": "rootProject.name = 'catalog-smoke'\n",
         "build.gradle": gradle,

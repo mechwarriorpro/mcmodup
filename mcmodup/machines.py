@@ -9,6 +9,8 @@ from .inputs import InputError
 
 
 TEMPLATES = Path(__file__).with_name("templates") / "minechem"
+FINAL_LEGACY_SHA256 = "2443c7f91351f0e6c2323636be28a6fe8697704f20edf378dfe1a9d7a3070bea"
+BUFFERED_DECOMPOSER = "5.0.5-final-output-buffer"
 JAVA_CLASSES = ("ChemistryMachines", "ChemistryMenu", "ChemistryScreen", "ChemistryRecipes",
                 "ChemistryResearch", "ResearchMenus", "ResearchScreens")
 
@@ -31,7 +33,8 @@ class MachineRecipe:
 
 
 def _decomposition(source_item: str, products: tuple[tuple[str, int], ...], source: str) -> MachineRecipe:
-    # The legacy decomposer spent one unit of power per output item. Emit the batch atomically.
+    # One unit per output. The exact FINAL build pays per emitted item while a
+    # positive charge remains; generic conversions reserve this amount as a batch.
     amount = sum(count for _, count in products)
     return MachineRecipe("decomposer", source_item, ((source_item, 1),), products, amount, amount, source)
 
@@ -113,7 +116,8 @@ final class ChemistryRecipes {{
 '''
 
 
-def machine_project(namespace: str, package: str, entries: list[CatalogEntry], recipes: list[MachineRecipe]) -> tuple[dict[str, str], dict[str, str]]:
+def machine_project(namespace: str, package: str, entries: list[CatalogEntry], recipes: list[MachineRecipe], *,
+                    buffered_decomposer: bool = False) -> tuple[dict[str, str], dict[str, str]]:
     def document(value: dict) -> str:
         return json.dumps(value, indent=2) + "\n"
 
@@ -123,6 +127,7 @@ def machine_project(namespace: str, package: str, entries: list[CatalogEntry], r
     data = f"{source}/data"
     files = {f"{java}/{name}.java": (TEMPLATES / f"{name}.java").read_text(encoding="utf-8")
              .replace("@PACKAGE@", package).replace("@NAMESPACE@", namespace)
+             .replace("@BUFFERED_DECOMPOSER@", str(buffered_decomposer).lower())
              for name in JAVA_CLASSES if name != "ChemistryRecipes"}
     files[f"{java}/ChemistryRecipes.java"] = _java_recipes(package, namespace, entries, recipes)
     locales = {f"gui.{namespace}.{key}": label for key, label in {
