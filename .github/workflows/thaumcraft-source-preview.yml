@@ -15,6 +15,7 @@ on:
       - 'mcmodup/native_pack.py'
       - 'tests/thaumcraft_pack_smoke.py'
       - 'tests/fixtures/ThaumcraftPackSmoke.java'
+      - 'tests/fixtures/ThaumcraftClientSmoke.java'
 
 permissions:
   contents: read
@@ -34,6 +35,10 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
+      - name: Set up a display and software OpenGL for the production client
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -qy xvfb xauth libgl1 libgl1-mesa-dri libopenal1
       - name: Build and exercise exact Thaumcraft from source without publishing inputs or outputs
         shell: bash
         env:
@@ -75,7 +80,8 @@ jobs:
             --allow-preview-ports --json
           python -m mcmodup update-pack "$old" --target "$target" --mod "mods/$(basename "$old_jar")" \
             --source-ports "$recipe" --allow-preview-ports -o "$scratch/staged"
-          evidence=$(PYTHONPATH=.:tests python -m thaumcraft_pack_smoke "$scratch/staged" "${smoke[@]}")
+          evidence=$(PYTHONPATH=.:tests LIBGL_ALWAYS_SOFTWARE=1 ALSOFT_DRIVERS=null \
+            xvfb-run -a -s '-screen 0 1280x800x24' python -m thaumcraft_pack_smoke "$scratch/staged" --client "${smoke[@]}")
           printf '%s\n' "$evidence" | tee -a "$GITHUB_STEP_SUMMARY"
           printf '::notice title=Native Thaumcraft preview verified::%s Staged runtime checks passed; this does not certify full parity.\n' "${evidence//$'\n'/ }"
           BUILD
