@@ -69,6 +69,10 @@ if __name__ == "__main__":
     result = analyze(args.original, args.archive, args.recipe)
     print(json.dumps(result, indent=2))
     if args.annotations:
-        for row in result["unmapped"]:
-            details = json.dumps(row, separators=(",", ":")).replace("%", "%25")
+        # GitHub Actions retains only ten notice annotations per step.
+        rows = result.pop("unmapped")
+        for start in range(0, len(rows), max(6, (len(rows) + 8) // 9)):
+            size = max(6, (len(rows) + 8) // 9)
+            details = json.dumps(rows[start:start + size], separators=(",", ":")).replace("%", "%25")
             print(f"::notice title=Exact legacy resource comparison::{details}")
+        print("::notice title=Exact legacy resource summary::" + json.dumps(result, separators=(",", ":")))
