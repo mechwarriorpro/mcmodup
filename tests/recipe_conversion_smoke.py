@@ -2,14 +2,20 @@
 
 import argparse
 import json
+import os
 from pathlib import Path
+import shlex
+import shutil
 import subprocess
 import sys
 from zipfile import ZipFile
 
-from mcmodup.recipe_conversion import PROVENANCE
+from mcmodup.audit import ModMetadata
+from mcmodup.native_pack import inventory
+from mcmodup.port import _metadata
+from mcmodup.recipe_conversion import PROVENANCE, analyze
 from mcmodup.runtime import file_digest
-from legacy_recipe_fixture import legacy_command, prepare, run_server
+from legacy_recipe_fixture import java8, legacy_command, prepare, run_server
 from pack_release_smoke import boot
 
 CASES = {
@@ -35,7 +41,15 @@ def convert(root: Path, version: str, name: str, mod_id: str) -> tuple[Path, dic
             problems = "; ".join(json.loads(result.stdout)["problems"])
         except (ValueError, KeyError):
             problems = result.stderr or result.stdout
-        raise AssertionError(f"{version}: {problems[:1000]}")
+        with ZipFile(source / label) as jar:
+            meta = jar.read("mcmod.info").decode(errors="replace")[:1500] if "mcmod.info" in jar.namelist() else "no mcmod.info"
+        try:
+            direct = analyze(source / label, version).report()
+        except ValueError as exc:
+            direct = str(exc)
+        evidence = inventory(source, target).catalog()["rows"][0]
+        raise AssertionError(f"{problems[:800]}\nAudit IDs {evidence['mods']}, version {evidence['minecraft']}; "
+                             f"direct analysis: {direct}\nLegacy metadata: {meta}")
     assert before == {(base, path): file_digest(path) for base in (source, target) for path in base.rglob("*") if path.is_file()}
     report = json.loads((output / "update-report.json").read_text())
     assert report["staged"] and report["ready"] and not report["native_builds"] and not report["connector_required"]
@@ -56,35 +70,139 @@ def convert(root: Path, version: str, name: str, mod_id: str) -> tuple[Path, dic
     return output, report
 
 
+FIXTURES = Path(__file__).with_name("fixtures")
+
+
+def choices(value) -> tuple[str, ...]:
+    return tuple(row["item"] for row in value) if isinstance(value, list) else (value["item"],)
+
+
+def craft_cases(recipe_id: str, recipe: dict):
+    # The release fixture contains shaped recipes. For every recipe, exercise
+    # both orientations, all placements on 3x3 (and 2x2 when applicable), each
+    # allowed ingredient variant, and missing, wrong, and extra ingredients.
+    assert recipe["type"] == "minecraft:crafting_shaped", recipe["type"]
+    pattern, key = recipe["pattern"], recipe["key"]
+    width, height = len(pattern[0]), len(pattern)
+    result = recipe["result"]
+    seen = set()
+    for size in (3, 2):
+        for flip in (False, True):
+            for y in range(size - height + 1):
+                for x in range(size - width + 1):
+                    slots = [('.',)] * (size * size)
+                    for dy, row in enumerate(pattern):
+                        for dx, char in enumerate(row[::-1] if flip else row):
+                            if char in key:
+                                slots[(y + dy) * size + x + dx] = choices(key[char])
+                    valid = [options[0] for options in slots]
+                    tests = [(True, valid)]
+                    for i, options in enumerate(slots):
+                        for alternative in options[1:]:
+                            tests.append((True, [*valid[:i], alternative, *valid[i + 1:]]))
+                        if valid[i] != '.':
+                            tests.append((False, [*valid[:i], '.', *valid[i + 1:]]))
+                            if valid[i].endswith('_wool') and 'minecraft:black_wool' not in options:
+                                tests.append((False, [*valid[:i], 'minecraft:black_wool', *valid[i + 1:]]))
+                        tests.append((False, [*valid[:i], 'minecraft:cobblestone', *valid[i + 1:]]))
+                    for valid_case, grid in tests:
+                        case = (valid_case, size, tuple(grid))
+                        if case in seen:
+                            continue
+                        seen.add(case)
+                        yield ["C", recipe_id, str(int(valid_case)), result["id"], str(result["count"]), str(size), str(size), ",".join(grid)]
+
+
+def input_cases(root: Path, output: Path, report: dict, version: str, mod_id: str) -> Path:
+    file, = report["files"]
+    with ZipFile(output / file["file"]) as jar:
+        recipes = {name: json.loads(jar.read(name)) for name in jar.namelist() if name.startswith(f"data/{mod_id}/recipe/")}
+    rows = [["M", mod_id, str(len(recipes)), file["conversion"]["source_mod_id"]]]
+    for path, recipe in recipes.items():
+        recipe_id = f"{mod_id}:{Path(path).stem}"
+        if version == "1.7.10":
+            rows.extend(craft_cases(recipe_id, recipe))
+        else:
+            # Independent fixture expectations, not the converter's XP value.
+            assert len(recipes) == 1 and recipe["type"] == "minecraft:smelting"
+            raw, awarded = ("2.0", "1") if version == "1.5.2" else ("0.0", "0")
+            rows.append(["S", recipe_id, "minecraft:rotten_flesh", "minecraft:leather", "1", "200", raw, awarded])
+    path = root / f"cases-{version}.tsv"
+    path.write_text("".join("\t".join(row) + "\n" for row in rows), encoding="utf-8")
+    return path
+
+
+def compile_probe(source: Path, scratch: Path, classpath: list[Path], *, legacy: bool) -> Path:
+    classes = scratch / "classes"
+    classes.mkdir(parents=True)
+    artifact = scratch / "recipe-test-probe.jar"
+    cmd = ([java8("javac"), "-source", "7", "-target", "7"] if legacy else ["javac", "--release", "21"])
+    result = subprocess.run([*cmd, "-proc:none", "-encoding", "UTF-8", "-classpath", os.pathsep.join(map(str, classpath)),
+                             "-d", str(classes), str(source)], capture_output=True, text=True, timeout=60)
+    assert result.returncode == 0, result.stderr[-2600:]
+    with ZipFile(artifact, "w") as jar:
+        for path in classes.rglob("*.class"):
+            jar.write(path, path.relative_to(classes).as_posix())
+        if not legacy:
+            jar.writestr("META-INF/neoforge.mods.toml", _metadata(ModMetadata(""), "mcmodup_recipecheck", "Recipe parity probe", "1.0.0", "Unlicense"))
+    return artifact
+
+
+def legacy_verify(root: Path, version: str, cases: Path) -> str:
+    server = root / "legacy-server" / version
+    forge = prepare(server, root / "legacy" / version, version)
+    scratch = root / "probes" / version
+    scratch.mkdir(parents=True)
+    source = scratch / "LegacyRecipeSmoke.java"
+    with ZipFile(forge) as jar:
+        event = "@Mod.EventHandler" if "cpw/mods/fml/common/Mod$EventHandler.class" in jar.namelist() else None
+    source.write_text((FIXTURES / source.name).read_text().replace("@PRE_INIT@", event or "@Mod.PreInit")
+                      .replace("@SERVER_STARTED@", event or "@Mod.ServerStarted"), encoding="utf-8")
+    artifact = compile_probe(source, scratch, [forge], legacy=True)
+    shutil.copyfile(artifact, server / "mods" / artifact.name)
+    return run_server(server, legacy_command(server, version, [f"-Dmcmodup.recipe.source={version}", f"-Dmcmodup.recipe.cases={cases}"]), legacy=True)
+
+
+def modern_verify(root: Path, output: Path, report: dict, cases: Path) -> str:
+    runtime = report["instance_runtime"]
+    scratch = root / "probes" / "modern"
+    artifact = scratch / "recipe-test-probe.jar"
+    if not artifact.is_file():
+        paths = [output / row["file"] for row in runtime["files"] if row["file"].endswith(".jar")]
+        paths.sort(key=lambda path: (not path.name.endswith("-server.jar"), path.name))
+        compile_probe(FIXTURES / "ModernRecipeSmoke.java", scratch, paths, legacy=False)
+    installed = output / "mods" / artifact.name
+    shutil.copyfile(artifact, installed)
+    try:
+        launch = shlex.split(runtime["launch"]["unix"])
+        launch[1:1] = [f"-Dmcmodup.recipe.cases={cases}"]
+        return run_server(output, launch)
+    finally:
+        installed.unlink()
+
+
 def main(root: Path) -> None:
     failures = []
     for version, (name, mod_id) in CASES.items():
         try:
-            staged, report = convert(root, version, name, mod_id)
-            boot(staged, report["instance_runtime"]["launch"]["unix"])
-        except AssertionError as exc:
-            failures.append(f"{version}: {exc}")
-    if failures:
-        raise AssertionError("\n".join(failures))
-
-
-def legacy_boot(root: Path) -> None:
-    failures = []
-    for version in CASES:
-        runtime = root / "legacy-server" / version
-        try:
-            prepare(runtime, root / "legacy" / version, version)
-            run_server(runtime, legacy_command(runtime, version, []), marker=False, legacy=True)
-            notice(f"Forge {version} baseline booted", "The pinned original and unmodified Forge server reached ready and shut down.")
-        except AssertionError as exc:
+            output, report = convert(root, version, name, mod_id)
+            boot(output, report["instance_runtime"]["launch"]["unix"])
+            cases = input_cases(root, output, report, version, mod_id)
+        except (AssertionError, OSError, ValueError) as exc:
             failures.append(version)
-            notice(f"Forge {version} baseline failed", str(exc)[-3300:])
+            notice(f"Conversion {version} failed", str(exc)[:3300])
+            continue
+        for label, check in (("original Forge", lambda: legacy_verify(root, version, cases)),
+                             ("generated NeoForge", lambda: modern_verify(root, output, report, cases))):
+            try:
+                notice(f"{version} {label} behavior checked", check())
+            except (AssertionError, OSError, ValueError) as exc:
+                failures.append(f"{version} {label}")
+                notice(f"{version} {label} behavior failed", str(exc)[-3200:])
     assert not failures, failures
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("scratch", type=Path)
-    parser.add_argument("--legacy-boot", action="store_true")
-    args = parser.parse_args()
-    (legacy_boot if args.legacy_boot else main)(args.scratch.resolve())
+    main(parser.parse_args().scratch.resolve())
