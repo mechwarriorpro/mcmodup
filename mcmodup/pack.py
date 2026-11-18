@@ -37,6 +37,7 @@ class PackMod:
     classes: dict[str, str]
     references: dict[Symbol, str]
     corrupt_classes: int = 0
+    parents: dict[str, tuple[str, ...]] = field(default_factory=dict)
 
 
 def _archives(root: Path) -> list[Path]:
@@ -59,6 +60,7 @@ def _archives(root: Path) -> list[Path]:
 
 def _load(label: str, path: Path, profile: str | None) -> PackMod:
     classes = {}
+    parents = {}
     refs: dict[Symbol, str] = {}
     annotations = []
     invalid = 0
@@ -75,6 +77,7 @@ def _load(label: str, path: Path, profile: str | None) -> PackMod:
                     invalid_examples.append(f"{entry!r}: {exc}")
                 continue
             classes[owner] = entry
+            parents[owner] = info.parents
             if info.legacy_mod:
                 annotations.append((entry, info.legacy_mod))
             for symbol in info.references:
@@ -92,7 +95,7 @@ def _load(label: str, path: Path, profile: str | None) -> PackMod:
         result.warnings.append(f"No exact Minecraft version in this archive; assumed pack profile {profile}.")
     elif profile and result.source_version != profile:
         result.warnings.append(f"Archive version does not establish {profile}; that legacy index/mapping profile was not applied.")
-    return PackMod(label, path, result, classes, refs, invalid)
+    return PackMod(label, path, result, classes, refs, invalid, parents)
 
 
 def _declared_requests(info: Audit) -> list[tuple[str, str, bool, str]]:

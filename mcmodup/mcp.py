@@ -150,7 +150,8 @@ class McpConfig:
             suffix = "$" + inner + suffix
         return self.names.classes.get(outer, outer) + suffix
 
-    def remap_file(self, output: Path, classes: dict[str, ClassFile], hierarchy: dict[str, ClassFile]) -> None:
+    def remap_file(self, output: Path, classes: dict[str, ClassFile],
+                   hierarchy: dict[str, tuple[str, ...]]) -> None:
         """Compose raw -> MCP and owner-scoped SRG -> MCP for a temporary remapper input."""
         methods: dict[Symbol, Symbol] = {}
         fields: dict[tuple[str, str], tuple[str, str]] = {}
@@ -174,13 +175,13 @@ class McpConfig:
         # still apply to those game types and their known subclasses, not unrelated mods.
         source_types = set(self.names.classes) | set(self.names.classes.values()) | set(self.raw.classes.values())
         flat_types = {name.rsplit("/", 1)[-1] for name in source_types if name.startswith("net/minecraft/src/")}
-        candidates = set(hierarchy) | {s.owner for s in observed} | {p for c in hierarchy.values() for p in c.parents}
+        candidates = set(hierarchy) | {s.owner for s in observed} | {p for parents in hierarchy.values() for p in parents}
         game = {name for name in candidates if name in source_types or
                 (name.startswith("net/minecraft/") and name.rsplit("/", 1)[-1] in flat_types)}
         children = defaultdict(set)
-        for definition in hierarchy.values():
-            for parent in definition.parents:
-                children[parent].add(definition.owner)
+        for child, parents in hierarchy.items():
+            for parent in parents:
+                children[parent].add(child)
         queue = deque(game)
         while queue:
             for child in children[queue.popleft()] - game:

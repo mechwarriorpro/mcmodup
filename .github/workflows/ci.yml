@@ -33,6 +33,7 @@ jobs:
             --output "$remapper" https://repo.maven.apache.org/maven2/net/md-5/SpecialSource/1.11.6/SpecialSource-1.11.6-shaded.jar
           printf '%s  %s\n' afabcba81cd474c5b21abdfe1bbc3888f70a32e782c03bffe13510078fa45a26 "$remapper" | sha256sum --check
           echo '::endgroup::'
+          command -v javac
           MCMODUP_VINEFLOWER_JAR="$jar" MCMODUP_SPECIALSOURCE_JAR="$remapper" \
             python -m unittest discover -s tests -p test_mapped_port.py -v
           echo '::notice title=Mapped source checked::Real SpecialSource and Vineflower remapped raw and SRG class, field and method names before decompilation.'
@@ -62,6 +63,36 @@ jobs:
           fi
           MCMODUP_VOLTZ_ARCHIVE="$archive" MCMODUP_VINEFLOWER_JAR="$RUNNER_TEMP/vineflower-1.12.0.jar" \
             python -m unittest discover -s tests -p test_voltz.py -v
+      - name: Verify mapped decompilation on the original Atomic Science in Voltz
+        shell: bash
+        run: |
+          # Read the pinned Forge configuration only. Do not run MCP or upload the config/derived Java.
+          scratch="$(mktemp -d "$RUNNER_TEMP/mapped-voltz.XXXXXX")"
+          trap 'rm -rf -- "$scratch"' EXIT
+          ref=f1b3381e61fac1a0ae90f521223c6bc613eb4888
+          curl --proto '=https' --proto-redir '=https' --fail --location --retry 2 \
+            --max-time 60 --max-filesize 33554432 --output "$scratch/fml.zip" \
+            "https://codeload.github.com/MinecraftForge/FML/zip/$ref"
+          unzip -q -j "$scratch/fml.zip" "FML-$ref/conf/"{version.cfg,joined.srg,methods.csv,fields.csv,packages.csv} -d "$scratch/conf"
+          python -m mcmodup decompile-mod "$RUNNER_TEMP/Voltz_Server_v3.0.0c.zip" \
+            --mod mods/atomicscience.jar --source-version 1.6.4 --mcp "$scratch/conf" \
+            --specialsource "$RUNNER_TEMP/SpecialSource-1.11.6-shaded.jar" --vineflower "$RUNNER_TEMP/vineflower-1.12.0.jar" \
+            --class atomicscience.fission.BlockUraniumOre -o "$scratch/mapped"
+          python - "$scratch/mapped" <<'PY'
+          import json
+          import pathlib
+          import sys
+          out = pathlib.Path(sys.argv[1])
+          report = json.loads((out / "decompile-report.json").read_text())
+          assert report["mcp"]["minecraft"] == "1.6.4"
+          assert report["mod"]["sha256"] == "80cf5bd9d485377acde3822154a5db47804fab3e8f78c388cfcf529239655938"
+          assert report["source_files"] == ["atomicscience/fission/BlockUraniumOre.java"]
+          source = (out / "sources" / report["source_files"][0]).read_text()
+          assert all(name in source for name in ("randomDisplayTick(", "setHardness(", "blockIcon"))
+          assert not report["remaining_srg_symbols"]
+          assert not list(out.rglob("*.jar"))
+          print("::notice title=Historical mapping checked::The exact Voltz Atomic Science class used MCP 8.11 names for both inherited methods and fields. No originals or references were published.")
+          PY
       - name: Check machine recipe recovery on the historical Minechem release
         shell: bash
         run: |

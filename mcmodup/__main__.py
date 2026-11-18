@@ -95,7 +95,7 @@ def _parser() -> argparse.ArgumentParser:
     plan = commands.add_parser("plan-port", help="prioritize native port work using static and optional Connector evidence")
     for command in (mapped, plan):
         command.add_argument("input", type=Path, help="an installed modpack folder, pack archive, or single legacy mod JAR")
-        _mod_selection(command, required=True)
+        _mod_selection(command)
         command.add_argument("--source-version", choices=SOURCE_VERSIONS,
                              help="verified Minecraft version when the archive does not declare one")
         command.add_argument("--mcp", type=Path, required=command is mapped, metavar="PATH",
@@ -250,13 +250,18 @@ def main(argv: list[str] | None = None) -> int:
                 raise InputError("--mcp-side requires --mcp.")
             with open_pack(args.input, ApiContext(profile=args.source_version), args.mod_jar) as pack:
                 selection = args.mod or pack.selected_archive
-                assert selection is not None
+                if not selection and pack.root.is_file() and pack.root.name in pack.mods:
+                    selection = pack.root.name
+                if not selection:
+                    raise InputError("Select an original archive with --mod or --mod-jar. See scan-pack --json.")
                 mod = pack.select(selection)
                 version = exact_minecraft(pack, mod)
                 mcp = McpConfig.load(args.mcp, version, args.mcp_side or "client") if args.mcp else None
+                port_map = PortMap.load(args.port_map) if args.port_map else None
+                if port_map and port_map.source_version != version:
+                    raise InputError(f"--port-map describes Minecraft {port_map.source_version}, not selected Minecraft {version}.")
                 pack.context = ApiContext(legacy=ApiIndex.load(args.legacy_api), target=ApiIndex.load(args.target_api),
-                                          names=mcp.names if mcp else LegacyNames(), profile=version,
-                                          port_map=PortMap.load(args.port_map) if args.port_map else None)
+                                          names=mcp.names if mcp else LegacyNames(), profile=version, port_map=port_map)
                 report = plan_port(pack, mod, version, mcp, args.connector_report, args.connector_gameplay)
                 if args.command == "decompile-mod":
                     assert mcp is not None

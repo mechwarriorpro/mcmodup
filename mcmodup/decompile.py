@@ -249,9 +249,20 @@ def decompile_mod(pack: ModPack, mod: PackMod, mcp: McpConfig, remapper: Path, o
         raw, mapped = work / "raw", work / "mapped"
         staged = _stage(raw, selected, options.max_classes, kind="Mod")
         classes = {name: read_class((raw / f"{name}.class").read_bytes()) for name in staged}
-        hierarchy = {name: entries[0][1] for name, entries in pack.context.legacy.classes.items() if len(entries) == 1}
+        # Reuse headers already read by the scanner. Include only unambiguous
+        # same-release peers, without passing any of their bytecode to the tools.
+        hierarchy = {name: entries[0][1].parents for name, entries in pack.context.legacy.classes.items() if len(entries) == 1}
+        for peer in pack.mods.values():
+            if peer is not mod and peer.audit.source_version == mcp.version:
+                for name, parents in peer.parents.items():
+                    if len(pack.owners.get(name, ())) == 1:
+                        hierarchy.setdefault(name, parents)
+        hierarchy.update(mod.parents)
         mapping = work / "mcp.srg"
-        mcp.remap_file(mapping, classes, hierarchy | classes)
+        mcp.remap_file(mapping, classes, hierarchy)
+        mapped_names = {name: mcp.class_name(name) for name in staged}
+        if len(set(mapped_names.values())) != len(staged):
+            raise InputError("MCP class names collide inside the selected mod; review the selected mapping and classes.")
         original, renamed = work / "classes.jar", work / "renamed.jar"
         with zipfile.ZipFile(original, "w", compression=zipfile.ZIP_DEFLATED) as archive:
             for owner in sorted(staged):
@@ -259,9 +270,6 @@ def decompile_mod(pack: ModPack, mod: PackMod, mcp: McpConfig, remapper: Path, o
         remap_log = _run_tool("SpecialSource", java, remapper,
                               ["--in-jar", str(original), "--out-jar", str(renamed), "--srg-in", str(mapping)],
                               work, options.timeout)
-        mapped_names = {name: mcp.class_name(name) for name in staged}
-        if len(set(mapped_names.values())) != len(staged):
-            raise InputError("MCP class names collide inside the selected mod; review the selected mapping and classes.")
         expected = set(mapped_names.values())
         remaining = set()
         total = 0

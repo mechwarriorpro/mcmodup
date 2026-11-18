@@ -85,6 +85,13 @@ class MappedPortTests(unittest.TestCase):
         self.assertRaisesRegex(InputError, "not exact Minecraft 1.5.2", McpConfig.load, self.mcp, "1.5.2", "client")
         self.assertRaisesRegex(InputError, "no other version", McpConfig.load, self.root, "1.5.2", "client")
 
+    def test_standalone_original_does_not_need_an_additional_selector(self):
+        mod = self.mod()
+        result = run_cli("plan-port", mod, "--json")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)["input"]["archive"], "Example.jar")
+        self.assertIn("Select an original archive", run_cli("plan-port", self.pack).stderr)
+
     def test_no_filename_fallback_or_override_of_declared_version(self):
         self.mod()
         other = self.mod(file="Old-1.7.10.jar", mc="")
@@ -154,7 +161,7 @@ class MappedPortTests(unittest.TestCase):
                                         read_class(fixture_class("demo/Other", methods=(("func_123_a", "(I)I", 1),)))]}
         parent = read_class(fixture_class("api/Parent", parent=game))
         output = self.root / "map.srg"
-        mcp.remap_file(output, classes, classes | {parent.owner: parent})
+        mcp.remap_file(output, classes, {info.owner: info.parents for info in [*classes.values(), parent]})
         text = output.read_text()
         self.assertIn("MD: a/a (I)I net/minecraft/src/Game/count (I)I\n", text)
         self.assertIn(f"FD: {game}/field_123_a {game}/total\n", text)
@@ -162,9 +169,12 @@ class MappedPortTests(unittest.TestCase):
         self.assertNotIn("demo/Other/func_123_a", text)
 
     def test_local_runner_is_class_only_and_emits_a_checklist(self):
-        mod = self.mod(**{"demo/Main.class": fixture_class("demo/Main", refs=("a#a(I)I",)),
+        mod = self.mod(**{"demo/Main.class": fixture_class("demo/Main", parent="other/Provider", refs=("a#a(I)I",),
+                                                           methods=(("func_123_a", "(I)I", 1),)),
                           "demo/Main$Nested.class": fixture_class("demo/Main$Nested"),
                           "demo/Unrelated.class": fixture_class("demo/Unrelated"), "assets/state.json": "{}"})
+        jar(self.mods / "Library.jar", **{"other/Provider.class": fixture_class("other/Provider", parent="net/minecraft/src/Game"),
+                                          "mcmod.info": '[{"modid":"library","mcversion":"1.7.10"}]'})
         original = mod.read_bytes()
         tool = jar(self.root / "ss.jar", **{"META-INF/MANIFEST.MF": f"Main-Class: {SPECIALSOURCE_ENTRYPOINT}\n\n"})
         flower = jar(self.root / "vf.jar", **{"META-INF/MANIFEST.MF": f"Main-Class: {VINEFLOWER_ENTRYPOINT}\n\n"})
@@ -176,6 +186,7 @@ if '--srg-in' in args:
     input = args[args.index('--in-jar') + 1]
     names = pathlib.Path(args[args.index('--srg-in') + 1]).read_text()
     assert 'MD: a/a (I)I net/minecraft/src/Game/count (I)I' in names
+    assert 'MD: demo/Main/func_123_a (I)I demo/Main/count (I)I' in names
     with zipfile.ZipFile(input) as z:
         assert sorted(z.namelist()) == ['demo/Main$Nested.class', 'demo/Main.class']
     shutil.copyfile(input, args[args.index('--out-jar') + 1])
