@@ -9,6 +9,7 @@ from zipfile import ZipFile
 
 from mcmodup.recipe_conversion import PROVENANCE
 from mcmodup.runtime import file_digest
+from legacy_recipe_fixture import legacy_command, prepare, run_server
 from pack_release_smoke import boot
 
 CASES = {
@@ -67,7 +68,23 @@ def main(root: Path) -> None:
         raise AssertionError("\n".join(failures))
 
 
+def legacy_boot(root: Path) -> None:
+    failures = []
+    for version in CASES:
+        runtime = root / "legacy-server" / version
+        try:
+            prepare(runtime, root / "legacy" / version, version)
+            run_server(runtime, legacy_command(runtime, version, []), marker=False, legacy=True)
+            notice(f"Forge {version} baseline booted", "The pinned original and unmodified Forge server reached ready and shut down.")
+        except AssertionError as exc:
+            failures.append(version)
+            notice(f"Forge {version} baseline failed", str(exc)[-3300:])
+    assert not failures, failures
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("scratch", type=Path)
-    main(parser.parse_args().scratch.resolve())
+    parser.add_argument("--legacy-boot", action="store_true")
+    args = parser.parse_args()
+    (legacy_boot if args.legacy_boot else main)(args.scratch.resolve())

@@ -6,6 +6,7 @@ on:
     paths:
       - '.github/workflows/recipe-conversion.yml'
       - 'tests/recipe_conversion_smoke.py'
+      - 'tests/legacy_recipe_fixture.py'
       - 'tests/fixtures/*Recipe*Smoke.java'
       - 'mcmodup/recipe*.py'
       - 'mcmodup/classfiles.py'
@@ -29,8 +30,11 @@ jobs:
       - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
         with:
           distribution: temurin
-          java-version: '21'
+          java-version: |
+            8
+            21
       - name: Fetch exact originals and install the empty target
+        id: fixtures
         shell: bash
         run: |
           root="$RUNNER_TEMP/recipe-conversion"
@@ -84,3 +88,7 @@ jobs:
             exit 1
           fi
           cat "$log"
+      - name: Run the pinned original Forge servers
+        if: ${{ !cancelled() && steps.fixtures.outcome == 'success' }}
+        shell: bash
+        run: PYTHONPATH=.:tests python -m recipe_conversion_smoke "$RUNNER_TEMP/recipe-conversion" --legacy-boot
