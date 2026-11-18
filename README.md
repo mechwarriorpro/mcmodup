@@ -15,7 +15,7 @@ Open the local URL to select legacy mods under `mods/`. mcmodup reads platform e
 
 Add `--source-ports TRUSTED.json` to `update-pack` or `pack-ui`. The updater matches the exact legacy archives, builds the selected mods and detected add-ons in dependency order, checks legacy assets and NeoForge GameTests, and stages only after the checks pass. It uses available pack-local native dependency JARs and does not run Legacy Connector. A mod with no exact source recipe is blocked in this mode, not replaced by a prebuilt approximation.
 
-The [source-build guide](docs/source-port-builds.md) includes an opt-in **Thaumcraft 4.2.3.5 preview** and a [paired preview for GTNH Thaumic Tinkerer 2.13.0](docs/source-port-builds.md#thaumic-tinkerer-paired-preview). Both were built from source and tested as staged JARs on NeoForge without Connector. They do **not** certify full asset, gameplay or save parity, or compatibility with other add-ons. Minechem, Atomic Science and ICBM still need complete native implementations.
+The [source-build guide](docs/source-port-builds.md) includes an opt-in **Thaumcraft 4.2.3.5 preview** and a [paired preview for GTNH Thaumic Tinkerer 2.13.0](docs/source-port-builds.md#thaumic-tinkerer-paired-preview). Both require all tracked paths from the exact original JAR to be retained, relocated, or explicitly mapped in the native build. The staged JARs have NeoForge runtime checks without Connector. These are not full-parity ports: some preserved assets have no active consumer, and known gameplay gaps, old saves and other add-ons are not covered. Minechem remains partial; Atomic Science and ICBM require native ports.
 
 ## Build a new JAR from a supported part of a legacy mod
 
