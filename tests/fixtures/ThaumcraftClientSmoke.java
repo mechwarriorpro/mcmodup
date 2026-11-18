@@ -78,7 +78,6 @@ public final class ThaumcraftClientSmoke {
                     client.options.tutorialStep = TutorialSteps.NONE;
                     client.options.renderDistance().set(3);
                     client.options.simulationDistance().set(5);
-                    client.options.maxFps().set(30);
                     client.createWorldOpenFlows().createFreshLevel("mcmodup-runtime-check",
                             new LevelSettings("Native staged JAR client check", GameType.CREATIVE, false,
                                     Difficulty.PEACEFUL, true, new GameRules(), WorldDataConfiguration.DEFAULT),
