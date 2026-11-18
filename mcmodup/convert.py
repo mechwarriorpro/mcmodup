@@ -19,6 +19,7 @@ from .audit import ModMetadata
 from .catalogs import CatalogEntry, Profile, recover_catalog
 from .classfiles import CLASS_LIMIT, Symbol, read_class
 from .inputs import InputError, open_input
+from .machines import JAVA_CLASSES as MACHINE_CLASSES, machine_project, machine_recipes
 from .pack import ModPack, PackMod
 from .port import _build_gradle, _metadata, write_workspace
 
@@ -68,13 +69,15 @@ def _textures(entries: list[CatalogEntry], mod: PackMod, locations: list[ClassLo
     return textures
 
 
-def _java(package: str, namespace: str, entries: list[CatalogEntry]) -> str:
+def _java(package: str, namespace: str, entries: list[CatalogEntry], *, machines: bool = False) -> str:
     definitions = []
     for entry in entries:
         keys = [f"item.{namespace}.{entry.path}.detail_{i}" for i in range(len(entry.details))]
         lore = ", ".join(f'Component.translatable("{key}")' for key in keys)
         definitions.append(f'        entries.add(items.registerSimpleItem("{entry.path}", new Item.Properties()'
                            f'.component(DataComponents.LORE, new ItemLore(List.of({lore})))));')
+    if machines:
+        definitions.append("        entries.addAll(ChemistryMachines.register(bus, items));")
     body = "\n".join(definitions)
     return f'''package {package};
 
@@ -99,7 +102,7 @@ public final class CatalogPort {{
     public CatalogPort(IEventBus bus) {{
         var items = DeferredRegister.createItems(MOD_ID);
         var tabs = DeferredRegister.create(Registries.CREATIVE_MODE_TAB, MOD_ID);
-        var entries = new ArrayList<DeferredItem<Item>>();
+        var entries = new ArrayList<DeferredItem<?>>();
 {body}
         tabs.register("catalog", () -> CreativeModeTab.builder()
             .title(Component.translatable("itemGroup.{namespace}.catalog"))
@@ -136,18 +139,27 @@ def _recipe_files(namespace: str, entries: list[CatalogEntry]) -> tuple[dict[str
 
 
 def _project_files(profile: Profile, entries: list[CatalogEntry], textures: dict[str, bytes],
-                   digest: str, dependency_summary: dict, locations: list[ClassLocation],
-                   recipe_files: dict[str, str], recipe_status: dict[str, str]) -> dict[str, str | bytes]:
+                   digest: str, dependency_summary: dict, locations: list[ClassLocation]) -> tuple[dict[str, str | bytes], int]:
     namespace = profile.namespace
     package = f"mcmodup.generated.{namespace}"
-    version = "1.0.0-partial"
-    description = (f"Automatically recovered legacy catalog data for {profile.mod_id}. "
-                   f"This is a partial mod with new IDs and adapted component crafting recipes. Not ported: {profile.not_ported}")
+    version = "1.1.0-partial" if profile.name == "minechem-chemistry" else "1.0.0-partial"
+    machines = profile.name == "minechem-chemistry"
+    machine_rules = machine_recipes(namespace, entries) if machines else []
+    if machines:
+        recipe_files, extra_locales = machine_project(namespace, package, entries, machine_rules)
+        recipe_status = {entry.path: "powered_synthesis" for entry in entries if entry.components}
+        count = len(machine_rules)
+        features = "Recovered items and powered synthesis/decomposition. The machines use NeoForge FE, not the original UE grid."
+    else:
+        recipe_files, recipe_status = _recipe_files(namespace, entries)
+        extra_locales = {}
+        count = len(recipe_files)
+        features = "Recovered aspect items and crafting-table combinations. This is not the original research system."
+    description = f"Partial mod with new IDs. {features} Not ported: {profile.not_ported}"
     notice = f"""PARTIAL PORT — NOT A REPLACEMENT FOR THE ORIGINAL MOD.
 
 Legacy mod: {profile.mod_id} (Minecraft {profile.version}, binary SHA-256 {digest})
-Use: catalog items and adapted component crafting. Primitives are available via creative inventory
-or /give. Crafting-table recipes do not reproduce legacy research or machine requirements.
+Implemented: {features}
 Old Minecraft worlds and dependent mods are not supported.
 Not ported: {profile.not_ported}
 
@@ -163,7 +175,7 @@ adaptations without the owner's permission. This JAR contains no legacy JVM clas
         "settings.gradle": f"pluginManagement {{ repositories {{ gradlePluginPortal() }} }}\nrootProject.name = '{namespace}'\n",
         "build.gradle": _build_gradle(namespace, package, version),
         "gradle.properties": "org.gradle.jvmargs=-Xmx2G\n",
-        f"src/main/java/{package.replace('.', '/')}/CatalogPort.java": _java(package, namespace, entries),
+        f"src/main/java/{package.replace('.', '/')}/CatalogPort.java": _java(package, namespace, entries, machines=machines),
         f"{src}/META-INF/neoforge.mods.toml": _metadata(ModMetadata("", description=description), namespace, profile.title, version, profile.license),
         f"{src}/META-INF/MCModUp-NOTICE.txt": notice,
         f"{src}/data/{namespace}/mcmodup/catalog.json": _document({
@@ -172,6 +184,7 @@ adaptations without the owner's permission. This JAR contains no legacy JVM clas
             "target_neoforge": NEOFORGE_VERSION, "not_ported": profile.not_ported,
             "catalog_classes": [location.owner for location in locations],
             "dependencies_observed": dependency_summary,
+            "machine_recipes": [recipe.describe() for recipe in machine_rules],
             "entries": [{"new_id": f"{namespace}:{entry.path}", **entry.legacy,
                          "ingredients": [{"id": f"{namespace}:{item}", "count": count} for item, count in entry.components],
                          "recipe_status": recipe_status.get(entry.path, "primitive")}
@@ -183,7 +196,7 @@ adaptations without the owner's permission. This JAR contains no legacy JVM clas
         name = f"catalog/{i}"
         icon_ids[path] = f"{namespace}:item/{name}"
         files[f"{prefix}/textures/item/{name}.png"] = data
-    strings = {f"itemGroup.{namespace}.catalog": profile.title}
+    strings = {f"itemGroup.{namespace}.catalog": profile.title, **extra_locales}
     for entry in entries:
         key = f"item.{namespace}.{entry.path}"
         strings[key] = entry.label
@@ -192,7 +205,7 @@ adaptations without the owner's permission. This JAR contains no legacy JVM clas
             "parent": "minecraft:item/generated", "textures": {"layer0": icon_ids[entry.texture]},
         })
     files[f"{prefix}/lang/en_us.json"] = _document(strings)
-    return files
+    return files, count
 
 
 def _gradle(workspace: Path, timeout: int) -> Path:
@@ -228,7 +241,11 @@ def _check_artifact(jar: Path, profile: Profile) -> None:
     except (KeyError, ValueError, zipfile.BadZipFile) as exc:
         raise InputError(f"Built JAR lacks valid NeoForge catalog metadata or code: {exc}") from exc
     declared_mods = metadata.get("mods")
-    if (classes != {f"{owner}.class"} or info.owner != owner or Symbol("net/neoforged/fml/common/Mod") not in info.references
+    expected = {owner}
+    if profile.name == "minechem-chemistry":
+        expected.update(f"mcmodup/generated/{namespace}/{name}" for name in MACHINE_CLASSES)
+    top_level = {name.removesuffix(".class").split("$", 1)[0] for name in classes}
+    if (top_level != expected or not all(f"{name}.class" in classes for name in expected) or info.owner != owner or Symbol("net/neoforged/fml/common/Mod") not in info.references
             or not isinstance(declared_mods, list) or len(declared_mods) != 1 or not isinstance(declared_mods[0], dict)
             or declared_mods[0].get("modId") != namespace or not isinstance(catalog, dict) or catalog.get("full_port") is not False):
         raise InputError("Built JAR failed the generated-class, mod ID, or partial-port verification.")
@@ -253,7 +270,6 @@ def convert_catalog(pack: ModPack, mod: PackMod, profile: Profile, output: Path,
                                                 capture_initializer=True)
     entries = recover_catalog(profile, classes)
     textures = _textures(entries, mod, locations)
-    recipe_files, recipe_status = _recipe_files(profile.namespace, entries)
     with mod.path.open("rb") as stream:
         digest = hashlib.file_digest(stream, "sha256").hexdigest()
     report = pack.report(mod.archive)["archives"][0]
@@ -265,8 +281,8 @@ def convert_catalog(pack: ModPack, mod: PackMod, profile: Profile, output: Path,
     }
     with tempfile.TemporaryDirectory(prefix="mcmodup-convert-") as scratch:
         workspace = Path(scratch) / "project"
-        write_workspace(workspace, _project_files(profile, entries, textures, digest, observed, locations,
-                                                   recipe_files, recipe_status))
+        files, recipe_count = _project_files(profile, entries, textures, digest, observed, locations)
+        write_workspace(workspace, files)
         built = _gradle(workspace, timeout)
         _check_artifact(built, profile)
         output.parent.mkdir(parents=True, exist_ok=True)
@@ -281,4 +297,4 @@ def convert_catalog(pack: ModPack, mod: PackMod, profile: Profile, output: Path,
         finally:
             if staging_path is not None:
                 staging_path.unlink(missing_ok=True)
-    return Conversion(output, profile, len(entries), len(recipe_files))
+    return Conversion(output, profile, len(entries), recipe_count)

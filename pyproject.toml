@@ -16,4 +16,4 @@ mcmodup = "mcmodup.__main__:main"
 packages = ["mcmodup"]
 
 [tool.setuptools.package-data]
-mcmodup = ["templates/*", "templates/gradle/*", "templates/gradle/wrapper/*"]
+mcmodup = ["templates/*", "templates/minechem/*.java", "templates/gradle/*", "templates/gradle/wrapper/*"]

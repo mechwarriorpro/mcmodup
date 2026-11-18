@@ -1,9 +1,11 @@
 """Load two converted JARs and check their crafting recipes on a NeoForge server."""
 
 import gzip
+import json
 from pathlib import Path
 import struct
 import subprocess
+import zipfile
 
 from mcmodup.audit import ModMetadata
 from mcmodup.port import _build_gradle, _metadata, write_workspace
@@ -29,7 +31,12 @@ neoForge.runs.create('gameTestServer') {{
            + b"\x09\x00\x07palette\x0a\x00\x00\x00\x01\x08\x00\x04Name\x00\x0dminecraft:air\x00"
            + b"\x09\x00\x06blocks\x0a\x00\x00\x00\x00"
            + b"\x09\x00\x08entities\x0a\x00\x00\x00\x00\x00")
-    fixture = (Path(__file__).with_name("fixtures") / "CatalogSmoke.java").read_bytes()
+    with zipfile.ZipFile(outputs[0]) as minechem:
+        catalog = json.loads(minechem.read("data/minechem_chemistry/mcmodup/catalog.json"))
+    synth = [recipe["id"] for recipe in catalog["machine_recipes"] if recipe["machine"] == "synthesizer"]
+    water_index = synth.index("minechem_chemistry:molecule_water")  # Orders menu selections exactly like the generated class.
+    fixture = (Path(__file__).with_name("fixtures") / "CatalogSmoke.java").read_text(encoding="utf-8")
+    fixture = fixture.replace("@WATER_INDEX@", str(water_index))
     write_workspace(project, {
         "settings.gradle": "rootProject.name = 'catalog-smoke'\n",
         "build.gradle": gradle,
@@ -41,7 +48,7 @@ neoForge.runs.create('gameTestServer') {{
     })
     run = subprocess.run(["./gradlew", "--no-daemon", "--console=plain", "runGameTestServer"],
                          cwd=project, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=420)
-    if run.returncode or "All 2 required tests passed" not in run.stdout:
+    if run.returncode or "All 4 required tests passed" not in run.stdout:
         raise AssertionError(run.stdout[-8000:])
     parsing_errors = [line for line in run.stdout.splitlines() if "Parsing error loading recipe" in line
                       and ("minechem_chemistry:" in line or "thaumcraft_aspects:" in line)]
@@ -58,4 +65,4 @@ if __name__ == "__main__":
     args = cli.parse_args()
     with tempfile.TemporaryDirectory(prefix="mcmodup-smoke-") as scratch:
         check_recipes_in_game(Path(scratch) / "smoke", args.jars)
-    print("NeoForge GameTest passed both recovered recipes.")
+    print("NeoForge GameTest passed powered synthesis, decomposition, machine persistence/jam handling, and aspect crafting.")

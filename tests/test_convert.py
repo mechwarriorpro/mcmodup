@@ -16,6 +16,7 @@ from mcmodup.catalogs import (ASPECT, CATEGORY, CHEMICAL, ELEMENT, MOLECULE, PRO
 from mcmodup.classfiles import read_class
 from mcmodup.convert import _recipe_files, convert_catalog
 from mcmodup.inputs import InputError
+from mcmodup.machines import JAVA_CLASSES, machine_recipes
 from mcmodup.pack import open_pack
 from neoforge_smoke import check_recipes_in_game
 from test_cli import PNG, ROOT, run_cli
@@ -175,6 +176,16 @@ class ConvertTests(unittest.TestCase):
         self.assertEqual(recipe["ingredients"], [{"item": "test:x"}] * 2)
         self.assertEqual(recipe["result"], {"id": "test:fourth", "count": 1})
 
+    def test_machine_recipes_keep_large_stacks_and_ambiguous_formulas(self):
+        entries = [CatalogEntry(path, "Test", "", (), {}, (("element_h", 65),))
+                   for path in ("molecule_foo", "molecule_bar")]
+        rules = machine_recipes("test", entries)
+        self.assertEqual(len(rules), 4)
+        self.assertEqual(rules[0].id, "test:molecule_bar")
+        self.assertEqual(rules[1].outputs, (("test:element_h", 65),))
+        self.assertEqual(rules[1].energy, 65)
+        self.assertEqual(rules[2].inputs, rules[0].inputs)
+
     def test_branches_rejected_instead_of_guessing_catalog(self):
         with self.assertRaisesRegex(InputError, "unsupported control flow"):
             read_class(element_class(invalid=True), capture_initializer=True)
@@ -207,10 +218,13 @@ class ConvertTests(unittest.TestCase):
             # Local unit test of generation/publication, not a claim to compile a NeoForge mod.
             files = {p.relative_to(workspace / "src/main/resources").as_posix(): p.read_bytes()
                      for p in (workspace / "src/main/resources").rglob("*") if p.is_file()}
-            code = next((workspace / "src/main/java").rglob("*.java")).read_text()
+            code = next((workspace / "src/main/java").rglob("CatalogPort.java")).read_text()
             self.assertIn('registerSimpleItem("element_o"', code)
             owner = f"mcmodup/generated/{profile.namespace}/CatalogPort"
             files[f"{owner}.class"] = fixture_class(owner, refs=("net/neoforged/fml/common/Mod",))
+            for name in JAVA_CLASSES:
+                generated = f"mcmodup/generated/{profile.namespace}/{name}"
+                files[f"{generated}.class"] = fixture_class(generated)
             return jar(workspace / "build/libs/output.jar", **files)
 
         with open_pack(pack_file, ApiContext(profile="1.6.4"), consumer) as pack:
@@ -222,7 +236,7 @@ class ConvertTests(unittest.TestCase):
             with patch("mcmodup.convert._gradle", side_effect=fake_gradle):
                 result = convert_catalog(pack, chosen, profile, output, 15)
             self.assertEqual(result.entries, 4)
-            self.assertEqual(result.recipes, 2)
+            self.assertEqual(result.recipes, 5)
             with self.assertRaisesRegex(InputError, "Existing files"):
                 convert_catalog(pack, chosen, profile, output, 15)
         with zipfile.ZipFile(output) as archive:
@@ -234,9 +248,12 @@ class ConvertTests(unittest.TestCase):
             self.assertNotIn(f"{ELEMENT}.class", archive.namelist())
             self.assertNotIn(f"{MOLECULE}.class", archive.namelist())
             self.assertEqual(archive.read("assets/minechem_chemistry/textures/item/catalog/0.png"), PNG)
-            recipe = json.loads(archive.read("data/minechem_chemistry/recipe/combine/molecule_water.json"))
-            self.assertEqual([value["item"] for value in recipe["ingredients"]],
-                             ["minechem_chemistry:element_h"] * 2 + ["minechem_chemistry:element_o"])
+            self.assertNotIn("data/minechem_chemistry/recipe/combine/molecule_water.json", archive.namelist())
+            recipe = next(r for r in doc["machine_recipes"] if r["id"].endswith(":molecule_water")
+                          and r["machine"] == "synthesizer")
+            self.assertEqual(recipe["energy_fe"], 500)
+            self.assertEqual(recipe["inputs"], [{"id": "minechem_chemistry:element_h", "count": 2},
+                                                {"id": "minechem_chemistry:element_o", "count": 1}])
 
     @unittest.skipUnless(os.environ.get("MCMODUP_TEST_CONVERT_BUILD") and shutil.which("javac"),
                          "set MCMODUP_TEST_CONVERT_BUILD with JDK 21 and Gradle network access")
@@ -304,7 +321,8 @@ public class Aspect {
                 with zipfile.ZipFile(output) as built:
                     raw = json.loads(built.read(f"data/{profile.namespace}/mcmodup/catalog.json"))
                     self.assertEqual(len(raw["entries"]), 3)
-                    self.assertEqual(raw["entries"][-1]["recipe_status"], "crafting_shapeless")
+                    self.assertEqual(raw["entries"][-1]["recipe_status"],
+                                     "powered_synthesis" if profile.mod_id == "minechem" else "crafting_shapeless")
                     self.assertTrue(built.read("META-INF/MCModUp-NOTICE.txt").startswith(b"PARTIAL PORT"))
                 outputs.append(output)
         if len(outputs) == len(PROFILES):

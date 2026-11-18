@@ -1,0 +1,269 @@
+package @PACKAGE@;
+
+import com.mojang.serialization.MapCodec;
+import java.util.List;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.core.HolderLookup;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.network.chat.Component;
+import net.minecraft.world.Containers;
+import net.minecraft.world.InteractionResult;
+import net.minecraft.world.MenuProvider;
+import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.flag.FeatureFlags;
+import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.inventory.ContainerData;
+import net.minecraft.world.inventory.MenuType;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.BaseEntityBlock;
+import net.minecraft.world.level.block.RenderShape;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.entity.BlockEntityTicker;
+import net.minecraft.world.level.block.entity.BlockEntityType;
+import net.minecraft.world.level.block.state.BlockBehaviour;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.BlockHitResult;
+import net.neoforged.bus.api.IEventBus;
+import net.neoforged.neoforge.capabilities.Capabilities;
+import net.neoforged.neoforge.capabilities.RegisterCapabilitiesEvent;
+import net.neoforged.neoforge.energy.EnergyStorage;
+import net.neoforged.neoforge.items.ItemStackHandler;
+import net.neoforged.neoforge.items.wrapper.RangedWrapper;
+import net.neoforged.neoforge.registries.DeferredBlock;
+import net.neoforged.neoforge.registries.DeferredHolder;
+import net.neoforged.neoforge.registries.DeferredItem;
+import net.neoforged.neoforge.registries.DeferredRegister;
+
+public final class ChemistryMachines {
+    private static final DeferredRegister.Blocks BLOCKS = DeferredRegister.createBlocks(CatalogPort.MOD_ID);
+    private static final DeferredRegister<BlockEntityType<?>> ENTITIES = DeferredRegister.create(Registries.BLOCK_ENTITY_TYPE, CatalogPort.MOD_ID);
+    private static final DeferredRegister<MenuType<?>> MENUS = DeferredRegister.create(Registries.MENU, CatalogPort.MOD_ID);
+    static final DeferredBlock<MachineBlock> SYNTHESIZER =
+        BLOCKS.register("synthesizer", () -> new MachineBlock(BlockBehaviour.Properties.of().strength(3.5F).requiresCorrectToolForDrops()));
+    static final DeferredBlock<MachineBlock> DECOMPOSER =
+        BLOCKS.register("decomposer", () -> new MachineBlock(BlockBehaviour.Properties.of().strength(3.5F).requiresCorrectToolForDrops()));
+    private static final DeferredHolder<BlockEntityType<?>, BlockEntityType<Machine>> MACHINE =
+        ENTITIES.register("chemical_machine", () -> BlockEntityType.Builder.of(Machine::new, SYNTHESIZER.get(), DECOMPOSER.get()).build(null));
+    static final DeferredHolder<MenuType<?>, MenuType<ChemistryMenu>> MENU =
+        MENUS.register("chemical_machine", () -> new MenuType<>(ChemistryMenu::new, FeatureFlags.DEFAULT_FLAGS));
+
+    private ChemistryMachines() {}
+
+    static List<? extends DeferredItem<?>> register(IEventBus bus, DeferredRegister.Items items) {
+        BLOCKS.register(bus);
+        ENTITIES.register(bus);
+        MENUS.register(bus);
+        bus.addListener(ChemistryMachines::registerCapabilities);
+        return List.of(items.registerSimpleBlockItem(SYNTHESIZER), items.registerSimpleBlockItem(DECOMPOSER));
+    }
+
+    private static void registerCapabilities(RegisterCapabilitiesEvent event) {
+        event.registerBlockEntity(Capabilities.EnergyStorage.BLOCK, MACHINE.get(), (machine, side) -> machine.power);
+        event.registerBlockEntity(Capabilities.ItemHandler.BLOCK, MACHINE.get(),
+            (machine, side) -> side == Direction.DOWN ? machine.outputs : machine.inputs);
+    }
+
+    public static final class MachineBlock extends BaseEntityBlock {
+        private static final MapCodec<MachineBlock> CODEC = simpleCodec(MachineBlock::new);
+
+        MachineBlock(Properties properties) { super(properties); }
+
+        @Override protected MapCodec<MachineBlock> codec() { return CODEC; }
+        @Override protected RenderShape getRenderShape(BlockState state) { return RenderShape.MODEL; }
+        @Override public BlockEntity newBlockEntity(BlockPos pos, BlockState state) { return new Machine(pos, state); }
+
+        @Override
+        public <T extends BlockEntity> BlockEntityTicker<T> getTicker(Level level, BlockState state, BlockEntityType<T> type) {
+            return level.isClientSide() ? null : createTickerHelper(type, MACHINE.get(), Machine::tick);
+        }
+
+        @Override
+        protected InteractionResult useWithoutItem(BlockState state, Level level, BlockPos pos, Player player, BlockHitResult hit) {
+            if (!level.isClientSide() && level.getBlockEntity(pos) instanceof Machine machine) player.openMenu(machine);
+            return InteractionResult.sidedSuccess(level.isClientSide());
+        }
+
+        @Override
+        protected void onRemove(BlockState state, Level level, BlockPos pos, BlockState replacement, boolean moved) {
+            if (!level.isClientSide() && !state.is(replacement.getBlock()) && level.getBlockEntity(pos) instanceof Machine machine) {
+                for (int slot = 0; slot < Machine.SLOTS; slot++) {
+                    ItemStack stack = machine.inventory.getStackInSlot(slot);
+                    if (!stack.isEmpty()) Containers.dropItemStack(level, pos.getX(), pos.getY(), pos.getZ(), stack);
+                }
+            }
+            super.onRemove(state, level, pos, replacement, moved);
+        }
+    }
+
+    static final class Machine extends BlockEntity implements MenuProvider {
+        static final int CHARGE = 18, FIRST_OUTPUT = 19, SLOTS = 37;
+        static final int CAPACITY = 10_000, DUST_FE = 500;
+        static final int IDLE = 0, WORKING = 1, NEED_INPUT = 2, NEED_POWER = 3, OUTPUT_FULL = 4, DONE = 5;
+
+        private int selected;
+        private int remaining;
+        private int status;
+        private String job = "";
+
+        final ItemStackHandler inventory = new ItemStackHandler(SLOTS) {
+            @Override protected void onContentsChanged(int slot) { setChanged(); }
+            @Override public boolean isItemValid(int slot, ItemStack stack) {
+                if (stack.isEmpty() || slot >= FIRST_OUTPUT) return false;
+                if (slot == CHARGE) return stack.is(Items.REDSTONE);
+                String key = BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
+                return synthesis() ? ChemistryRecipes.CHEMICALS.contains(key) : slot == 0 && ChemistryRecipes.DECOMPOSE.containsKey(key);
+            }
+        };
+        final RangedWrapper inputs = new RangedWrapper(inventory, 0, FIRST_OUTPUT);
+        final RangedWrapper outputs = new RangedWrapper(inventory, FIRST_OUTPUT, SLOTS);
+        private final Power power = new Power();
+
+        private final class Power extends EnergyStorage {
+            Power() { super(CAPACITY, 200, 0); }
+            @Override public int receiveEnergy(int amount, boolean simulate) {
+                int received = super.receiveEnergy(amount, simulate);
+                if (!simulate && received > 0) setChanged();
+                return received;
+            }
+            void restore(int amount) { this.energy = Math.clamp(amount, 0, CAPACITY); }
+        }
+
+        Machine(BlockPos pos, BlockState state) { super(MACHINE.get(), pos, state); }
+        boolean synthesis() { return getBlockState().is(SYNTHESIZER.get()); }
+
+        @Override public Component getDisplayName() { return getBlockState().getBlock().getName(); }
+        @Override public AbstractContainerMenu createMenu(int id, Inventory player, Player user) { return new ChemistryMenu(id, player, this); }
+
+        ContainerData data() {
+            return new ContainerData() {
+                @Override public int get(int index) {
+                    return switch (index) {
+                        case 0 -> synthesis() ? 1 : 0;
+                        case 1 -> selected;
+                        case 2 -> power.getEnergyStored();
+                        case 3 -> status;
+                        case 4 -> remaining;
+                        default -> 0;
+                    };
+                }
+                @Override public void set(int index, int value) {} // Server is authoritative.
+                @Override public int getCount() { return 5; }
+            };
+        }
+
+        boolean advance(int by) {
+            if (!synthesis() || remaining > 0) return false;
+            selected = Math.floorMod(selected + by, ChemistryRecipes.SYNTHESIZE.size());
+            status = IDLE;
+            setChanged();
+            return true;
+        }
+
+        boolean request() {
+            if (remaining > 0) return false;
+            ChemistryRecipes.Recipe recipe = synthesis() ? ChemistryRecipes.SYNTHESIZE.get(selected)
+                : ChemistryRecipes.DECOMPOSE.get(BuiltInRegistries.ITEM.getKey(inventory.getStackInSlot(0).getItem()).toString());
+            if (recipe == null) {
+                status = NEED_INPUT;
+                return true;
+            }
+            Plan plan = plan(recipe);
+            status = plan.status();
+            if (status == WORKING) {
+                job = recipe.id();
+                remaining = recipe.ticks();
+                setChanged();
+            }
+            return true;
+        }
+
+        private record Plan(int status, ItemStack[] stacks, int energy) {}
+
+        /** Simulate every decrement and output insertion before touching any real slot or FE. */
+        private Plan plan(ChemistryRecipes.Recipe recipe) {
+            ItemStack[] stacks = new ItemStack[SLOTS];
+            for (int i = 0; i < SLOTS; i++) stacks[i] = inventory.getStackInSlot(i).copy();
+            for (var part : recipe.inputs()) {
+                int count = part.count();
+                for (int i = 0; count > 0 && i < (synthesis() ? CHARGE : 1); i++) {
+                    if (!stacks[i].is(part.item())) continue;
+                    int take = Math.min(count, stacks[i].getCount());
+                    stacks[i].shrink(take);
+                    count -= take;
+                }
+                if (count > 0) return new Plan(NEED_INPUT, null, 0);
+            }
+            for (var part : recipe.outputs()) {
+                int count = part.count();
+                ItemStack output = new ItemStack(part.item());
+                for (int i = FIRST_OUTPUT; count > 0 && i < SLOTS; i++) {
+                    ItemStack current = stacks[i];
+                    if (!current.isEmpty() && !ItemStack.isSameItemSameComponents(current, output)) continue;
+                    int put = Math.min(count, output.getMaxStackSize() - current.getCount());
+                    if (put <= 0) continue;
+                    stacks[i] = output.copyWithCount(current.getCount() + put);
+                    count -= put;
+                }
+                if (count > 0) return new Plan(OUTPUT_FULL, null, 0);
+            }
+            int energy = power.getEnergyStored();
+            if (energy < recipe.energy()) {
+                ItemStack dust = stacks[CHARGE];
+                int needed = Math.ceilDiv(recipe.energy() - energy, DUST_FE);
+                if (!dust.is(Items.REDSTONE) || dust.getCount() < needed) return new Plan(NEED_POWER, null, 0);
+                dust.shrink(needed);
+                energy = Math.min(CAPACITY, energy + needed * DUST_FE);
+            }
+            return new Plan(WORKING, stacks, energy - recipe.energy());
+        }
+
+        static void tick(Level level, BlockPos pos, BlockState state, Machine machine) {
+            if (machine.remaining <= 0) return;
+            machine.remaining--;
+            if (machine.remaining == 0) machine.finish();
+            machine.setChanged();
+        }
+
+        private void finish() {
+            var recipe = (synthesis() ? ChemistryRecipes.BY_RESULT : ChemistryRecipes.DECOMPOSE).get(job);
+            job = "";
+            if (recipe == null) { status = IDLE; return; }
+            Plan plan = plan(recipe);
+            status = plan.status();
+            if (status != WORKING) return; // Inventory changed during the run: no items or energy were consumed.
+            for (int i = 0; i < SLOTS; i++) inventory.setStackInSlot(i, plan.stacks()[i]);
+            power.restore(plan.energy());
+            status = DONE;
+        }
+
+        @Override
+        protected void saveAdditional(CompoundTag tag, HolderLookup.Provider registries) {
+            super.saveAdditional(tag, registries);
+            tag.put("Inventory", inventory.serializeNBT(registries));
+            tag.putInt("Energy", power.getEnergyStored());
+            tag.putString("Selected", ChemistryRecipes.SYNTHESIZE.get(selected).id());
+            tag.putString("Job", job);
+            tag.putInt("Remaining", remaining);
+        }
+
+        @Override
+        protected void loadAdditional(CompoundTag tag, HolderLookup.Provider registries) {
+            super.loadAdditional(tag, registries);
+            CompoundTag stored = tag.getCompound("Inventory");
+            stored.putInt("Size", SLOTS);
+            inventory.deserializeNBT(registries, stored);
+            power.restore(tag.getInt("Energy"));
+            selected = ChemistryRecipes.indexOf(tag.getString("Selected"));
+            job = tag.getString("Job");
+            var recipe = (synthesis() ? ChemistryRecipes.BY_RESULT : ChemistryRecipes.DECOMPOSE).get(job);
+            remaining = recipe == null ? 0 : Math.clamp(tag.getInt("Remaining"), 0, recipe.ticks());
+            status = remaining == 0 ? IDLE : WORKING;
+        }
+    }
+}

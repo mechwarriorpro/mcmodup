@@ -58,10 +58,11 @@ jobs:
               catalog = json.loads(jar.read("data/minechem_chemistry/mcmodup/catalog.json"))
               assert sum("atomic_number" in item for item in catalog["entries"]) == 113
               assert sum(item["new_id"].startswith("minechem_chemistry:molecule_") for item in catalog["entries"]) == 147
-              assert any(item["new_id"] == "minechem_chemistry:molecule_water" and item["recipe_status"] == "crafting_shapeless"
+              assert any(item["new_id"] == "minechem_chemistry:molecule_water" and item["recipe_status"] == "powered_synthesis"
                          for item in catalog["entries"])
-              recipes = sum(item["recipe_status"] == "crafting_shapeless" for item in catalog["entries"])
-              print(f"::notice title=Minechem catalog verified::113 elements, 147 molecules, {recipes} crafting recipes")
+              recipes = len(catalog["machine_recipes"])
+              assert recipes == 299
+              print(f"::notice title=Minechem port checked::113 elements, 147 molecules, {recipes} machine recipes")
           PY
       - name: Verify catalog recovery on the official Thaumcraft 4 release
         shell: bash
@@ -97,7 +98,7 @@ jobs:
           PY
           PYTHONPATH=.:tests python -m neoforge_smoke \
             "$RUNNER_TEMP/minechem-chemistry-test-only.jar" "$scratch/test-only.jar"
-          echo '::notice title=Official release smoke tests passed::The generated JARs loaded and both recipes matched on the NeoForge GameTest server.'
+          echo '::notice title=Official release smoke tests passed::The release-derived JARs passed Minechem machine and Thaumcraft aspect tests on NeoForge.'
       - name: Generate the demo project
         run: python -m mcmodup port examples/retro-ruby -o ports/retro-ruby --plain-item ruby
       - name: Build the NeoForge 1.21.1 demo

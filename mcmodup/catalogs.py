@@ -44,8 +44,8 @@ class Profile:
 PROFILES = {profile.name: profile for profile in (
     Profile("minechem-chemistry", "minechem", "1.6.4", (ELEMENT, MOLECULE), "minechem_chemistry", "Minechem Chemistry (Partial Port)",
             "CC-BY-SA-3.0", "Minechem and its contributors — https://github.com/iopleke/Minechem/tree/1.6.4-5.0.5-FINAL",
-            "The decomposer and synthesizer machines, vanilla and mod material recipes, reactors, fluids, "
-            "radiation effects, power, networking, and old saves."),
+            "Most material recipes, the rest of the machines, the chemist's journal, reactors, fluids, "
+            "radiation effects, legacy power integrations, and old saves."),
     Profile("thaumcraft-aspects", "thaumcraft", "1.7.10", (ASPECT,), "thaumcraft_aspects", "Thaumcraft Aspects (Partial Port)",
             "Thaumcraft custom license — private use only unless authorized", "Thaumcraft by Azanor — https://www.curseforge.com/minecraft/mc-mods/thaumcraft",
             "Essentia storage and transport, research, wands, infusion, golems, magic, add-on integration, worldgen, and old saves."),
