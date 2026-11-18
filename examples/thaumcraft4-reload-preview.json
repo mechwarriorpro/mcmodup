@@ -28,6 +28,17 @@
         "Outer Lands": "outerlandsgeneratesthelabyrinthoftheeldritchring",
         "Taint spread": "taintblockspreserveoriginalspreadlootandfallingcustody"
       },
+      "original_jar_checks": {
+        "jar_name": "Thaumcraft-1.7.10-4.2.3.5.jar",
+        "report": "common/build/test-results/test/TEST-thaumcraft.eldritch.OrphanMobOracleContractTest.xml",
+        "cases": [
+          "watcherIsUnregisteredDeadCodeNotAClientSpawnEffect()",
+          "greaterPortalIsNotTheOriginalCultistBoss()",
+          "crawlerIsNotAnOriginalTaintSpreadProduct()",
+          "seedIsNotAnOriginalTaintSpreadProduct()",
+          "primeSeedIsNotAnOriginalTaintSpreadProduct()"
+        ]
+      },
       "locale_imports": {"assets/thaumcraft/lang": "common/src/main/resources/assets/thaumcraft/lang"},
       "status": "preview",
       "limitations": [

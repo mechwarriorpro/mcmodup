@@ -77,6 +77,13 @@ class BuildOptions:
 
 
 @dataclass(frozen=True)
+class OriginalJarChecks:
+    jar_name: str
+    report: str
+    cases: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class SourcePort:
     legacy_sha256: str
     archive: str | Path
@@ -96,18 +103,22 @@ class SourcePort:
     imports: dict[str, str] = field(default_factory=dict)
     asset_map: dict[str, tuple[str, str | None]] = field(default_factory=dict)
     locale_imports: dict[str, str] = field(default_factory=dict)
+    original_jar_checks: OriginalJarChecks | None = None
 
     def describe(self) -> dict:
-        return {"original_sha256": self.legacy_sha256, "source_sha256": self.source_sha256,
-                "status": "preview" if self.preview else "reviewed", "legacy_assets": "checked after build",
-                "required_gametests": self.features, "limitations": list(self.limitations)}
+        result = {"original_sha256": self.legacy_sha256, "source_sha256": self.source_sha256,
+                  "status": "preview" if self.preview else "reviewed", "legacy_assets": "checked after build",
+                  "required_gametests": self.features, "limitations": list(self.limitations)}
+        if self.original_jar_checks:
+            result["required_original_jar_checks"] = list(self.original_jar_checks.cases)
+        return result
 
 
 def _parse_port(data: object, base: Path) -> SourcePort:
     row = _object(data)
     allowed = {"legacy_sha256", "source_sha256", "source_zip", "source_url", "source_root", "ids", "neoforge",
                "dependencies", "artifact", "tasks", "game_report", "minimum_tests", "features", "limitations",
-               "status", "target_property", "import_assets", "asset_map", "locale_imports"}
+               "status", "target_property", "import_assets", "asset_map", "locale_imports", "original_jar_checks"}
     if extra := set(row) - allowed:
         raise InputError(f"Unknown recipe fields: {', '.join(sorted(extra))}")
     legacy, source = row.get("legacy_sha256"), row.get("source_sha256")
@@ -193,9 +204,24 @@ def _parse_port(data: object, base: Path) -> SourcePort:
         _asset(old)
         if old.count("/") != 2 or not old.endswith("/lang") or not _resource_dest(_relative(dest), old):
             raise InputError("locale_imports must map assets/<namespace>/lang to a module's matching src/main/resources directory")
+    original_checks = None
+    if "original_jar_checks" in row:
+        check = _object(row["original_jar_checks"])
+        if check.keys() != {"jar_name", "report", "cases"}:
+            raise InputError("original_jar_checks needs jar_name, report, and cases")
+        jar_name, report = (_relative(check[key]) for key in ("jar_name", "report"))
+        if "/" in jar_name or not jar_name.endswith(".jar") or jar_name == artifact:
+            raise InputError("original_jar_checks.jar_name must name a test-only .jar at the project root")
+        if not report.endswith(".xml") or report == game_report:
+            raise InputError("original_jar_checks.report needs a separate JUnit XML file")
+        cases = tuple(_list(check["cases"]))
+        if (not 1 <= len(cases) <= 200 or any(not isinstance(case, str) or not case.strip() for case in cases)
+                or len(set(cases)) != len(cases)):
+            raise InputError("Specify distinct nonempty case names for original_jar_checks")
+        original_checks = OriginalJarChecks(jar_name, report, cases)
     return SourcePort(legacy, archive, source, root, ids, neoforge, tuple(dependencies), artifact, tasks,
                       game_report, minimum, features, limitations, status == "preview", target_property, imports, asset_map,
-                      locale_imports)
+                      locale_imports, original_checks)
 
 
 def _resource_dest(dest: str, asset: str) -> bool:
@@ -309,34 +335,51 @@ def _project_output(workspace: Path, member: str, limit: int) -> Path:
     return output
 
 
-def _test_evidence(report: Path, port: SourcePort) -> dict:
+def _report_cases(report: Path, kind: str) -> tuple[Counter[str], str]:
     raw = report.read_bytes()
     try:
         if b"<!DOCTYPE" in raw.upper().replace(b"\x00", b""):
-            raise InputError("DOCTYPE is not allowed in GameTest reports")
+            raise ValueError("DOCTYPE is not allowed")
         root = ET.fromstring(raw)
         if root.tag not in {"testsuites", "testsuite"}:
-            raise InputError("Expected a JUnit XML testsuite or testsuites root")
+            raise ValueError("expected a JUnit XML testsuite or testsuites root")
         cases = list(root.iter("testcase"))
         for node in root.iter():
             if node.tag in {"failure", "error", "skipped", "disabled"}:
-                raise InputError(f"GameTest report contains a {node.tag} result")
+                raise ValueError(f"contains a {node.tag} result")
             if node.tag in {"testsuites", "testsuite"} and (any(int(node.get(n, "0")) for n in
                     ("failures", "errors", "skipped", "disabled")) or ("tests" in node.attrib and
                     int(node.attrib["tests"]) != sum(1 for _ in node.iter("testcase")))):
-                raise InputError("GameTest report has failures/skips or inaccurate case counts")
-        if len({(case.get("classname", ""), case.get("name", "")) for case in cases}) != len(cases):
-            raise InputError("GameTest report repeats a test identity")
+                raise ValueError("has failures/skips or inaccurate case counts")
         names = Counter(c.get("name", "") for c in cases)
-        if len(cases) < port.minimum_tests or "" in names:
-            raise InputError(f"Expected at least {port.minimum_tests} named NeoForge GameTests; found {len(cases)}")
-        missing = sorted({name for name in port.features.values() if names[name] != 1})
-        if missing:
-            raise InputError("Required GameTest cases are missing or ambiguous: " + ", ".join(missing))
+        if "" in names or len({(c.get("classname", ""), c.get("name", "")) for c in cases}) != len(cases):
+            raise ValueError("has unnamed or repeated test identities")
     except (ET.ParseError, ValueError) as exc:
-        raise InputError(f"Invalid NeoForge GameTest report: {exc}") from exc
-    return {"passed": len(cases), "covered_features": port.features, "report_sha256": hashlib.sha256(raw).hexdigest(),
+        raise InputError(f"Invalid {kind} report: {exc}") from exc
+    return names, hashlib.sha256(raw).hexdigest()
+
+
+def _test_evidence(report: Path, port: SourcePort) -> dict:
+    names, checksum = _report_cases(report, "NeoForge GameTest")
+    if names.total() < port.minimum_tests:
+        raise InputError(f"Expected at least {port.minimum_tests} named NeoForge GameTests; found {names.total()}")
+    missing = sorted({name for name in port.features.values() if names[name] != 1})
+    if missing:
+        raise InputError("Required GameTest cases are missing or ambiguous: " + ", ".join(missing))
+    return {"passed": names.total(), "covered_features": port.features, "report_sha256": checksum,
             "scope": "Source project's NeoForge GameTest run; not a client or full-pack test"}
+
+
+def _original_jar_evidence(workspace: Path, check: OriginalJarChecks, checksum: str) -> dict:
+    copy = _project_output(workspace, check.jar_name, MOD_ARCHIVE_LIMIT)
+    if digest(copy) != checksum:
+        raise InputError("Build changed the exact original JAR supplied for unit tests")
+    report = _project_output(workspace, check.report, 8 * 1024 * 1024)
+    names, report_hash = _report_cases(report, "original JAR check")
+    if missing := sorted(name for name in check.cases if names[name] != 1):
+        raise InputError("Required original JAR checks are missing or ambiguous: " + ", ".join(missing))
+    return {"original_sha256": checksum, "passed": len(check.cases), "cases": list(check.cases),
+            "report_sha256": report_hash, "scope": "Named unit tests against exact original JAR bytes"}
 
 
 def _import_locales(source: ModInput, workspace: Path, port: SourcePort) -> tuple[dict, list]:
@@ -397,6 +440,11 @@ def _asset_evidence(original: Path, modern: Path, port: SourcePort, converted: d
             else:
                 counts["unmapped"] += 1
                 unverified.append({"original": name, "expected_path": new, "status": "missing" if actual is None else "changed"})
+        if port.original_jar_checks:
+            for name, info in after.files.items():
+                if info.file_size == original.stat().st_size and hashlib.sha256(
+                        after.read(name, MOD_ARCHIVE_LIMIT)).hexdigest() == port.legacy_sha256:
+                    raise InputError(f"Produced JAR embeds the test-only original JAR: {name}")
         # Reusing a namespace for new code is fine; shipping verbatim old bytecode isn't.
         for name in after.files:
             if name.endswith(".class") and not name.startswith("META-INF/versions/"):
@@ -479,8 +527,15 @@ def build(port: SourcePort, original: Path, task_dir: Path, dependencies: list[t
     _source_zip(port, zipped)
     _unzip(zipped, workspace, port.source_root)
     zipped.unlink()
-    if (workspace / port.artifact).exists() or (workspace / port.game_report).exists():
-        raise InputError("A source ZIP must not contain its prebuilt output JAR or GameTest report")
+    expected_outputs = [port.artifact, port.game_report]
+    original_checks = port.original_jar_checks
+    if original_checks:
+        expected_outputs.append(original_checks.report)
+    if any((workspace / member).exists() for member in expected_outputs):
+        raise InputError("A source ZIP must not contain its prebuilt output JAR or test reports")
+    if original_checks:
+        with orig.open("rb") as src:
+            _copy_limited(src, workspace / original_checks.jar_name, MOD_ARCHIVE_LIMIT)
     with open_input(orig) as source:
         if source.warnings:
             raise InputError("Cannot verify assets of an original archive with duplicate/unsafe entries")
@@ -508,4 +563,6 @@ def build(port: SourcePort, original: Path, task_dir: Path, dependencies: list[t
                 "dependencies_sha256": copied, "imports": len(port.imports), "converted_locales": locales,
                 "gametests": _test_evidence(_project_output(workspace, port.game_report, 8 * 1024 * 1024), port),
                 "legacy_assets": _asset_evidence(orig, output, port, converted)}
+    if original_checks:
+        evidence["original_jar_checks"] = _original_jar_evidence(workspace, original_checks, port.legacy_sha256)
     return output, evidence

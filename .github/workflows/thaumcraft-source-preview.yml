@@ -58,8 +58,9 @@ jobs:
             --allow-preview-ports --json
           python -m mcmodup update-pack "$old" --target "$target" --mod "mods/$(basename "$old_jar")" \
             --source-ports examples/thaumcraft4-reload-preview.json --allow-preview-ports -o "$scratch/staged"
-          PYTHONPATH=.:tests python -m thaumcraft_pack_smoke "$scratch/staged"
-          echo '::notice title=Native Thaumcraft preview verified::Source GameTests and staged-JAR server smoke passed. This is a preview, not full parity or add-on compatibility.'
+          evidence=$(PYTHONPATH=.:tests python -m thaumcraft_pack_smoke "$scratch/staged")
+          printf '%s\n' "$evidence" | tee -a "$GITHUB_STEP_SUMMARY"
+          printf '::notice title=Native Thaumcraft preview verified::%s Not full parity or add-on compatibility.\n' "${evidence%%$'\n'*}"
           BUILD
           result=$?
           cat "$log"

@@ -177,6 +177,47 @@ class SourcePortTests(unittest.TestCase):
             self.assertEqual(json.loads(archive.read(locale["path"])),
                              {"item.techbase.gear": "Zahnrad", "tooltip.techbase.gear": "Größe = klein"})
 
+    def test_exact_original_jar_is_used_only_for_a_fresh_named_test_report(self):
+        checks = {"jar_name": "Original.jar", "report": "build/oracle.xml", "cases": ["sameOriginalData()"]}
+        write_manifest(self.manifest, {**self.base, "original_jar_checks": checks})
+        original_hash = digest(self.old_base)
+
+        def result(mode):
+            def gradle(port, workspace, *args):
+                original = workspace / checks["jar_name"]
+                self.assertEqual(digest(original), original_hash)
+                self._fake_gradle(port, workspace, *args)
+                if mode == "missing":
+                    return
+                cases = '<testcase name="sameOriginalData()"/>'
+                if mode == "unrelated":
+                    cases = '<testcase name="differentTest()"/>'
+                if mode == "skipped":
+                    cases = '<testcase name="sameOriginalData()"><skipped/></testcase>'
+                (workspace / checks["report"]).write_text(f'<testsuite tests="1">{cases}</testsuite>', encoding="utf-8")
+                if mode == "changed":
+                    original.write_bytes(b"different JAR")
+                if mode == "embedded":
+                    with zipfile.ZipFile(workspace / port.artifact, "a") as archive:
+                        archive.write(original, "reference/custom-path.dat")
+            return gradle
+
+        with patch("mcmodup.native_pack.require_jdk", return_value="unused"):
+            for mode, error in (("missing", "safe, bounded output"), ("unrelated", "missing or ambiguous"),
+                                ("skipped", "skipped"), ("changed", "Build changed the exact original"),
+                                ("embedded", "embeds the test-only original JAR")):
+                with self.subTest(mode=mode), patch("mcmodup.source_ports._gradle", result(mode)):
+                    with self.assertRaisesRegex(InputError, error):
+                        stage(plan(self._list(), ["mods/OldBase.jar"]), self.output)
+                    self.assertFalse(self.output.exists())
+            with patch("mcmodup.source_ports._gradle", result("pass")):
+                stage(plan(self._list(), ["mods/OldBase.jar"]), self.output)
+        self.assertEqual(digest(self.old_base), original_hash)
+        report = json.loads((self.output / REPORT_NAME).read_text())["native_builds"]["techbase.jar"]["original_jar_checks"]
+        self.assertEqual(report["passed"], 1)
+        self.assertEqual(report["cases"], checks["cases"])
+        self.assertEqual(report["original_sha256"], original_hash)
+
     def test_plan_is_read_only_and_rejects_option_like_tasks(self):
         write_manifest(self.manifest, self.base)
         proc = run_cli("update-pack", self.src, "--target", self.target, "--source-ports", self.manifest,

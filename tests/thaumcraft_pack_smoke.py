@@ -17,6 +17,8 @@ def check(staged: Path, project: Path) -> None:
     report = json.loads((staged / REPORT_NAME).read_text(encoding="utf-8"))
     [base] = report["native_builds"].values()
     assert base["status"] == "preview" and base["gametests"]["passed"] >= 539
+    assert base["original_jar_checks"]["passed"] == 5
+    assert base["original_jar_checks"]["original_sha256"] == base["original_sha256"]
     assert any(row["action"] == "dependency" and "architectury" in row["ids"] for row in report["files"])
     namespace = "mcmodup_thaumcraft_check"
     package = "mcmodup.thaumcraftcheck"
@@ -40,6 +42,7 @@ neoForge.runs.create('gameTestServer') {{
     if "All 1 required tests passed" not in log:
         raise AssertionError(log[-12000:])
     print(f"Thaumcraft preview: {base['gametests']['passed']} source GameTests; "
+          f"{base['original_jar_checks']['passed']} original-JAR checks; "
           f"{len(base.get('converted_locales', []))} restored locale files; "
           f"asset audit: {base['legacy_assets']['retained']} retained, {base['legacy_assets']['adapted']} mapped adaptations, "
           f"{base['legacy_assets']['unmapped']} unverified of {base['legacy_assets']['original_count']} original paths.")
