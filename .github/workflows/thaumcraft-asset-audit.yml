@@ -57,4 +57,4 @@ jobs:
           curl "${opts[@]}" --max-filesize 8388608 -o "$scratch/source.zip" \
             https://codeload.github.com/acak1221/Thaumic-Tinkerer-1.21.1/zip/c2e67665446ffada85ec9342384f578875cabb12
           recipe=$(PYTHONPATH=.:tests python -m prepare_tinkerer_preview "$scratch/source.zip" "$scratch/pair")
-          PYTHONPATH=.:tests python -m thaumcraft_asset_probe "$scratch/original.jar" "$scratch/pair/tinkerer-neoforge-source.zip" "$recipe" --annotations
+          PYTHONPATH=.:tests python -m thaumcraft_asset_probe "$scratch/original.jar" "$scratch/pair/tinkerer-neoforge-source.zip" "$recipe" --annotations --require-coverage

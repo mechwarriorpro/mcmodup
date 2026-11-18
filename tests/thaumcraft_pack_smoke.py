@@ -85,6 +85,7 @@ neoForge.runs.create('gameTestServer') {{
         assert any(name.endswith("ThaumicTinkerer-2.13.0.jar") for name in report["auto_addons"])
         add_on = report["native_builds"][Path(built["thaumictinkerer"]).name]
         assert add_on["gametests"]["passed"] >= 371
+        assert add_on["legacy_assets"]["original_count"] == 319 and not add_on["legacy_assets"]["unmapped"], add_on["legacy_assets"]
         assert add_on["dependencies_sha256"][base_file] == base["jar_sha256"]
         java_dir = project / f"src/main/java/{package.replace('.', '/')}"
         shutil.copyfile(Path(__file__).with_name("fixtures") / "TinkererPackSmoke.java", java_dir / "TinkererPackSmoke.java")
@@ -103,7 +104,9 @@ neoForge.runs.create('gameTestServer') {{
     print("Staged production Thaumcraft and Architectury passed the native NeoForge crucible smoke test without Connector.")
     if add_on:
         print(f"Thaumic Tinkerer: {add_on['gametests']['passed']} NeoForge source GameTests; "
-              "the staged add-on's osmotic enchanter uses crafted obsidian tiles through the staged base mod's API.")
+              f"asset audit: {add_on['legacy_assets']['retained']} retained, {add_on['legacy_assets']['adapted']} mapped adaptations, "
+              f"{add_on['legacy_assets']['unmapped']} unverified of {add_on['legacy_assets']['original_count']} original paths. "
+              "The staged Osmotic Enchanter uses crafted obsidian tiles through the staged base mod's API.")
     if client:
         check_client(staged, project.with_name("client"), report, with_tinkerer)
 

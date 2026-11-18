@@ -61,6 +61,7 @@ def prepare(archive: Path, output: Path) -> Path:
         client = f"{TT_ROOT}/neoforge/src/main/java/thaumic/tinkerer/neoforge/client/"
         entry = client + "ThaumicTinkererNeoForgeClient.java"
         dimension = f"{TT_ROOT}/common/src/main/resources/data/thaumictinkerer/dimension_type/bedrock.json"
+        dimension_test = f"{TT_ROOT}/common/src/test/java/thaumic/tinkerer/kamiworld/KamiWorldResourcesTest.java"
         with ZipFile(archive) as upstream, ZipFile(local, "x") as scratch:
             assets = asset_mappings(upstream)
             neo = upstream.read(loader_script).decode("utf-8")
@@ -80,6 +81,9 @@ plugins { id 'dev.architectury.loom' version '1.11.458' apply false }
                     "        NeoForgeClientHooks.register(bus);\n        bus.addListener(BedrockEffects::register);\n").encode(),
                 dimension: change(upstream.read(dimension).decode(), '"effects": "minecraft:overworld"',
                     '"effects": "thaumictinkerer:bedrock"').encode(),
+                dimension_test: change(upstream.read(dimension_test).decode(),
+                    '"minecraft:overworld", type.get("effects").getAsString(), "the sky of the beach biome and the overworld"',
+                    '"thaumictinkerer:bedrock", type.get("effects").getAsString(), "the legacy Bedrock fog and cloud provider"').encode(),
             }
             for info in upstream.infolist():
                 scratch.writestr(info, replacements.get(info.filename, upstream.read(info)))
@@ -111,6 +115,7 @@ plugins { id 'dev.architectury.loom' version '1.11.458' apply false }
                 "Osmotic Enchanter works with native wand": "enchantmentsgametests.theenchanterenchantsatoolfromawandbetweensixpillars",
             },
             "asset_map": assets,
+            "require_asset_coverage": True,
             "status": "preview",
             "limitations": [
                 "Matches GTNH Thaumic Tinkerer 2.13.0 only. Include the exact original Thaumcraft JAR and select the base mod to build this pair.",
