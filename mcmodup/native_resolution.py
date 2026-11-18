@@ -85,8 +85,10 @@ def resolve(roots: set[str], installed: list["NativeMod"], providers: dict[str, 
             options = []
             for key in sorted(needed - active.keys()):
                 choices = {}
-                available = sorted(dict.fromkeys([*providers.get(key, ()), *retained.get(key, ())]),
-                                   key=lambda mod: (priority(mod), mod.label))
+                pool = [*providers.get(key, ()), *retained.get(key, ())]
+                if key in forced:
+                    pool.append(forced[key])
+                available = sorted(dict.fromkeys(pool), key=lambda mod: (priority(mod), mod.label))
                 for mod in available:
                     if any(
                         name in active or (name in forced and forced[name] is not mod) or

@@ -29,7 +29,12 @@ def convert(root: Path, version: str, name: str, mod_id: str) -> tuple[Path, dic
     before = {(base, path): file_digest(path) for base in (source, target) for path in base.rglob("*") if path.is_file()}
     result = subprocess.run([sys.executable, "-m", "mcmodup", "update-pack", str(source), "--target", str(target),
                              "--mod", label, "--output-pack", str(output), "--json"], capture_output=True, text=True, timeout=80)
-    assert result.returncode == 0, result.stdout + result.stderr
+    if result.returncode:
+        try:
+            problems = "; ".join(json.loads(result.stdout)["problems"])
+        except (ValueError, KeyError):
+            problems = result.stderr or result.stdout
+        raise AssertionError(f"{version}: {problems[:1000]}")
     assert before == {(base, path): file_digest(path) for base in (source, target) for path in base.rglob("*") if path.is_file()}
     report = json.loads((output / "update-report.json").read_text())
     assert report["staged"] and report["ready"] and not report["native_builds"] and not report["connector_required"]
@@ -45,6 +50,7 @@ def convert(root: Path, version: str, name: str, mod_id: str) -> tuple[Path, dic
         assert json.loads(jar.read(PROVENANCE)) == artifact["conversion"]
         recipes = {name: json.loads(jar.read(name)) for name in jar.namelist() if name.startswith(f"data/{mod_id}/recipe/")}
         assert len(recipes) == sum(artifact["conversion"]["recipes"].values()) > 0
+        print(json.dumps(list(recipes.values()), separators=(",", ":")), flush=True)
     notice(f"Original {version} converted", f"{name} -> {output_file.name}; generated {len(recipes)} recipe(s).")
     return output, report
 

@@ -10,6 +10,7 @@ on:
       - 'mcmodup/recipe*.py'
       - 'mcmodup/classfiles.py'
       - 'mcmodup/native_pack.py'
+      - 'mcmodup/native_resolution.py'
 
 permissions:
   contents: read
