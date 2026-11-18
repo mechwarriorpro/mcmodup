@@ -11,6 +11,17 @@ python3 -m mcmodup pack-ui /path/to/LegacyPack --target /path/to/NeoForgePack \
 
 Open the local URL to select legacy mods under `mods/` and `coremods/`. mcmodup reads the legacy platform evidence, finds native builds and their dependencies in the local packs, and creates a new instance without changing either input. Use `-o` instead to stage a replacement `mods/` folder for an existing target. **No Legacy Connector in the output or required at launch.** Missing native builds and dependencies are reported as blockers, never replaced by relabeled legacy code. See the [folder layout, CLI commands and limitations](docs/native-pack-updates.md).
 
+## Try automatic recipe translation from an original archive
+
+`update-pack` can read a small subset of single-class Forge mods from **1.5.2, 1.6.4, or 1.7.10** and generate a data-only JAR for **1.21.1 / NeoForge 21.1.267**. This is an opt-in **recipe preview**, not a full-parity update. It uses the original binary, not a modern replacement, source port, or Legacy Connector.
+
+```sh
+python3 -m mcmodup update-pack LegacyPack --target NeoForgePack \
+  --mod mods/Original.jar --allow-recipe-preview --output-pack .mcmodup/RecipePreview
+```
+
+See [eligibility, limitations, and the runtime checks](docs/native-pack-updates.md#preview-automatic-recipe-translation). Without the opt-in, the updater will not stage a recipe preview or use one as a native provider.
+
 ## Build native mods and add-ons from reviewed source
 
 `build-jars` compiles the built-in source ports. With the exact **Thaumcraft 4.2.3.5** JAR in the legacy pack and native dependencies in the target pack, run:
@@ -137,9 +148,9 @@ python3 -m mcmodup inspect /path/to/legacy-mod.jar
 
 ## Current automatic-update coverage
 
-The goal is a runnable NeoForge JAR from the original mod without a manual rewrite. Today `update-pack` can stage an existing native build or run a matching reviewed build recipe; it cannot automatically rewrite an arbitrary legacy JAR. Registries, world generation, packets, client rendering and coremods can require behavioral changes that version metadata and name mappings alone do not provide. A blocked update is a gap in the tool, not a successful conversion. The optional `port` workspace is a development scaffold, not an update result. **Legacy saves are not migrated.**
+The goal is a runnable NeoForge JAR from the original mod without a manual rewrite. Today `update-pack` can stage an existing native build, run a matching reviewed build recipe, or emit an opt-in recipe preview. It cannot automatically rewrite an arbitrary legacy JAR with full parity. Registries, world generation, packets, client rendering and coremods can require behavioral changes that version metadata and name mappings alone do not provide. A blocked update is a gap in the tool, not a successful conversion. The optional `port` workspace is a development scaffold, not an update result. **Legacy saves are not migrated.**
 
-The [sampled updater workflow](.github/workflows/legacy-update-sample.yml) measures original-only updates on all three legacy releases. Runs with pre-existing native JARs are controls and do not count as automatic conversions.
+The [sampled updater workflow](.github/workflows/legacy-update-sample.yml) measures original-only updates on all three legacy releases. The original-only result was **0/3** (Xaero’s Minimap, BdLib, Twilight Forest). Pre-existing native JARs are controls; neither they nor the separately selected recipe previews count as full-parity conversions.
 
 ## Build reviewed changes with GitHub Actions
 

@@ -50,6 +50,23 @@ Both output modes require a new directory outside the input packs. Neither modif
 
 `update-report.json` records file origins and SHA-256s, legacy declarations and class owners, native constraints and provider choices, and any runtime files copied. No saves, credentials, configs or license/EULA acceptance are copied. Start in a fresh world. A ready or staged plan is not a boot check, proof of saved-world migration, or proof of gameplay or resource parity.
 
+## Preview automatic recipe translation
+
+The updater can recognize a bounded subset of original Forge **1.5.2, 1.6.4, and 1.7.10** archives on an empty or existing **1.21.1 / NeoForge 21.1.267** installation. To try it, stage **one** eligible archive in a new pack:
+
+```sh
+python3 -m mcmodup update-pack LegacyPack --target NeoForgePack \
+  --mod mods/Original.jar --allow-recipe-preview --output-pack .mcmodup/RecipePreview
+```
+
+The same flag works with `pack-ui` and `--output-pack`. A recipe preview is not selected by “Select available,” cannot replace a target's installed mods folder, and cannot satisfy a native dependency or substitute for a full mod update. If a compatible local native build is available, the updater still prefers that build. For an original-only test, use a clean target without any replacement JARs in its scanned folders.
+
+The translator reads bytecode without running it. It needs exact Minecraft release evidence and checks every method in a small, single-class FML archive. It supports literal shaped and shapeless recipes using a limited set of vanilla items, plus some numeric-ID furnace registrations. It maps known wool metadata to the corresponding modern colored items. Unknown calls, nontrivial initialization, custom assets, real dependency or network handlers, and unsupported item identities block translation. The result is a deterministic `lowcodefml` JAR, with no legacy classes. `META-INF/mcmodup/recipe-conversion.json` records the original SHA-256, recipe counts, and limitations. Generating it requires Python, not a Java compiler; launching the target requires Java 21.
+
+**A recipe preview does not meet full parity.** Legacy client/server requirements and startup log messages are not reproduced, and positive furnace XP uses modern accounting. The preview is not validated for add-ons, interactions with other mods, or old saves. Staging for your input verifies metadata and hashes, not gameplay.
+
+The [original recipe workflow](../.github/workflows/recipe-conversion.yml) downloads three pinned public originals and runs dedicated server probes on historical Forge and stock NeoForge. Its cases cover the two rotten-flesh smelting recipes and the shaped recipes from Craftable Saddles. It checks observed registry matches, output counts, offsets and mirroring, ingredient variants, and furnace timing and normal pickup XP where applicable. The probes are test-only and are not shipped in the generated JARs. This is separate from the random original-only benchmark and does not establish full parity or client compatibility.
+
 ## Different versions of the same dependency
 
 The planner resolves required old declarations per consumer. For example, an add-on demanding an exact Forge Multipart release is not automatically added when you select a *different* Multipart release. The report records each compatible local original provider and its digest, or records why it could not identify one. Old ranges are **not** applied to modern JARs. The native add-ons' declarations define which modern versions can run together.
