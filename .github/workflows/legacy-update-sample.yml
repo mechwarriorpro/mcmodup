@@ -33,13 +33,19 @@ jobs:
           cd "$root"
           for version in 1.7.10 1.6.4 1.5.2; do mkdir -p "legacy/$version"/{mods,bin}; done
           download() {
-            curl --proto '=https' --proto-redir '=https' --fail --location --silent --show-error \
-              --retry 2 --max-time 100 --max-filesize 32000000 --output "$1" "$2"
-            printf '%s  %s\n' "$4" "$1" | "$3" --check
+            if ! curl --proto '=https' --proto-redir '=https' --fail --location --silent --show-error \
+              --retry 2 --max-time 100 --max-filesize 32000000 --output "$1" "$2"; then
+              echo "::error title=Sample download failed::$1 from $2"
+              return 1
+            fi
+            if ! printf '%s  %s\n' "$4" "$1" | "$3" --check; then
+              echo "::error title=Sample checksum mismatch::$1"
+              return 1
+            fi
           }
           download legacy/1.7.10/bin/minecraft.jar https://piston-data.mojang.com/v1/objects/e80d9b3bf5085002218d4be59e668bac718abbc6/client.jar sha1sum e80d9b3bf5085002218d4be59e668bac718abbc6
-          download legacy/1.6.4/bin/minecraft.jar https://piston-data.mojang.com/v1/objects/1703704407101cf72bd88e68579e3696ce733ecd/client.jar sha1sum 1703704407101cf72bd88e68579e3696ce733ecd
-          download legacy/1.5.2/bin/minecraft.jar https://piston-data.mojang.com/v1/objects/465378c9dc2f779ae1d6e8046ebc46fb53a57968/client.jar sha1sum 465378c9dc2f779ae1d6e8046ebc46fb53a57968
+          download legacy/1.6.4/bin/minecraft.jar https://launcher.mojang.com/v1/objects/1703704407101cf72bd88e68579e3696ce733ecd/client.jar sha1sum 1703704407101cf72bd88e68579e3696ce733ecd
+          download legacy/1.5.2/bin/minecraft.jar https://launcher.mojang.com/v1/objects/465378c9dc2f779ae1d6e8046ebc46fb53a57968/client.jar sha1sum 465378c9dc2f779ae1d6e8046ebc46fb53a57968
           download legacy/1.7.10/bin/modpack.jar https://maven.minecraftforge.net/net/minecraftforge/forge/1.7.10-10.13.4.1614-1.7.10/forge-1.7.10-10.13.4.1614-1.7.10-universal.jar sha1sum 25fd97f72beca728112256938e03e8105b1b78cc
           download legacy/1.6.4/bin/modpack.jar https://maven.minecraftforge.net/net/minecraftforge/forge/1.6.4-9.11.1.964/forge-1.6.4-9.11.1.964-universal.jar sha1sum 2d26a79d0e053abb7d060a3cefab3a1d0b489c64
           download legacy/1.5.2/bin/modpack.jar https://maven.minecraftforge.net/net/minecraftforge/forge/1.5.2-7.8.1.738/forge-1.5.2-7.8.1.738-universal.zip sha1sum 76223709288287a6a8d22ab16b43a6ab2a284a0d
