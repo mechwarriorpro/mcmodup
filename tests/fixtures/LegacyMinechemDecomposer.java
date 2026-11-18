@@ -102,7 +102,14 @@ public final class LegacyMinechemDecomposer {
                 set.invoke(replica, slots - 1, null);
                 tick.invoke(replica);
                 require(state(replica).equals("jammed") && get.invoke(replica, slots - 1) == null, "Original jam cleared without charge");
+                Object occupied = itemStack.getConstructor(type("item.Item"), int.class, int.class).newInstance(element, 62, 25);
+                set.invoke(replica, slots - 1, occupied);
                 fill(replica, 1);
+                tick.invoke(replica);
+                require(state(replica).equals("jammed") && energy(replica) == 1L &&
+                        itemStack.getField("field_77994_a").getInt(get.invoke(replica, slots - 1)) == 62,
+                        "Matching occupied space must not clear FINAL's powered jam");
+                set.invoke(replica, slots - 1, null);
                 for (int i = 0; i < 15; i++) tick.invoke(replica);
                 Object remaining = get.invoke(replica, slots - 1);
                 require(remaining != null && itemStack.getField("field_77994_a").getInt(remaining) == 15 && energy(replica) == 0L,
@@ -160,7 +167,20 @@ public final class LegacyMinechemDecomposer {
                 Object remainder = get.invoke(replica, 1);
                 require(remainder != null && item.invoke(remainder) == element && quantity.getInt(remainder) == 14 && energy(replica) == 0L,
                         ".394 jam did not preserve its paid remainder");
-                jam = "; receive_limit=100; compacts_at_intake; merge_before_empty_when_active; paid_jam_resumes_without_more_charge";
+                Object split = tile.newInstance();
+                tile.getMethod("func_145834_a", worldType).invoke(split, world);
+                Object front = copy.invoke(matching), back = copy.invoke(matching);
+                quantity.setInt(front, 60);
+                quantity.setInt(back, 10);
+                set.invoke(split, 1, front);
+                set.invoke(split, slots - 1, back);
+                set.invoke(split, 0, itemStack.getConstructor(items, int.class, int.class).newInstance(blocker, 1, 0));
+                fill(split, 1_000);
+                tick.invoke(split);
+                require(get.invoke(split, 0) == null && energy(split) == 0L && get.invoke(split, 2) == null &&
+                        quantity.getInt(get.invoke(split, 1)) == 64 && quantity.getInt(get.invoke(split, slots - 1)) == 6,
+                        "Intake should fill 60→64, leave six tubes in the trailing slot, and emit none");
+                jam = "; receive_limit=100; compacts_at_intake_and_keeps_merge_remainder; merge_before_empty_when_active; paid_jam_resumes_without_more_charge";
             }
             System.out.println("MCMODUP_MINECHEM_ORIGINAL_PASS slots=" + slots + "; start_charge=" + capacity + "; start_cost=" + paidAtStart
                     + "; input_consumed_on_start; saved_queue_emits_16_iron_tubes_one_per_tick; remaining_charge=0" + jam);

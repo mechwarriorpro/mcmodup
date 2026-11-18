@@ -78,7 +78,7 @@ These hand-picked previews do not count toward full parity. The [random original
 
 ## Different releases of selected originals and their dependencies
 
-Keep legacy originals grouped by Minecraft release (for example, `mods/1.6.4/` and `mods/1.7.10/`). The updater resolves release evidence per archive; this is a workspace layout, not an old Forge installation that runs both releases. If distinct selected originals share an ID, the planner reports `legacy_selection_conflicts` and blocks staging even when one modern JAR matches. It will not silently count one native build as preserving both originals. Running both would require a native implementation that keeps their class, registry, resource, and save identities separate, or a verified combined migration. A global ID alias alone cannot achieve this.
+Keep legacy originals grouped by Minecraft release (for example, `mods/1.6.4/` and `mods/1.7.10/`). The updater resolves release evidence per archive; this is a workspace layout, not an old Forge installation that runs both releases. If distinct selected originals share an ID, the planner reports `legacy_selection_conflicts` unless distinct SHA-bound recipes are supplied for them. It will not count one modern JAR as preserving both originals. A global ID alias alone cannot separate class, registry, resource and save identities. The [paired Minechem recipes](source-port-builds.md#both-exact-minechem-releases-linked-previews) demonstrate isolation for a fresh world, not a migration of either old registry.
 
 For legacy IDs with characters not allowed by NeoForge, such as `ICBM|Explosion`, the planner reports the invalid native ID. A reviewed map can name the corresponding IDs in an actual native port; it does not update the underlying module code.
 

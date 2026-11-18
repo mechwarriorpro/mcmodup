@@ -41,9 +41,19 @@ class SourceIdentityTests(unittest.TestCase):
         def fake(port, workspace, *_args):
             mod_id = next(iter(port.ids))
             asset_ns = "shared" if collision == "asset" else mod_id
-            same_package = {f"shared/pkg/{mod_id}.class": fixture_class(f"shared/pkg/{mod_id}")} if collision == "package" else {}
+            files = {f"data/{asset_ns}/recipe/test.json": "{}"}
+            if collision == "package":
+                files[f"shared/pkg/{mod_id}.class"] = fixture_class(f"shared/pkg/{mod_id}")
+            if collision.startswith("tag"):
+                bad = mod_id == self.ids[-1]
+                files["data/minecraft/tags/block/mineable/pickaxe.json"] = json.dumps({
+                    "replace": bad and collision == "tag-replace",
+                    "values": ["minecraft:stone" if bad and collision == "tag-foreign" else f"{mod_id}:decomposer"],
+                })
+                if bad and collision == "tag-assets":
+                    files["assets/minecraft/models/block/stone.json"] = "{}"
             output = native(workspace, port.artifact, mod_id, requirements=tuple((dep.mod_id, dep.version) for dep in port.dependencies),
-                            owner=f"modern/{mod_id}/Main", more={f"data/{asset_ns}/recipe/test.json": "{}", **same_package})
+                            owner=f"modern/{mod_id}/Main", more=files)
             if collision == "nested":
                 private = jar(workspace / "nested.jar", **{f"private/{mod_id}/Tools.class": fixture_class(f"private/{mod_id}/Tools")})
                 with ZipFile(output, "a") as archive:
@@ -104,6 +114,20 @@ class SourceIdentityTests(unittest.TestCase):
                 with self.assertRaisesRegex(InputError, error):
                     stage(result, self.output)
                 self.assertFalse(self.output.exists())
+
+    def test_shared_vanilla_mining_tag_may_only_append_each_jars_own_blocks(self):
+        result = plan(self.get_inventory(), self.labels, output_pack=True)
+        self.assertTrue(result.report["ready"], result.problems)
+        for collision in ("tag-replace", "tag-foreign", "tag-assets", "tag"):
+            with self.subTest(collision=collision), patch("mcmodup.native_pack.require_jdk", return_value="unused"), patch(
+                    "mcmodup.source_ports._gradle", self.build(collision=collision)):
+                if collision == "tag":
+                    stage(result, self.output)
+                    self.assertTrue((self.output / REPORT_NAME).is_file())
+                else:
+                    with self.assertRaisesRegex(InputError, "shares a native asset/data namespace 'minecraft'"):
+                        stage(result, self.output)
+                    self.assertFalse(self.output.exists())
 
     def test_target_file_does_not_inherit_a_recipe_by_filename(self):
         legacy(self.target, self.labels[0], "Chemistry", version="9.9")

@@ -28,6 +28,7 @@ class Original:
     name: str
     filename: str
     ids: tuple[str, ...]
+    sha256: str
 
     @property
     def label(self) -> str:
@@ -35,14 +36,22 @@ class Original:
 
 
 ORIGINALS = (
-    Original("1.6.4", "Minechem", "Minechem-1.6.4-5.0.5.FINAL.jar", ("minechem",)),
-    Original("1.7.10", "Minechem", "Minechem-1.7.10-5.0.5.394.jar", ("minechem",)),
-    Original("1.6.4", "Voltz ICBM", "icbm-1.4.1.344.jar", ("icbm", "icbm|explosion", "icbm|sentry")),
-    Original("1.6.4", "Voltz Atomic Science", "atomicscience.jar", ("atomicscience",)),
-    Original("1.7.10", "Thaumcraft 4", "Thaumcraft-1.7.10-4.2.3.5.jar", ("thaumcraft",)),
-    Original("1.6.4", "GeoStrata", "GeoStrata 1.6 v23b.zip", ("geostrata",)),
-    Original("1.6.4", "Mimicry", "Mimicry 1.6.4_965_1.3.9_final.zip", ("mimicry",)),
-    Original("1.6.4", "Random Things", "Random_Things_v._1.9__MC_1.6.4_.jar", ("randomthings",)),
+    Original("1.6.4", "Minechem", "Minechem-1.6.4-5.0.5.FINAL.jar", ("minechem",),
+             "2443c7f91351f0e6c2323636be28a6fe8697704f20edf378dfe1a9d7a3070bea"),
+    Original("1.7.10", "Minechem", "Minechem-1.7.10-5.0.5.394.jar", ("minechem",),
+             "ea802167b760d43828a0648de3727a58d5c1f7737613123ae49f2743188cdae7"),
+    Original("1.6.4", "Voltz ICBM", "icbm-1.4.1.344.jar", ("icbm", "icbm|explosion", "icbm|sentry"),
+             "34a0efec6a1d078d2d0f1b7681c1040d4d68cb096330f4db79bf569a00f75130"),
+    Original("1.6.4", "Voltz Atomic Science", "atomicscience.jar", ("atomicscience",),
+             "80cf5bd9d485377ecde3822154a5db47804fab3e8f78c388cfcf529239655938"),
+    Original("1.7.10", "Thaumcraft 4", "Thaumcraft-1.7.10-4.2.3.5.jar", ("thaumcraft",),
+             "3dba9786966974701578a658d1bb369bf35bdf5f363079f5ac9c4910a39113be"),
+    Original("1.6.4", "GeoStrata", "GeoStrata 1.6 v23b.zip", ("geostrata",),
+             "afd68aa6ca1222a0f53ee25323c18bd3c2473c346a15345b216c9ef1042a0414"),
+    Original("1.6.4", "Mimicry", "Mimicry 1.6.4_965_1.3.9_final.zip", ("mimicry",),
+             "4a3d6e72be0ae0f8929c11890dcf96b49750db48908c5bd5b5957d2d9542eada"),
+    Original("1.6.4", "Random Things", "Random_Things_v._1.9__MC_1.6.4_.jar", ("randomthings",),
+             "cc3b350aed5a41b48da68ebcea27cb156c4eed6347bf060bbdbb00b5109faa49"),
 )
 VOLTZ_FILES = (
     "mods/icbm-1.4.1.344.jar", "mods/atomicscience.jar",
@@ -107,13 +116,10 @@ def originals(root: Path) -> None:
     with ZipFile(root / "voltz.zip") as pack:
         for member in VOLTZ_FILES:
             (source / "mods/1.6.4" / Path(member).name).write_bytes(pack.read(member))
-    voltz_pins = {
-        "icbm-1.4.1.344.jar": "34a0efec6a1d078d2d0f1b7681c1040d4d68cb096330f4db79bf569a00f75130",
-        "atomicscience.jar": "80cf5bd9d485377ecde3822154a5db47804fab3e8f78c388cfcf529239655938",
-    }
-    assert all(file_digest(source / "mods/1.6.4" / name) == expected for name, expected in voltz_pins.items())
     assert {path.name for path in (target / "mods").iterdir()} == PACK_MODS
     before = fingerprints(source, target)
+    for original in ORIGINALS:
+        assert before.get(source / original.label) == original.sha256, f"Wrong original {original.label}"
     code, catalog = run("update-pack", source, "--target", target)
     assert code == 0 and catalog["neoforge"] == "21.1.267", catalog
     lookup = {row["id"]: row for row in catalog["rows"]}

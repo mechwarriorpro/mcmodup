@@ -14,7 +14,7 @@ from mcmodup.audit import ModMetadata
 from mcmodup.port import _build_gradle, _metadata, write_workspace
 from mcmodup.runtime import file_digest
 from mixed_legacy_pack_smoke import ORIGINALS, PACK_MODS, fingerprints, summary
-from neoforge_smoke import empty_test_structure
+from neoforge_smoke import NATIVE_CONTROL_SHA512, empty_test_structure
 
 
 NAMESPACE = "mcmodup_connector_mixed"
@@ -61,11 +61,17 @@ def oracle(root: Path, group: str) -> None:
     else:
         label = selected[0].label
         by_label[label] = (source / label).read_bytes()
-    expected = {hashlib.sha256(by_label[item.label]).hexdigest(): {"name": item.filename, "ids": sorted(item.ids)} for item in selected}
+    expected = {}
+    for item in selected:
+        assert hashlib.sha256(by_label[item.label]).hexdigest() == item.sha256, f"Wrong original {item.label}"
+        expected[item.sha256] = {"name": item.filename, "ids": sorted(item.ids)}
     assert len(expected) == len(selected)
     assert {path.name for path in (target / "mods").iterdir()} == PACK_MODS
     files.update({f"run/{label}": data for label, data in by_label.items()})
-    files.update({f"run/mods/{name}": (target / "mods" / name).read_bytes() for name in PACK_MODS})
+    for name, sha512 in NATIVE_CONTROL_SHA512.items():
+        control = (target / "mods" / name).read_bytes()
+        assert hashlib.sha512(control).hexdigest() == sha512, f"Wrong native control {name}"
+        files[f"run/mods/{name}"] = control
     write_workspace(project, files | {
         "settings.gradle": "rootProject.name = 'connector-mixed-oracle'\n",
         "build.gradle": _build_gradle(NAMESPACE, "mcmodup.test", "1.0.0") + f"""
@@ -98,9 +104,15 @@ neoForge.runs.create('gameTestServer') {{
         diagnostics(project, {Path(label).name for label in by_label})
         log = project / "runGameTestServer.log"
         if log.is_file():
-            for line in log.read_text(encoding="utf-8", errors="replace").splitlines():
-                if "MCMODUP_CONNECTOR_IDENTITY " in line:
-                    print(line, flush=True)
+            lines = log.read_text(encoding="utf-8", errors="replace").splitlines()
+            identity = [line.partition("MCMODUP_CONNECTOR_IDENTITY ")[2] for line in lines if "MCMODUP_CONNECTOR_IDENTITY " in line]
+            for row in identity:
+                notice("Connector registry survey (not parity)", row[:900])
+            interesting = [line for line in lines if re.search(
+                r"Legacy mods loaded in |failed to load and are disabled|state is disabled|phase .* failed|"
+                r"Duplicate legacy registration of minechem:|coremod hook|stopped at an API of another mod", line, re.I)]
+            if interesting:
+                notice("Connector lifecycle diagnostics", "\n".join(dict.fromkeys(line[:480] for line in interesting))[:4000])
         assert fingerprints(source, target) == before, "The oracle modified its inputs"
 
 

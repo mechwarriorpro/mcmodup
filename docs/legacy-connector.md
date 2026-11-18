@@ -8,6 +8,12 @@ On launch, Connector translates original mod bytecode against its legacy API imp
 
 The translated cache **needs Connector**. [Its loader rejects cached derivatives placed directly in `mods/`](https://github.com/kylepitcock/Legacy-Connector/blob/062c6e8d902083abae3adae2e856a657c7560ebb/docs/wiki/Cache-and-Redistribution.md). Neither the cache nor the original files should be committed or redistributed without rights. Connector's [MIT license](https://github.com/kylepitcock/Legacy-Connector/blob/062c6e8d902083abae3adae2e856a657c7560ebb/LICENSE) covers its own code, not the legacy mods.
 
+## What the updater reuses from the design
+
+[Connector's architecture](https://github.com/kylepitcock/Legacy-Connector/blob/062c6e8d902083abae3adae2e856a657c7560ebb/docs/wiki/Architecture.md) separates inspection, relocation and call-site rewriting from the behavior of the legacy API. For example, [`ForwardCalls`](https://github.com/kylepitcock/Legacy-Connector/blob/062c6e8d902083abae3adae2e856a657c7560ebb/loader/src/main/java/org/kylepitcock/legacyconnector/loader/transform/ForwardCalls.java) rewrites field reads and writes to helper calls when a name change alone cannot preserve behavior. The updater now does this for reviewed methods during the build, with typed native helpers and exact original fingerprints. The [ICBM plate](source-port-builds.md#voltz-glass-pressure-plate-executable-preview) uses a live registry lookup instead of a legacy numeric-ID field; the [paired Minechem recipes](source-port-builds.md#both-exact-minechem-releases-linked-previews) isolate the two releases and link their slot logic to native item stacks.
+
+Connector's generated entrypoints call `LegacyBootstrap`, and its runtime supplies legacy lifecycle sequencing, registries, event dispatch, and gameplay APIs. Those features are not in remapped class files alone. The standalone build supplies native NeoForge entrypoints and adapters instead of copying this runtime or a cache. It rejects an unbound instruction rather than synthesizing an empty method. The reviewed subset does not yet handle arbitrary classes, launch transformers, or the whole legacy API.
+
 ## mcmodup test results
 
 The [Connector sanity run](https://github.com/mechwarriorpro/mcmodup/actions/runs/44286564230) passed with the released Connector 0.5.0 JAR and NeoForge `21.1.267`. The offline checker reported `links` for every JAR in the three sets below, with **zero unresolved references and zero verifier failures**. It still synthesized three members for ICBM and two classes for Calclavia Core. These placeholders can link without implementing the original behavior.
@@ -32,6 +38,8 @@ PYTHONPATH=.:tests python3 -m connector_sanity \
 ```
 
 Use `--phase links` for offline results only or `--phase game` for the Thaumcraft server tests only. The offline check reports unresolved references and placeholders rather than treating either count as a gameplay verdict.
+
+The [exact mixed runtime oracle](https://github.com/mechwarriorpro/mcmodup/actions/runs/44374671895/job/135050507910) went further: **NeoForge discovered all eight original archive identities in one GameTest server**, with Connector 0.5.0 and the unchanged native Multipart/CodeChickenLib controls. It checks the original SHA-256 and each archive's declared modules, including all three ICBM modules. The [isolated Mimicry oracle](https://github.com/mechwarriorpro/mcmodup/actions/runs/44374671292/job/135050505528) reached the same identity check. Discovery does not show that both Minechem registries are isolated, that every legacy lifecycle method ran, or that any feature besides the separate Thaumcraft smoke tests works. The mixed oracle did not download legacy vanilla JARs to replay coremod hooks. Rerun it by dispatching `mixed-legacy-pack.yml` with `connector_oracle=mixed` (or `mimicry`).
 
 ## Upstream results
 

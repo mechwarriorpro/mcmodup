@@ -10,6 +10,7 @@ import java.util.TreeSet;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
+import net.minecraft.world.item.crafting.RecipeType;
 import net.neoforged.fml.ModList;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.neoforge.gametest.GameTestHolder;
@@ -46,11 +47,22 @@ public final class ConnectorMixedSmoke {
             modFile.getMods().forEach(row -> {
                 if (mods.isLoaded(row.getModId())) loadedIds.add(row.getModId());
             });
-            long items = BuiltInRegistries.ITEM.keySet().stream().filter(key -> loadedIds.contains(key.getNamespace())).count();
-            long blocks = BuiltInRegistries.BLOCK.keySet().stream().filter(key -> loadedIds.contains(key.getNamespace())).count();
-            // Registry counts are diagnostic: a Connector ID alias can leave the registry namespace intact.
-            System.out.printf("MCMODUP_CONNECTOR_IDENTITY %s: %s -> %s; matching-ID items=%d blocks=%d%n",
-                name, legacyIds, loadedIds, items, blocks);
+            var meta = modFile.getFile().findResource("META-INF", "legacyconnector", "legacy-mods.json");
+            var namespaces = new TreeSet<String>();
+            if (Files.isRegularFile(meta)) {
+                var bindings = JsonParser.parseString(Files.readString(meta)).getAsJsonObject().getAsJsonArray("mods");
+                bindings.forEach(row -> namespaces.add(row.getAsJsonObject().get("modernId").getAsString()));
+            } else {
+                namespaces.addAll(loadedIds);
+            }
+            var items = BuiltInRegistries.ITEM.keySet().stream().filter(key -> namespaces.contains(key.getNamespace())).sorted().toList();
+            var blocks = BuiltInRegistries.BLOCK.keySet().stream().filter(key -> namespaces.contains(key.getNamespace())).sorted().toList();
+            var crafting = helper.getLevel().getRecipeManager().getAllRecipesFor(RecipeType.CRAFTING).stream()
+                .filter(recipe -> namespaces.contains(recipe.id().getNamespace())).map(recipe -> recipe.id()).sorted().toList();
+            // Namespace counts are diagnostic, not proof of ownership when two releases share a namespace.
+            System.out.printf("MCMODUP_CONNECTOR_IDENTITY %s: %s -> %s; namespaces=%s; items=%d %s; blocks=%d %s; crafting=%d %s%n",
+                name, legacyIds, loadedIds, namespaces, items.size(), items.stream().limit(5).toList(), blocks.size(),
+                blocks.stream().limit(5).toList(), crafting.size(), crafting.stream().limit(5).toList());
             if (!legacyIds.equals(wantedIds) || loadedIds.size() != wantedIds.size() || !matched.add(fingerprint)) {
                 errors.add("Module mismatch for " + name + ": " + legacyIds + " -> " + loadedIds);
             }

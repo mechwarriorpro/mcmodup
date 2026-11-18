@@ -6,6 +6,7 @@ import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.tags.BlockTags;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Blocks;
@@ -28,6 +29,8 @@ public final class MinechemPairChecks {
         var right = placeMachine(test, relative394, RELEASE_394, "decomposer", false);
         test.assertTrue(left.entity().getType() != right.entity().getType() && left.menu().getType() != right.menu().getType(),
                 "The releases must not share a block entity or menu registration");
+        test.assertTrue(left.entity().getBlockState().is(BlockTags.MINEABLE_WITH_PICKAXE) &&
+                right.entity().getBlockState().is(BlockTags.MINEABLE_WITH_PICKAXE), "Both releases must add their blocks to the vanilla mining tag");
         test.assertTrue(left.input().getSlots() == 1 && left.output().getSlots() == 9 &&
                 right.input().getSlots() == 1 && right.output().getSlots() == 18, "Expected two different sided inventories");
         for (var side : Direction.values()) {

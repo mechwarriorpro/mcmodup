@@ -8,6 +8,27 @@ In source-build mode, selecting a base mod automatically includes its detected o
 
 **Trust boundary:** Recipes are shipped with the tool or supplied explicitly, not taken from `mods/`. Gradle source ZIPs, their wrappers, plugins, and mods under test execute code on your machine. Only provide recipes, sources and dependencies you have reviewed and trust. The temporary working directory is not a security sandbox. Read-only listing and planning do not download or execute sources. Do not publish third-party code, assets or your output JARs without the applicable rights.
 
+## Both exact Minechem releases (linked previews)
+
+Put **Minechem 1.6.4 5.0.5 FINAL** and **Minechem 1.7.10 5.0.5.394** in the two release folders shown below. Use the exact originals, not a similarly named recompilation. Install Minecraft 1.21.1 / NeoForge **21.1.267** in `NeoForgePack`. For the native control, put CB Multipart **3.5.0.155** and CodeChickenLib **4.6.1.526** in its `mods/` folder.
+
+```sh
+final=mods/1.6.4/Minechem-1.6.4-5.0.5.FINAL.jar
+v394=mods/1.7.10/Minechem-1.7.10-5.0.5.394.jar
+python3 -m mcmodup prepare-minechem-pair "LegacyPack/$final" "LegacyPack/$v394" \
+  -o .mcmodup/MinechemRecipes
+python3 -m mcmodup update-pack LegacyPack --target NeoForgePack \
+  --mod "$final" --mod "$v394" --include-native cb_multipart \
+  --source-ports .mcmodup/MinechemRecipes/minechem-pair.json --allow-preview-ports \
+  --output-pack .mcmodup/MinechemPreview
+```
+
+The first command checks both fingerprints and prepares local source and recipes. It does not execute either original. At build time the updater copies the referenced catalog icons and rewrites only FINAL's `canUnjam` and .394's `pushQueue` from the exact binaries. FINAL checks for an empty output slot after a jam; .394 compacts existing output on intake. Typed helpers map legacy slots, fields and calls to native inventories and item stacks. Unmapped references block the build. Each release must pass its output-rule and saved-queue tests before either JAR is staged.
+
+The two results have separate Java packages, mod IDs (`minechem_chemistry` and `minechem_chemistry_394`), items, block entities and assets. Each adds only its own blocks to the vanilla pickaxe tag; neither replaces it. There is no Connector or old Forge JAR in the output. The two native controls are copied unchanged. Both sources and artifacts are local derivatives; don't redistribute them without the appropriate permissions.
+
+**Preview only.** Most original machines and integrations are missing; .394 only decomposes iron ingots. FE and modern item components are not legacy UE/RF or arbitrary legacy stack metadata, and this does not migrate saves or recreate legacy clients. These two builds do not unblock the eight-original selection.
+
 ## Voltz glass pressure plate (executable preview)
 
 Use Python 3.11+, JDK 21, the **original `icbm-1.4.1.344.jar` from Voltz Server 3.0.0c**, and an installed **Minecraft 1.21.1 / NeoForge 21.1.267** instance. The source build matches the original SHA-256, not just the version or filename. For this preview, put only the original ICBM archive in the source `mods/1.6.4/` directory; it cannot replace ICBM for a legacy add-on.
@@ -22,7 +43,7 @@ python3 -m mcmodup update-pack LegacyPack --target NeoForgePack \
 
 The first command writes a reviewable recipe and source ZIP, not a mod. The second compiles and tests the port, then writes `mods/icbm_glass_plate-1.4.1.344-preview.2.jar` to the new instance. It imports the block texture and the original two methods that update power and control the recheck delay. The adapter maps those methods' world and block calls to NeoForge; the JAR does not contain the original ICBM classes. A fresh world can craft the plate from two horizontal glass blocks or use `/give @s icbm_glass_plate:glass_pressure_plate`.
 
-To include the tested native dependencies, install **CB Multipart 3.5.0.155** and **CodeChickenLib 4.6.1.526** under `NeoForgePack/mods/` and add `--include-native cb_multipart` to `update-pack`. In the [passing comparison](https://github.com/mechwarriorpro/mcmodup/actions/runs/44362875246), the exact original ran on Voltz's Forge 9.11.1.965 with Java 7. Both sides tested horizontal glass crafting, no self-drop, item-triggered redstone and scheduled release. The fresh NeoForge server also booted with both native JARs unchanged, and a staged-JAR GameTest called Multipart's signal lookup. NeoForge can load the plate without those two JARs as well. No graphical client comparison or old-save migration was performed.
+To include the tested native dependencies, install **CB Multipart 3.5.0.155** and **CodeChickenLib 4.6.1.526** under `NeoForgePack/mods/` and add `--include-native cb_multipart` to `update-pack`. In the [passing preview.2 comparison](https://github.com/mechwarriorpro/mcmodup/actions/runs/44375537405), the exact original ran on Voltz's Forge 9.11.1.965 with Java 7. Both sides tested horizontal glass crafting, no self-drop, item-triggered redstone and scheduled release. The preview rewrites the old numeric block-ID field read to a call to NeoForge's live registry. The fresh NeoForge server booted with both native JARs unchanged, and a staged-JAR GameTest called Multipart's signal lookup. NeoForge can load the plate without those two JARs as well. No graphical client comparison or old-save migration was performed.
 
 Only the single glass pressure plate from Core is implemented. Explosion, Sentry and the rest of Core are absent; fresh worlds use a separate registry ID. The updater marks the JAR as a preview and won't use it to satisfy a dependency or to replace a complete ICBM installation. Keep the result local unless you have redistribution rights for the original code and texture.
 
@@ -104,9 +125,10 @@ The third run assumes the exact CC: Tweaked release was staged. It checks the pe
 |---|---|---|
 | Thaumcraft 4.2.3.5 | Exact native source-build preview, plus the paired Tinkerer preview | Visual, localization, survival, multiplayer and compatibility gaps remain, even with complete asset accounting. |
 | GTNH Thaumic Tinkerer 2.13.0 | Exact native add-on preview, with optional CC: Tweaked and Ender Storage runtime support | OpenComputers and other legacy integrations, some behaviors and some effects are still missing. |
-| Minechem 1.6.4 5.0.5 FINAL | [Original tagged source](https://github.com/iopleke/Minechem/tree/1.6.4-5.0.5-FINAL) and a [partial chemistry profile](usage-examples.md#try-the-minechem-machines), including the adapted Microscope and Chemist's Journal | Not all machines, recipes, effects, worldgen, graphics or integrations have been ported. |
-| Minechem 1.7.10 5.0.5.394 | [Checksum-pinned catalog and iron decomposer preview](usage-examples.md#minechem-505394-iron-decomposer-preview), separate from FINAL | One decomposer recipe, no other machines or original integrations; not an updater source recipe. |
-| Atomic Science 1.6.4 and ICBM 1.6.4 | [Exact Voltz archives and dependency audits](usage-examples.md#atomic-science-120-and-icbm-141344-forge-164-input-examples) | No reviewed native source build for these originals or their required old dependency APIs. Later mods with similar features aren't replacements. |
+| Minechem 1.6.4 5.0.5 FINAL | [Linked updater preview](#both-exact-minechem-releases-linked-previews), including the adapted Microscope and Chemist's Journal | Not all machines, recipes, effects, worldgen, graphics or integrations have been ported. |
+| Minechem 1.7.10 5.0.5.394 | [Linked updater preview](#both-exact-minechem-releases-linked-previews), separate from FINAL | Only an iron decomposer and catalog; no other machines or original integrations. |
+| ICBM 1.4.1.344 | [Glass pressure plate preview](#voltz-glass-pressure-plate-executable-preview) | Only one Core block; not the rest of Core, Explosion or Sentry. |
+| Atomic Science 1.2.0 | [Exact Voltz binary and dependency evidence](usage-examples.md#atomic-science-120-and-icbm-141344-forge-164-input-examples) | No reviewed native build for the original and its required old dependency APIs. |
 
 ## What the source-build test covers
 
@@ -138,6 +160,7 @@ Keep a separate recipe for each original build, including add-ons. Start with a 
 
 ### Split identities and import selected JVM methods
 
-- **`legacy_ids`** maps all recognized original mod IDs (lowercase) to the `ids` declared for this specific `legacy_sha256`. Every native ID must appear exactly once. For example, two versions that both used `minechem` need two exact recipes and two different native IDs if both are to be loaded. This is supported only in a fresh `--output-pack`. The builder rejects shared Java packages, shared `assets/` or `data/` namespaces, and embedded JARs between split versions. Those checks don't create either Minechem port or migrate registry IDs in old worlds. Cross-version add-ons still need native code and dependencies of their own.
-- **`method_imports`** is an explicit adapter contract, not a general remapper. Each group names an original `owner`, a generated `output` under `mcmodup_kernel/<native-id>/`, a `types` map to local adapter classes, a `methods` map of exact original JVM symbols to new static method names, and a `members` map from every used legacy field or call to a matching public adapter member. Class initializers, constructors, and the old superclass are not copied. Unsupported instructions, missing bindings, failed GameTests, or a changed generated class block staging. See the generated `icbm-plate.json` for a working example.
+- **`legacy_ids`** maps all recognized original mod IDs (lowercase) to the `ids` declared for this specific `legacy_sha256`. Every native ID must appear exactly once. For example, two versions that both used `minechem` need two exact recipes and two different native IDs if both are to be loaded. This is supported only in a fresh `--output-pack`. The builder rejects shared Java packages, shared `assets/` or `data/` namespaces, and embedded JARs between split versions. The only shared vanilla resource allowed is an append-only `minecraft:mineable/pickaxe` block tag listing each JAR's own IDs. These checks do not migrate registry IDs in old worlds; cross-version add-ons still need native code and dependencies of their own.
+- **`method_imports`** is an explicit adapter contract, not a general remapper. Each group names an original `owner`, a generated `output` under `mcmodup_kernel/<native-id>/`, a `types` map to local adapter classes, a `methods` map of exact original JVM symbols to new static method names, and a `members` map from used legacy fields and calls to matching public adapter members. Class initializers, constructors, and the old superclass are not copied. Unsupported instructions, missing bindings, failed GameTests, or a changed generated class block staging.
+- **`redirects`** in a method group maps opcode names (`getfield`, `putfield`, `getstatic`, `putstatic`, `invokevirtual`, `invokestatic`) to `{original_symbol: native_helper_symbol}` maps. A rewritten instruction calls a public static helper in the port's kernel package. The helper must consume the same mapped operands and return the same type; an instance receiver becomes the first argument. The JAR verifier checks that the helper exists and is callable. Unused rules or an unsupported reference are errors, not requests to generate stubs. See the generated Minechem and ICBM recipes for examples.
 - A recipe with `method_imports`, or with `null` for an unimplemented legacy ID, must use `status: "preview"`, document the omissions, and target a fresh output pack. It cannot satisfy another mod's dependency. The JAR carries `META-INF/mcmodup/linked-methods.json` with the original, generated class and adapter identities. A matching hash or a passing GameTest for one feature is not evidence of full-mod parity.

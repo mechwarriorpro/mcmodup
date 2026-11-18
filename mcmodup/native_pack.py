@@ -5,6 +5,7 @@ from dataclasses import dataclass, field, replace
 from io import BytesIO
 import json
 from pathlib import Path
+import re
 import shutil
 import tempfile
 import tomllib
@@ -914,9 +915,32 @@ def _materialize(update: UpdatePlan, scratch: Path) -> UpdatePlan:
     return replace(update, mods=mods, native_builds=evidence)
 
 
+def _isolated_pickaxe_tag(mod: NativeMod) -> bool:
+    # An append-only vanilla mining tag is not a shared asset identity. Do
+    # not allow a split version to replace the tag, or add another mod's blocks.
+    tag = "data/minecraft/tags/block/mineable/pickaxe.json"
+    with open_input(mod.path) as archive:
+        vanilla = {name for name in archive.files if name.startswith(("data/minecraft/", "assets/minecraft/"))}
+        if vanilla != {tag}:
+            return False
+        try:
+            pairs = json.loads(archive.read(tag, 16 * 1024), object_pairs_hook=tuple)
+        except (ValueError, InputError, RecursionError):
+            return False
+    if not isinstance(pairs, tuple) or len(pairs) != 2:
+        return False
+    data = dict(pairs)
+    values = data.get("values")
+    if data.get("replace") is not False or not isinstance(values, list) or not values:
+        return False
+    return (all(isinstance(value, str) and re.fullmatch(r"[a-z][a-z0-9_]*:[a-z0-9_/.-]+", value) and
+                value.split(":", 1)[0] in mod.ids for value in values) and len(set(values)) == len(values))
+
+
 def _check_split_namespaces(splits: list[dict], artifacts: dict[str, NativeMod]) -> None:
     for split in splits:
-        packages, resources = set(), set()
+        packages = set()
+        resources: dict[str, list[NativeMod]] = defaultdict(list)
         for row in split["archives"]:
             mod = artifacts[f"build/{row['archive']}"]
             if mod.embedded:
@@ -924,10 +948,12 @@ def _check_split_namespaces(splits: list[dict], artifacts: dict[str, NativeMod])
             occupied = {name.rpartition('/')[0] for name in mod.classes}
             if shared := sorted(occupied & packages):
                 raise InputError(f"Split legacy ID {split['id']!r} shares native Java package {shared[0]!r}.")
-            if shared := sorted(mod.resource_namespaces & resources):
-                raise InputError(f"Split legacy ID {split['id']!r} shares a native asset/data namespace {shared[0]!r}.")
             packages.update(occupied)
-            resources.update(mod.resource_namespaces)
+            for namespace in mod.resource_namespaces:
+                resources[namespace].append(mod)
+        for namespace, owners in sorted(resources.items()):
+            if len(owners) > 1 and not (namespace == "minecraft" and all(_isolated_pickaxe_tag(mod) for mod in owners)):
+                raise InputError(f"Split legacy ID {split['id']!r} shares a native asset/data namespace {namespace!r}.")
 
 
 def _parents(path: str) -> list[str]:
