@@ -2,6 +2,7 @@ package mcmodup.thaumcraftcheck;
 
 import com.mojang.blaze3d.platform.NativeImage;
 import com.mojang.logging.LogUtils;
+import com.mojang.serialization.Codec;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -18,8 +19,10 @@ import net.minecraft.client.tutorial.TutorialSteps;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.component.DataComponentPatch;
+import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
+import net.minecraft.nbt.NbtOps;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
@@ -30,6 +33,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.crafting.CraftingInput;
 import net.minecraft.world.item.crafting.RecipeType;
+import net.minecraft.world.item.component.CustomData;
 import net.minecraft.world.level.GameRules;
 import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.Level;
@@ -216,12 +220,14 @@ public final class ThaumcraftClientSmoke {
                     prepareRiftOrPortal(client);
                 }
                 case ENDER_WAND -> {
-                    if (!WandHelper.getFocusItem(client.player.getMainHandItem()).is(BuiltInRegistries.ITEM.get(ENDER_RIFT))) return;
+                    if (client.screen != null || !WandHelper.getFocusItem(client.player.getMainHandItem()).is(BuiltInRegistries.ITEM.get(ENDER_RIFT))) return;
                     client.gameMode.useItem(client.player, InteractionHand.MAIN_HAND);
                     advance(Stage.ENDER_GUI);
                 }
                 case ENDER_GUI -> {
-                    if (!screenIs(client, ENDER_STORAGE_SCREEN) || frames < ACTIVE_FRAMES) return;
+                    if (client.screen == null) return;
+                    require(screenIs(client, ENDER_STORAGE_SCREEN), "The bound focus opened " + client.screen.getClass().getName());
+                    if (frames < ACTIVE_FRAMES) return;
                     var contents = ((AbstractContainerScreen<?>) client.screen).getMenu().getSlot(0).getItem();
                     if (contents.isEmpty()) return; // Wait for the server's menu contents packet.
                     require(contents.is(Items.DIAMOND) && contents.getCount() == 7, "The remote Ender Storage screen shows the wrong inventory");
@@ -315,8 +321,8 @@ public final class ThaumcraftClientSmoke {
         require(BuiltInRegistries.BLOCK.containsKey(ENDER_CHEST) && BuiltInRegistries.ITEM.containsKey(ENDER_RIFT),
                 "Missing native Ender Storage chest or Ender Rift focus");
         server(client, actor -> {
+            if (actor.containerMenu != actor.inventoryMenu) actor.closeContainer();
             var level = actor.serverLevel();
-            // Place the chest away from the enchanter and above ground in reach of the wand.
             var pos = actor.blockPosition().west(3).above();
             require(level.setBlockAndUpdate(pos, BuiltInRegistries.BLOCK.get(ENDER_CHEST).defaultBlockState()),
                     "Could not place an Ender Storage chest");
@@ -325,33 +331,29 @@ public final class ThaumcraftClientSmoke {
                     "Could not prepare the native chest inventory");
             var wand = ItemApi.getItem("itemWandCasting", 0);
             var focus = new ItemStack(BuiltInRegistries.ITEM.get(ENDER_RIFT));
-            require(WandHelper.setFocus(wand, focus), "Could not mount the Ender Rift focus");
+            // The separate server GameTest verifies sneak-binding. Seed that saved state here so the graphical
+            // fixture measures the real client cast, menu packet, slot sync and render, independent of camera aim.
+            seedRiftLink(focus, level.getBlockEntity(pos));
+            require(WandHelper.setFocus(wand, focus), "Could not mount the linked Ender Rift focus");
             for (var aspect : Aspect.getPrimalAspects()) WandHelper.addRealVis(wand, aspect, 1000, true);
             actor.setItemInHand(InteractionHand.MAIN_HAND, wand);
-            float yaw = actor.getYRot();
-            float headYaw = actor.getYHeadRot();
-            float pitch = actor.getXRot();
-            boolean sneaking = actor.isShiftKeyDown();
-            actor.setShiftKeyDown(true);
-            var aim = Vec3.atCenterOf(pos).subtract(actor.getEyePosition());
-            float facing = (float) Math.toDegrees(Math.atan2(aim.z, aim.x)) - 90F;
-            actor.setYRot(facing);
-            // The wand traces LivingEntity's view vector, which reads head rotation, not body yaw.
-            actor.setYHeadRot(facing);
-            actor.setXRot(-(float) Math.toDegrees(Math.atan2(aim.y, aim.horizontalDistance())));
-            try {
-                wand.getItem().use(level, actor, InteractionHand.MAIN_HAND);
-            } finally {
-                actor.setShiftKeyDown(sneaking);
-                actor.setYRot(yaw);
-                actor.setYHeadRot(headYaw);
-                actor.setXRot(pitch);
-            }
-            require(actor.containerMenu == actor.inventoryMenu && !WandHelper.getFocus(wand)
-                    .getSortingHelper(WandHelper.getFocusItem(wand)).equals("TTEC-VANILLA"), "Sneak-cast did not link the chest");
             level.setBlockAndUpdate(pos, Blocks.AIR.defaultBlockState());
         });
         advance(Stage.ENDER_WAND);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void seedRiftLink(ItemStack focus, BlockEntity chest) {
+        require(chest != null, "Missing native Ender Storage tile");
+        try {
+            // Keep the optional mod's classes out of this shared harness's source dependencies.
+            var frequency = chest.getClass().getMethod("getFrequency").invoke(chest);
+            var codec = (Codec<Object>) frequency.getClass().getField("CODEC").get(null);
+            var saved = codec.encodeStart(NbtOps.INSTANCE, frequency).getOrThrow();
+            CustomData.update(DataComponents.CUSTOM_DATA, focus, tag -> tag.put("thaumictinkerer:ender_rift_frequency", saved));
+        } catch (ReflectiveOperationException error) {
+            throw new IllegalStateException("Could not encode the pinned Ender Storage frequency", error);
+        }
     }
 
     private static void useTop(Minecraft client, BlockPos pos) {
