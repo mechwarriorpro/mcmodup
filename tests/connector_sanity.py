@@ -10,7 +10,11 @@ import subprocess
 import tempfile
 from zipfile import ZipFile
 
+from mcmodup.api import ApiContext
 from mcmodup.audit import ModMetadata
+from mcmodup.inputs import InputError
+from mcmodup.pack import ModPack
+from mcmodup.port_plan import exact_minecraft, plan_port
 from mcmodup.port import _build_gradle, _metadata, write_workspace
 from neoforge_smoke import empty_test_structure
 
@@ -128,7 +132,12 @@ def check_links(project: Path, inputs: dict[str, tuple[str, ...]]) -> None:
     expected = {"thaumcraft": "1.7.10", "minechem": "1.6.4", "voltz": "1.6.4"}
     errors = []
     for key, members in inputs.items():
-        records = {row["jar"]: row for row in json.loads((project / f"probe/{key}.json").read_text())}
+        evidence = project / f"probe/{key}.json"
+        records = {row["jar"]: row for row in json.loads(evidence.read_text())}
+        # Analyze exactly the same originals as this probe (not the runtime cache or other sets).
+        pack = ModPack(project, {}, ApiContext(profile=expected[key]), [])
+        for path in map(Path, (project / f"probe/{key}.txt").read_text().splitlines()):
+            pack.add(path.name, path, required=True)
         for member in members:
             row = records.get(member, {})
             notice("Connector offline check", f"{key}/{member}: {row.get('result', 'no record')} for Minecraft {row.get('mc', '?')}; "
@@ -137,6 +146,13 @@ def check_links(project: Path, inputs: dict[str, tuple[str, ...]]) -> None:
                    + (" First missing: " + "; ".join(row["missing"][:3]) if row.get("missing") else ""))
             if row.get("mc") != expected[key] or row.get("result") not in ("links", "unresolved") or "verify" not in row:
                 errors.append(f"{key}/{member}")
+                continue
+            mod = pack.select(member)
+            plan = plan_port(pack, mod, exact_minecraft(pack, mod), None, evidence, None)
+            tasks = {item["id"] for item in plan["work"]}
+            if plan["native"]["parity_verified"] or (row.get("stubbed") and "connector-placeholders" not in tasks):
+                raise AssertionError(f"Misclassified Connector evidence for {key}/{member}")
+        notice("Connector port checklist", f"Imported {len(members)} original JAR records from the {key} set; no native parity claimed.")
     if errors:
         raise AssertionError("Expected offline translation/verification was not reported for: " + ", ".join(errors))
 
@@ -164,7 +180,7 @@ def main() -> int:
                 continue
             try:
                 check()
-            except (AssertionError, OSError, subprocess.TimeoutExpired) as exc:
+            except (AssertionError, InputError, OSError, subprocess.TimeoutExpired) as exc:
                 failed = True
                 notice(f"Connector {phase} check failed", str(exc), "error")
     return int(failed)

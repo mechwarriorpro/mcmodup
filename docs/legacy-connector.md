@@ -57,6 +57,14 @@ python3 -m mcmodup scan-pack "$pack" --mod mods/atomicscience.jar \
 
 Repeat with `--mod mods/icbm-1.4.1.344.jar`. In `api_checks`, the exact overload should have `legacy_lookup.status` set to `found`. A class listed under `binary_dependencies` alone does not establish this.
 
+## Use the evidence to plan native parity
+
+[`plan-port` and `decompile-mod`](mapped-decompilation.md#use-connector-evidence-without-importing-its-runtime) can import the raw CheckJar JSON for your selected mod. The checklist separates missing providers, unresolved or verifier findings, and **linked but empty** placeholders. Same-release client/server observations are separate, optional input. Neither the JSON nor Connector is needed to run a native port.
+
+- **Thaumcraft 4.2.3.5:** use the upstream research, wand/aura, essentia and golem scenarios as regression references for the native source port, not as passes. Compare against the [native tests already in place](source-port-builds.md) and expand coverage of golem tasks, vis relay networks, mirrors and client overlays. Report visual and multiplayer deviations even when server tests pass.
+- **Minechem 5.0.5 FINAL:** first reproduce a complete powered recipe in the original with the exact UE library. The [native preview](usage-examples.md) already exercises recovered machine recipes, journal discovery and recipe selection. Reactor, fluid and radiation behavior, original microscope assets and omitted recipes still need native implementation and comparison. Do not count the other Minechem release's screenshots as baseline passes for this JAR.
+- **Voltz 3.0.0c:** resolve Calclavia Core and UE first, and review the synthesized classes/members from the exact CheckJar set. Account for both the base ICBM and its dependent components. This is still an investigation: the closest ICBM source snapshot differs from `.344`, and exact authorized Atomic Science source has not been established. No native gameplay pass was measured for this set.
+
 ## Next runtime checks
 
 The most useful next test for Minechem is to tick the original powered decomposer and synthesizer with UE 3.1.0.74, then verify a completed recipe. For the Voltz set, test server startup and block entities with the pinned Calclavia Core and UE libraries before attempting broader gameplay. Keep sets small; optional integrations should not be added just to make references disappear. For other inputs, the [upstream offline checker](https://github.com/kylepitcock/Legacy-Connector/blob/062c6e8d902083abae3adae2e856a657c7560ebb/docs/wiki/Development.md) accepts a mod and its dependencies as a set: `./gradlew checkLegacyMod -PlegacyJar=/absolute/mod.jar,/absolute/library.jar`.

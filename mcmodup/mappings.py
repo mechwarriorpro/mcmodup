@@ -36,22 +36,37 @@ def _split_member(path: str) -> tuple[str, str]:
     return owner, name
 
 
-def _csv_aliases(path: Path | None) -> dict[str, str]:
-    if path is None:
-        return {}
-    table = {}
+def csv_aliases(text: str, label: str | Path, *, side: str | None = None, joined: bool = False) -> dict[str, str]:
+    # Some official archives give one SRG identifier different names on the two sides.
+    # Prefer the selected side, then common names. Use other-side-only names in joined configs.
+    tables = [{}, {}, {}]
     try:
-        rows = csv.DictReader(io.StringIO(_read(path), newline=""))
+        rows = csv.DictReader(io.StringIO(text, newline=""))
         if not rows.fieldnames or not {"searge", "name"}.issubset(rows.fieldnames):
             raise InputError("expected MCP CSV columns 'searge' and 'name'")
         for row in rows:
             old, new = (row.get(key) or "" for key in ("searge", "name"))
             if not JVM_MEMBER.fullmatch(old) or not JVM_MEMBER.fullmatch(new):
                 raise InputError(f"invalid MCP name at CSV line {rows.line_num}")
+            row_side = row.get("side")
+            if side is None or row_side == side:
+                table = tables[0]
+            elif row_side in {None, "", "2"}:
+                table = tables[1]
+            elif row_side in {"0", "1"}:
+                if not joined:
+                    continue
+                table = tables[2]
+            else:
+                raise InputError(f"invalid MCP side at CSV line {rows.line_num}")
             _unique(table, old, new)
     except (csv.Error, InputError) as exc:
-        raise InputError(f"{path}: {exc}") from exc
-    return table
+        raise InputError(f"{label}: {exc}") from exc
+    return tables[2] | tables[1] | tables[0]
+
+
+def _csv_aliases(path: Path | None) -> dict[str, str]:
+    return csv_aliases(_read(path), path) if path is not None else {}
 
 
 @dataclass
@@ -65,17 +80,20 @@ class LegacyNames:
     @classmethod
     def load(cls, srg: Path | None, methods: Path | None, fields: Path | None) -> "LegacyNames":
         names = cls(field_aliases=_csv_aliases(fields), method_aliases=_csv_aliases(methods))
-        if srg is None:
-            return names
-        for line_number, line in enumerate(_read(srg).splitlines(), 1):
+        if srg is not None:
+            names.read_srg(_read(srg), srg)
+        return names
+
+    def read_srg(self, text: str, label: str | Path) -> None:
+        for line_number, line in enumerate(text.splitlines(), 1):
             parts = line.partition("#")[0].split()
             if not parts or parts[0] == "PK:":
                 continue
             try:
                 if parts[0] == "CL:" and len(parts) == 3 and all(CLASS_NAME.fullmatch(part) for part in parts[1:]):
-                    _unique(names.classes, parts[1], parts[2])
+                    _unique(self.classes, parts[1], parts[2])
                 elif parts[0] == "FD:" and len(parts) == 3:
-                    _unique(names.fields, _split_member(parts[1]), _split_member(parts[2]))
+                    _unique(self.fields, _split_member(parts[1]), _split_member(parts[2]))
                 elif parts[0] == "MD:" and len(parts) == 5:
                     pairs = []
                     for owner_and_member, descriptor in ((parts[1], parts[2]), (parts[3], parts[4])):
@@ -84,12 +102,11 @@ class LegacyNames:
                         if symbol.kind != "method":
                             raise InputError("expected a method descriptor in MD record")
                         pairs.append(symbol)
-                    _unique(names.methods, pairs[0], pairs[1])
+                    _unique(self.methods, pairs[0], pairs[1])
                 else:
-                    raise InputError("expected a joined.srg CL:, FD:, or MD: record")
+                    raise InputError("expected an SRG CL:, FD:, or MD: record")
             except InputError as exc:
-                raise InputError(f"{srg}:{line_number}: {exc}") from exc
-        return names
+                raise InputError(f"{label}:{line_number}: {exc}") from exc
 
     def spellings(self, raw: Symbol) -> tuple[Symbol, ...]:
         """Return raw, SRG, then MCP spellings without treating them as cross-version aliases."""

@@ -109,6 +109,10 @@ python3 -m mcmodup decompile-deps /path/to/instance --mod mods/OldMod.jar \
 
 The command stages only unambiguously referenced classes from other scanned mods or explicitly supplied legacy API artifacts, plus needed enclosing/nested classes. `--class` is repeatable; omit it to inspect all resolved references up to the limit. Use the same `--source-version`, `--legacy-api`, and mapping flags as the scan to resolve Forge/Minecraft classes. It runs **Vineflower**, not any mod code. Inspect `decompile-report.json` for provenance and name aliases; the Java text is approximate and isn't automatically renamed or compiled. These references stay local and are ignored by Git. Don't commit pack JARs, mappings you can't redistribute, or decompiled code.
 
+## Read a mod with its original Minecraft names
+
+Use [`decompile-mod`](docs/mapped-decompilation.md) to read the selected mod with **same-version MCP names** for Minecraft 1.5.2, 1.6.4, or 1.7.10. Supply a local MCP config, SpecialSource and Vineflower; the mod and the mapping inputs are not modified. This writes Java references and a native port checklist, not an updated JAR. `plan-port` generates the checklist without Java and can use a local Legacy Connector `CheckJar` JSON report and same-release gameplay notes. A Connector `links` result is not proof of gameplay or native parity.
+
 ## Port your own mod
 
 ```sh

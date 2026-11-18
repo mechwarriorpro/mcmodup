@@ -11,10 +11,12 @@ from .api import ApiContext, ApiIndex
 from .audit import audit, render_audit
 from .catalogs import PROFILES
 from .convert import convert_catalog
-from .decompile import DecompileOptions, decompile
+from .decompile import DecompileOptions, decompile, decompile_mod
 from .inputs import InputError, open_input
 from .mappings import LegacyNames, PortMap
+from .mcp import McpConfig
 from .pack import open_pack, render_pack
+from .port_plan import exact_minecraft, plan_port, render_plan
 from .port import PortOptions, generate_port
 
 
@@ -34,6 +36,28 @@ def _mod_selection(command: argparse.ArgumentParser, *, required: bool = False) 
     select = command.add_mutually_exclusive_group(required=required)
     select.add_argument("--mod", metavar="ARCHIVE", help="select an archive already in the pack by its relative path")
     select.add_argument("--mod-jar", type=Path, metavar="JAR", help="select a separate legacy mod JAR to analyze against the pack")
+
+
+def _target_arguments(command: argparse.ArgumentParser) -> None:
+    command.add_argument("--target-api", type=Path, action="append", default=[], metavar="JAR_OR_CLASSES",
+                         help="compiled NeoForge 1.21.1 API or Mojang-named Minecraft classes (repeatable)")
+    command.add_argument("--port-map", type=Path, metavar="JSON", help="reviewed cross-version references to verify in the target API")
+
+
+def _decompiler_arguments(command: argparse.ArgumentParser, purpose: str, *, max_classes: int) -> None:
+    command.add_argument("--vineflower", required=True, type=Path, metavar="JAR", help="trusted local Vineflower executable JAR")
+    command.add_argument("--java", default="java", help="Java executable for the tools (default: java)")
+    command.add_argument("--class", dest="classes", action="append", default=[], metavar="CLASS",
+                         help=f"limit to this {purpose} class (repeatable, exact slash or dot name)")
+    command.add_argument("--max-classes", type=int, default=max_classes,
+                         help=f"cap staged classes, including nested classes (default: {max_classes})")
+    command.add_argument("--timeout", type=int, default=180, help="per-tool runtime limit in seconds (default: 180)")
+    command.add_argument("--output", "-o", type=Path, required=True, help="new local reference folder outside the modpack")
+
+
+def _decompile_options(args: argparse.Namespace) -> DecompileOptions:
+    return DecompileOptions(tool=args.vineflower, output=args.output, java=args.java, selected_classes=tuple(args.classes),
+                            max_classes=args.max_classes, timeout=args.timeout)
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -59,21 +83,35 @@ def _parser() -> argparse.ArgumentParser:
     pack = commands.add_parser("scan-pack", help="index a modpack's bytecode, dependencies, and API changes")
     _pack_arguments(pack)
     _mod_selection(pack)
-    pack.add_argument("--target-api", type=Path, action="append", default=[], metavar="JAR_OR_CLASSES",
-                      help="compiled NeoForge 1.21.1 API or Mojang-named Minecraft classes (repeatable)")
-    pack.add_argument("--port-map", type=Path, metavar="JSON", help="reviewed cross-version references to verify in the target API")
+    _target_arguments(pack)
     pack.add_argument("--json", action="store_true", help="emit full version, dependency and signature evidence")
 
     refs = commands.add_parser("decompile-deps", help="locally decompile selected dependency classes for one mod")
     _pack_arguments(refs)
     _mod_selection(refs, required=True)
-    refs.add_argument("--vineflower", required=True, type=Path, metavar="JAR", help="trusted local Vineflower executable JAR")
-    refs.add_argument("--java", default="java", help="Java executable for Vineflower (default: java)")
-    refs.add_argument("--class", dest="classes", action="append", default=[], metavar="CLASS",
-                      help="limit to this referenced class (repeatable, exact slash or dot name)")
-    refs.add_argument("--max-classes", type=int, default=250, help="cap staged classes, including nested classes (default: 250)")
-    refs.add_argument("--timeout", type=int, default=180, help="limit decompiler runtime in seconds (default: 180)")
-    refs.add_argument("--output", "-o", type=Path, required=True, help="new local reference folder outside the modpack")
+    _decompiler_arguments(refs, "referenced", max_classes=250)
+
+    mapped = commands.add_parser("decompile-mod", help="decompile a selected mod with exact-version MCP names and a native port checklist")
+    plan = commands.add_parser("plan-port", help="prioritize native port work using static and optional Connector evidence")
+    for command in (mapped, plan):
+        command.add_argument("input", type=Path, help="an installed modpack folder, pack archive, or single legacy mod JAR")
+        _mod_selection(command, required=True)
+        command.add_argument("--source-version", choices=SOURCE_VERSIONS,
+                             help="verified Minecraft version when the archive does not declare one")
+        command.add_argument("--mcp", type=Path, required=command is mapped, metavar="PATH",
+                             help="local MCP ZIP, config folder, or catalog with exact Minecraft version entries")
+        command.add_argument("--mcp-side", choices=("client", "server"),
+                             help="split SRG side and CSV preference (default: client)")
+        command.add_argument("--legacy-api", type=Path, action="append", default=[], metavar="JAR_OR_CLASSES",
+                             help="compiled legacy signatures from the resolved Minecraft release (repeatable)")
+        _target_arguments(command)
+        command.add_argument("--connector-report", type=Path, metavar="JSON", help="local raw Legacy Connector CheckJar JSON")
+        command.add_argument("--connector-gameplay", type=Path, metavar="MODS_JSON",
+                             help="local Connector docs/data/mods.json; import only same-release gameplay observations")
+    _decompiler_arguments(mapped, "selected mod", max_classes=2000)
+    mapped.add_argument("--specialsource", required=True, type=Path, metavar="JAR", help="trusted local SpecialSource shaded JAR")
+    plan.add_argument("--json", action="store_true", help="emit the full evidence and checklist as JSON instead of Markdown")
+
     convert = commands.add_parser("convert-jar", help="build a partial NeoForge JAR for a supported legacy profile")
     convert.add_argument("input", type=Path, help="the original legacy mod JAR")
     convert.add_argument("--pack", required=True, type=Path, help="installed modpack folder or a .jar/.zip with embedded mods")
@@ -207,6 +245,26 @@ def main(argv: list[str] | None = None) -> int:
             print(f"Built partial NeoForge {MINECRAFT_VERSION} JAR "
                   f"({result.entries} recovered items, {result.recipes} adapted recipes): {result.output}")
             print(f"Not ported: {result.profile.not_ported}")
+        elif args.command in {"plan-port", "decompile-mod"}:
+            if args.mcp_side and not args.mcp:
+                raise InputError("--mcp-side requires --mcp.")
+            with open_pack(args.input, ApiContext(profile=args.source_version), args.mod_jar) as pack:
+                selection = args.mod or pack.selected_archive
+                assert selection is not None
+                mod = pack.select(selection)
+                version = exact_minecraft(pack, mod)
+                mcp = McpConfig.load(args.mcp, version, args.mcp_side or "client") if args.mcp else None
+                pack.context = ApiContext(legacy=ApiIndex.load(args.legacy_api), target=ApiIndex.load(args.target_api),
+                                          names=mcp.names if mcp else LegacyNames(), profile=version,
+                                          port_map=PortMap.load(args.port_map) if args.port_map else None)
+                report = plan_port(pack, mod, version, mcp, args.connector_report, args.connector_gameplay)
+                if args.command == "decompile-mod":
+                    assert mcp is not None
+                    output = decompile_mod(pack, mod, mcp, args.specialsource, _decompile_options(args), report, render_plan(report))
+                    print(f"Wrote local MCP {mcp.release} references for Minecraft {version}: {output}")
+                    print("Start with PORTING.md and decompile-report.json. No native JAR was created or verified.")
+                else:
+                    print(json.dumps(report, indent=2) if args.json else render_plan(report), end="\n" if args.json else "")
         elif args.command in {"scan-pack", "decompile-deps"}:
             with open_pack(args.input, _pack_context(args), args.mod_jar) as pack:
                 if args.command == "scan-pack":
@@ -215,9 +273,7 @@ def main(argv: list[str] | None = None) -> int:
                 else:
                     selection = args.mod or pack.selected_archive
                     assert selection is not None  # decompile-deps requires either --mod or --mod-jar
-                    output = decompile(pack, pack.select(selection), DecompileOptions(
-                        tool=args.vineflower, output=args.output, java=args.java, selected_classes=tuple(args.classes),
-                        max_classes=args.max_classes, timeout=args.timeout))
+                    output = decompile(pack, pack.select(selection), _decompile_options(args))
                     print(f"Wrote local dependency references: {output}")
                     print("See decompile-report.json and decompiler.log. These files are not included in a build or push.")
         else:
