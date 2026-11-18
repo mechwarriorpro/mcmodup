@@ -6,6 +6,8 @@ on:
     paths:
       - '.github/workflows/thaumcraft-source-preview.yml'
       - 'examples/thaumcraft4-reload-preview.json'
+      - 'mcmodup/source_ports.py'
+      - 'mcmodup/native_pack.py'
       - 'tests/thaumcraft_pack_smoke.py'
       - 'tests/fixtures/ThaumcraftPackSmoke.java'
 
@@ -52,6 +54,8 @@ jobs:
             https://maven.neoforged.net/releases/net/neoforged/neoforge/21.1.267/neoforge-21.1.267-universal.jar
           curl "${curl_opts[@]}" -o "$target/lib/architectury-neoforge-13.0.11.jar" \
             https://maven.architectury.dev/dev/architectury/architectury-neoforge/13.0.11/architectury-neoforge-13.0.11.jar
+          python -m mcmodup update-pack "$old" --target "$target" --source-ports examples/thaumcraft4-reload-preview.json \
+            --allow-preview-ports --json
           python -m mcmodup update-pack "$old" --target "$target" --mod "mods/$(basename "$old_jar")" \
             --source-ports examples/thaumcraft4-reload-preview.json --allow-preview-ports -o "$scratch/staged"
           PYTHONPATH=.:tests python -m thaumcraft_pack_smoke "$scratch/staged"

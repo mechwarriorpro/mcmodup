@@ -28,7 +28,8 @@ NATIVE_META = "META-INF/neoforge.mods.toml"
 CONNECTOR_PREFIXES = (b"legacyconnector/", b"org/kylepitcock/legacyconnector/", b"org.kylepitcock.legacyconnector.")
 CONNECTOR_ENTRIES = {"META-INF/legacyconnector/provenance.json", "META-INF/legacyconnector/legacyconnector-runtime.jar",
                      "org/kylepitcock/legacyconnector/loader/LegacyModLocator.class"}
-NUMERIC = re.compile(r"[0-9]+(?:\.[0-9]+)*")
+ORDERED_VERSION = re.compile(r"([0-9]+(?:\.[0-9]+)*)(?:-(alpha|beta|rc)(?:[.-]?([0-9]+))?)?", re.I)
+QUALIFIER = {"alpha": -3, "beta": -2, "rc": -1, "": 0}
 NEOFORGE_JAR = re.compile(r"neoforge-(21\.1\.\d+)(?:-universal)?\.jar", re.I)
 LEGACY_CLIENTS = {  # Official vanilla client fingerprints, also used by upstream's version detection tooling.
     "465378c9dc2f779ae1d6e8046ebc46fb53a57968": "1.5.2",
@@ -39,18 +40,18 @@ MAX_ARCHIVES = 4096
 REPORT_NAME = "update-report.json"
 
 
-def _numeric(value: str) -> tuple[int, ...] | None:
+def _ordered(value: str) -> tuple[tuple[int, ...], int, int] | None:
     base = value.partition("+")[0]
-    if len(base) > 64 or not NUMERIC.fullmatch(base):
+    if len(base) > 64 or (match := ORDERED_VERSION.fullmatch(base)) is None:
         return None
-    parts = [int(part) for part in base.split(".")]
+    parts = [int(part) for part in match[1].split(".")]
     while parts and parts[-1] == 0:
         parts.pop()
-    return tuple(parts)
+    return tuple(parts), QUALIFIER[(match[2] or "").lower()], int(match[3] or "0")
 
 
 def matches(version: str, spec: str) -> bool:
-    """Check a literal or a single numeric Maven interval; don't guess other ranges."""
+    """Check a literal or a single numeric/alpha/beta/rc Maven interval; don't guess other ranges."""
     spec = spec.strip()
     if spec in {"", "*"}:
         return True
@@ -65,10 +66,10 @@ def matches(version: str, spec: str) -> bool:
     if not spec.endswith(("]", ")")):
         return False
     bounds = [value.strip() for value in spec[1:-1].split(",")]
-    actual = _numeric(version)
+    actual = _ordered(version)
     if len(bounds) != 2 or not any(bounds) or actual is None:
         return False
-    lo, hi = (_numeric(value) if value else None for value in bounds)
+    lo, hi = (_ordered(value) if value else None for value in bounds)
     if (bounds[0] and lo is None) or (bounds[1] and hi is None):
         return False
     return ((lo is None or actual > lo or (actual == lo and spec[0] == "[")) and
