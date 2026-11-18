@@ -57,6 +57,8 @@ neoForge.runs.named('client') {{
     markers = ["MCMD_CLIENT_PASSED", "MCMD_CLIENT_BOOK_RENDERED", "MCMD_CLIENT_WARP_RENDERED_RELOADED_CLEARED"]
     if with_tinkerer:
         markers.extend(("MCMD_CLIENT_TINKERER_RENDERED", "MCMD_CLIENT_BEDROCK_PORTAL_FOG_CLOUDS"))
+    if with_cc:
+        markers.append("MCMD_CLIENT_COMPUTERCRAFT_SCREEN_AND_TURTLE_MODEL")
     assert all(marker in log for marker in markers), log[-12000:]
     assert "Unable to render warp post chain" not in log and "MCMD_CLIENT_FAILED" not in log, log[-12000:]
     assert (project / "run/saves/mcmodup-runtime-check/level.dat").is_file(), "Client did not save its fresh world"
@@ -65,6 +67,8 @@ neoForge.runs.named('client') {{
           "all four Warp post chains rendered, survived a pack reload and cleared, and the world saved." +
           (" The Osmotic Enchanter opened and rendered, and the Bedrock portal reached its dimension with legacy base fog and clouds."
            if with_tinkerer else ""))
+    if with_cc:
+        print("The fresh CC: Tweaked client rendered a computer screen and resolved the Fume Dissipator model on a crafted and placed turtle.")
 
 
 def cc_test_sources(source: Path, source_sha256: str) -> dict[str, bytes]:

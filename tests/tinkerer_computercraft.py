@@ -18,11 +18,13 @@ from zipfile import ZipFile, ZipInfo
 
 from mcmodup.inputs import InputError
 from mcmodup.source_ports import _copy_limited, _NoRedirect, digest
-from prepare_tinkerer_preview import TC_COMMIT, TC_SOURCE_HASH, TT_COMMIT, TT_SOURCE_HASH, change, prepare_pair
+from prepare_tinkerer_preview import EXAMPLES, TC_COMMIT, TC_SOURCE_HASH, TT_COMMIT, TT_SOURCE_HASH, change, prepare_pair
 
 CC_VERSION = "1.116.1"
 CC_JAR = f"cc-tweaked-1.21.1-forge-{CC_VERSION}.jar"  # 'forge' is the NeoForge release.
 CC_SHA512 = "6f4e0329d8d9d54375241d0fab5219a6963e3ca678cb8d9fff8e7a39b1a825a5f62f3f5518e9a53f86de7f601797af6efdfdff74fc8fb6fc369e930eb639ec25"
+RELOAD_BACKPORT_VERSION = "0.1.0-alpha.24-mcmodup.cc.1"
+TINKERER_BACKPORT_VERSION = "0.1.0-alpha.7-mcmodup.cc.1"
 CC_CASES = {
     "Optional ComputerCraft registration": "computercraftisloadedandtheglueregistered",
     "Add-on peripheral capabilities": "addonperipheralsarefoundattheirblocks",
@@ -33,7 +35,7 @@ CC_CASES = {
     "Lua reads the Aspectalyzer": "luareadstheaspectalyzer",
     "Lua handles an unbound Golem Connector": "luaasksthegolemconnectorwithoutagolem",
     "Lua steers a bound golem": "luareadsandsteersagolem",
-    "Lua reads aspect containers": "luareadsaspectcontainers",
+    "Lua reads aspect containers and empty jar labels": "luareadsaspectcontainers",
     "Lua reads essentia transports": "luareadsessentiatransports",
     "Lua reads or tunes Thaumcraft machines": "luareadsthaumcraftmachines",
     "Fume Dissipator crafts onto turtles": "fumedissipatorisaturtleupgrade",
@@ -153,6 +155,22 @@ def merge_archive(pins: tuple[Pin, Pin, Pin], sources: Path, fetch: bool, output
                     archive.writestr(ZipInfo(f"{base.root}/{name}"), data)
 
 
+def finish_reload(updates: dict, current: ZipFile, root: str) -> None:
+    # Preserve the difference between an empty labelled jar and one with residual suction only.
+    tile = "common/src/main/java/thaumcraft/common/tiles/TileJar.java"
+    if tile in updates:
+        raise InputError("The upstream API delta also changed the jar; review the label backport")
+    text = current.read(f"{root}/{tile}").decode()
+    text = change(text, "import thaumcraft.api.aspects.IAspectSource;",
+                  "import thaumcraft.api.aspects.IAspectSource;\nimport thaumcraft.api.aspects.IJarLabel;")
+    text = change(text, "implements IAspectSource, EssentiaStorageEndpoint", "implements IAspectSource, EssentiaStorageEndpoint, IJarLabel")
+    updates[tile] = change(text, "    public Aspect getFilter()", "    @Override public Aspect getFilter()").encode()
+    updates["common/src/main/java/thaumcraft/api/aspects/IJarLabel.java"] = (
+        EXAMPLES / "port-patches/thaumcraft/IJarLabel.java").read_bytes()
+    gradle = current.read(f"{root}/gradle.properties").decode()
+    updates["gradle.properties"] = change(gradle, "mod_version=0.1.0-alpha.24\n", f"mod_version={RELOAD_BACKPORT_VERSION}\n").encode()
+
+
 def finish_tinkerer(updates: dict, current: ZipFile, root: str) -> None:
     def edit(name, old, new):
         text = updates[name] if name in updates else current.read(f"{root}/{name}")
@@ -162,6 +180,27 @@ def finish_tinkerer(updates: dict, current: ZipFile, root: str) -> None:
          "int DOCUMENTED_DIFFERENCES = 12;", "int DOCUMENTED_DIFFERENCES = 13;")
     edit("common/src/test/java/thaumic/tinkerer/parity/ParityComparatorTest.java",
          "assertEquals(12, result.allowed.size());", "assertEquals(13, result.allowed.size());")
+    # Original IAspectContainerImplementation reports the label first, independently of storage.
+    table = "compat/src/main/java/thaumic/tinkerer/compat/computer/AspectContainerTable.java"
+    edit(table, "import thaumcraft.api.aspects.IAspectContainer;", "import thaumcraft.api.aspects.IAspectContainer;\nimport thaumcraft.api.aspects.IJarLabel;")
+    edit(table, """ * <p>Not ported: 1.7.10 answered {@code getAspects()} of a labelled jar ({@code TileJarFillable} with an {@code aspectFilter})
+ * with the label's aspect alone, even when the jar was empty. {@code thaumcraft.api} has no way to read a jar's label, so a
+ * labelled empty jar answers an empty table (docs/deviations/ComputerCraft.md).</p>""", """ * <p>As in 1.7.10, a labelled jar reports its label alone, even when it is empty. This doesn't change getAspectCount.</p>""")
+    edit(table, "        double i = 1;", """        if (container instanceof IJarLabel labelled && labelled.getFilter() != null) {
+            returnStuff.put(1D, labelled.getFilter().getTag());
+            return new Object[] { returnStuff };
+        }
+        double i = 1;""")
+    cases = "common/src/gameTest/java/thaumic/tinkerer/testing/ComputerCraftRuntimeChecks.java"
+    edit(cases, """     * the jar's aspects, as in 1.7.10), and under an empty jar labelled Aqua (1.7.10 answered the label; the API cannot read it, so
+     * the port answers an empty table, docs/deviations/ComputerCraft.md).""", """     * the jar's aspects), and under an empty jar labelled Aqua, which gives its label but zero stored essentia as in 1.7.10.""")
+    edit(cases, '            expectEmptyTable(test, l, "getAspects");', '''            JsonArray aspects = values(l, "getAspects");
+            test.assertTrue(aspects.size() == 1 && strings(aspects.get(0)).equals(List.of("aqua")),
+                    "getAspects() returns the Aqua label of an empty jar: " + aspects);''')
+    for doc in ("docs/api-requests/ComputerCraft.md", "docs/deviations/ComputerCraft.md"):
+        heading, _, body = updates[doc].decode().split("\n", 2)
+        updates[doc] = (heading + "\n\n> In this backport, `IJarLabel` implements the jar-label request below. "
+                        "`getAspects()` returns the label even for an empty jar.\n" + body).encode()
     # Use the user's staged CC JAR if present; otherwise use the test-only dependency. Never load both in Loom.
     edit("neoforge/build.gradle", ' modGameTestRuntimeOnly "cc.tweaked:cc-tweaked-1.21.1-forge:$rootProject.cc_tweaked_version"', ''' def installedComputers = fileTree(dir: providers.gradleProperty('mcmodupDependencyDir').get(), include: ['*.jar']).files.findAll { jar ->
   new java.util.zip.ZipFile(jar).withCloseable { it.getEntry('dan200/computercraft/shared/ModRegistry.class') != null }
@@ -169,16 +208,27 @@ def finish_tinkerer(updates: dict, current: ZipFile, root: str) -> None:
  if (installedComputers.size() > 1) throw new GradleException('Multiple CC: Tweaked JARs in the build inputs')
  if (installedComputers.isEmpty()) modGameTestRuntimeOnly "cc.tweaked:cc-tweaked-1.21.1-forge:$rootProject.cc_tweaked_version"''')
     edit("gradle.properties", "# Thaumcraft 4 Reload, for both loaders", f"cc_tweaked_version={CC_VERSION}\n\n# Thaumcraft 4 Reload, for both loaders")
-    edit("neoforge/src/main/resources/META-INF/neoforge.mods.toml", 'modId="computercraft"\ntype="optional"\nversionRange="*"',
+    edit("gradle.properties", "mod_version=0.1.0-alpha.7\n", f"mod_version={TINKERER_BACKPORT_VERSION}\n")
+    metadata = "neoforge/src/main/resources/META-INF/neoforge.mods.toml"
+    edit(metadata, 'modId="computercraft"\ntype="optional"\nversionRange="*"',
          f'modId="computercraft"\ntype="optional"\nversionRange="[{CC_VERSION}]"')
+    edit(metadata, 'modId="thaumcraft"\ntype="required"\nversionRange="*"',
+         f'modId="thaumcraft"\ntype="required"\nversionRange="[{RELOAD_BACKPORT_VERSION}]"')
 
 
 def configure_recipes(source: Path, output: Path, base: dict, add_on: dict) -> None:
     shutil.copyfile(source, output / source.name)
     del base["source_url"]
-    base.update(source_zip=source.name, source_sha256=digest(source), minimum_tests=543 + len(TC_CASES))
+    base.update(source_zip=source.name, source_sha256=digest(source), minimum_tests=543 + len(TC_CASES),
+                ids={"thaumcraft": RELOAD_BACKPORT_VERSION},
+                artifact=f"neoforge/build/libs/Thaumcraft-neoforge-{RELOAD_BACKPORT_VERSION}.jar")
     base["features"].update(TC_CASES)
-    base["limitations"].append(f"Includes the golem and machine API delta from Reload {TC_API.commit[:7]}.")
+    base["limitations"].append(f"Includes the golem and machine API delta from Reload {TC_API.commit[:7]} and read-only jar labels.")
+    add_on.update(ids={"thaumictinkerer": TINKERER_BACKPORT_VERSION},
+                  artifact=f"neoforge/build/libs/ThaumicTinkerer-neoforge-{TINKERER_BACKPORT_VERSION}.jar")
+    for dep in add_on["dependencies"]:
+        if dep["id"] == "thaumcraft":
+            dep["range"] = f"[{RELOAD_BACKPORT_VERSION}]"
     add_on["dependencies"].append({"id": "computercraft", "range": f"[{CC_VERSION}]", "type": "optional"})
     add_on["minimum_tests"] += len(CC_CASES)
     add_on["features"].update({key: f"computercraftgametests.{value}" for key, value in CC_CASES.items()})
@@ -194,7 +244,7 @@ def prepare(output: Path, inputs: Path | None = None) -> Path:
         tc, tt = tmp / "reload-computercraft-source.zip", tmp / "tinkerer-computercraft-source.zip"
         merge_archive((TC, TC_ANCESTOR, TC_API), sources, inputs is None, tc,
                       lambda n: n.startswith(("common/src/", "neoforge/src/gameTest/", "fabric/src/gameTest/", "docs/api/reference/"))
-                      or n == "scripts/porting/required-gametests.json")
+                      or n == "scripts/porting/required-gametests.json", finish_reload)
         merge_archive((TT, TT_ANCESTOR, TT_CC), sources, inputs is None, tt,
                       lambda n: n.startswith(("common/", "compat/", "neoforge/", "fabric/", "lang-extra/"))
                       or n in {"NOTICE.md", "docs/deviations/ComputerCraft.md", "docs/api-requests/ComputerCraft.md"},

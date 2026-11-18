@@ -56,6 +56,25 @@ The paired recipe uses the upstream texture/locale migration table and checks it
 
 The [add-on's limitations and attribution](https://github.com/acak1221/Thaumic-Tinkerer-1.21.1/blob/c2e67665446ffada85ec9342384f578875cabb12/NOTICE.md) include omitted legacy integrations and non-commercial, share-alike terms. Keep the outputs local; neither CI preview publishes third-party JARs.
 
+### Optional ComputerCraft integration
+
+To try the native ComputerCraft peripherals and Dissipating Turtle, use this recipe **instead of** `prepare_tinkerer_preview`. It applies the reviewed [Tinkerer ComputerCraft changes](https://github.com/acak1221/Thaumic-Tinkerer-1.21.1/tree/35c2fad848dd095e65263a6a163c0c964d021c00) and the [Reload machine/golem API changes](https://github.com/acak1221/Thaumcraft-1.21.1/commit/316897d63fde06f10313ad6162426a906b636d77) to the pins above without switching to those branches or dropping the existing fixes. It requires Git on `PATH`, verifies the six source ZIPs by SHA-256, and writes the recipe and local source ZIPs. It does not clone, patch, or build the original JARs.
+
+1. Use the same two exact 1.7.10 originals and 1.21.1 NeoForge target as above. To play with computers, install [CC: Tweaked 1.116.1 for 1.21.1 NeoForge](https://modrinth.com/mod/cc-tweaked/version/SQI2qmh5) in `NeoForgePack/mods/`; the download is named `cc-tweaked-1.21.1-forge-1.116.1.jar`. The generated pair can also run without CC: Tweaked. In that case it isn't staged, though the build still uses CC: Tweaked to run integration tests. Do not install the 1.7.10 ComputerCraft JAR or the Fabric version.
+2. Build in fresh directories:
+
+   ```sh
+   PYTHONPATH=.:tests python3 -m tinkerer_computercraft .mcmodup/tinkerer-computercraft
+   python3 -m mcmodup update-pack LegacyPack --target NeoForgePack \
+     --source-ports .mcmodup/tinkerer-computercraft/thaumcraft-tinkerer-preview.json \
+     --allow-preview-ports --mod mods/Thaumcraft-1.7.10-4.2.3.5.jar \
+     -o .mcmodup/staged-tinkerer-computercraft
+   ```
+
+3. In a fresh world, use the research **Computercraft Peripherals** for the Lua commands. Connect a computer to an Aspectalyzer, Dynamism Tablet, attractor, or another supported block; craft a turtle with the Fume Dissipator to give it the tool. CC: Tweaked and its nested libraries are **not** bundled in Thaumic Tinkerer. No Connector or save conversion is involved.
+
+This backport also restores reading the label of an empty fillable or void jar: `getAspects()` returns that aspect, while `getAspectCount()` still reports zero. The output JARs have distinct `-mcmodup.cc.1` versions; the add-on requires the matching Reload build. Other differences described in the [upstream behavior notes](https://github.com/acak1221/Thaumic-Tinkerer-1.21.1/blob/35c2fad848dd095e65263a6a163c0c964d021c00/docs/deviations/ComputerCraft.md) remain, including namespaced golem marker dimensions and changed argument errors. OpenComputers, IC2 and other old integrations are not restored.
+
 ## Test the emitted JARs
 
 The verification harness copies the staged `mods/` into separate temporary NeoForge 21.1.267 instances. It runs the crucible GameTest on the production JAR, not the port's source tree. In the pair it also checks the Osmotic Enchanter infusion's five crafted obsidian-tile inputs. The client harness launches the staged JARs in a fresh creative world, uses the Thaumonomicon, checks the four active Warp post chains before and after resource reload and removal, and saves the world. For the pair it opens the Osmotic Enchanter screen and checks the Bedrock portal and restored dimension settings. These checks use supplied items and blocks, not full survival progression or pixel-for-pixel comparisons.
@@ -65,16 +84,18 @@ From the checkout, with JDK 21 and a graphical display (or Xvfb on Linux):
 ```sh
 PYTHONPATH=.:tests python3 -m thaumcraft_pack_smoke .mcmodup/thaumcraft-preview --client
 PYTHONPATH=.:tests python3 -m thaumcraft_pack_smoke .mcmodup/staged-tinkerer-pair --client --with-tinkerer
+PYTHONPATH=.:tests python3 -m thaumcraft_pack_smoke .mcmodup/staged-tinkerer-computercraft --client --with-tinkerer \
+  --computercraft-source .mcmodup/tinkerer-computercraft/tinkerer-neoforge-source.zip
 ```
 
-Without `--client`, the command only runs the dedicated server checks. These tests are separate from the updater, do not change either input pack or the staged JARs, and do not assert complete parity.
+The optional third run assumes the exact CC: Tweaked release was staged. It checks the peripherals, actual Lua calls, the craftable turtle tool and gas removal on a dedicated server. With `--client` it also exercises a computer GUI and the placed turtle's upgrade model. It reruns the baseline tests with exactly the same port JARs and CC: Tweaked absent. Without `--client`, all commands only run the dedicated server checks. These tests are separate from the updater, do not change either input pack or the staged JARs, and do not assert complete parity.
 
 ## Coverage by original mod
 
 | Original | What's available | Not a full port because… |
 |---|---|---|
 | Thaumcraft 4.2.3.5 | Exact native source-build preview, plus the paired Tinkerer preview | Visual, localization, survival, multiplayer and compatibility gaps remain, even with complete asset accounting. |
-| GTNH Thaumic Tinkerer 2.13.0 | Exact native add-on preview paired with a pinned Reload build | Several legacy integrations and effects are missing, and existing saves aren't migrated. |
+| GTNH Thaumic Tinkerer 2.13.0 | Exact native add-on preview, with an optional CC: Tweaked integration recipe | OpenComputers and other legacy integrations, some behaviors and some effects are still missing. |
 | Minechem 1.6.4 5.0.5 FINAL | [Original tagged source](https://github.com/iopleke/Minechem/tree/1.6.4-5.0.5-FINAL) and the partial chemistry profile | Not all machines, recipes, effects, worldgen, graphics or integrations have been ported. |
 | Atomic Science 1.6.4 and ICBM 1.6.4 | [Exact Voltz archives and dependency audits](usage-examples.md#atomic-science-120-and-icbm-141344-forge-164-input-examples) | No reviewed native source build for these originals or their required old dependency APIs. Later mods with similar features aren't replacements. |
 

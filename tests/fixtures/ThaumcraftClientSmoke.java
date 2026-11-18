@@ -3,6 +3,7 @@ package mcmodup.thaumcraftcheck;
 import com.mojang.logging.LogUtils;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
@@ -13,6 +14,7 @@ import net.minecraft.client.renderer.PostChain;
 import net.minecraft.client.tutorial.TutorialSteps;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.core.component.DataComponentPatch;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.ResourceKey;
@@ -22,11 +24,15 @@ import net.minecraft.world.Difficulty;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.crafting.CraftingInput;
+import net.minecraft.world.item.crafting.RecipeType;
 import net.minecraft.world.level.GameRules;
 import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.LevelSettings;
 import net.minecraft.world.level.WorldDataConfiguration;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.levelgen.WorldOptions;
 import net.minecraft.world.level.levelgen.presets.WorldPresets;
 import net.minecraft.world.phys.BlockHitResult;
@@ -50,16 +56,23 @@ public final class ThaumcraftClientSmoke {
     private static final ResourceKey<Level> BEDROCK = ResourceKey.create(Registries.DIMENSION, ResourceLocation.parse("thaumictinkerer:bedrock"));
     private static final String BROWSER = "thaumcraft.client.gui.GuiResearchBrowser";
     private static final String ENCHANTING = "thaumic.tinkerer.client.gui.GuiEnchanting";
+    private static final ResourceLocation TURTLE = ResourceLocation.parse("computercraft:turtle_normal");
+    private static final ResourceLocation COMPUTER = ResourceLocation.parse("computercraft:computer_normal");
+    private static final ResourceLocation DISSIPATOR = ResourceLocation.parse("thaumictinkerer:gas_remover");
+    private static final String COMPUTER_SCREEN = "dan200.computercraft.client.gui.ComputerScreen";
     private static final int ACTIVE_FRAMES = 5;
     private final boolean paired = Boolean.getBoolean("mcmodup.withTinkerer");
     private final boolean withComputercraft = Boolean.getBoolean("mcmodup.withComputercraft");
     private Stage stage = Stage.START;
     private int ticks, frames;
     private CompletableFuture<?> operation;
-    private BlockPos enchanterPosition;
+    private BlockPos enchanterPosition, turtlePosition, computerPosition;
     private Map<String, PostChain> initialChains;
 
-    private enum Stage { START, JOIN, BOOK, BROWSER, EFFECTS, RELOADED, CLEARED, TABLE, TABLE_GUI, PORTAL, DONE }
+    private enum Stage {
+        START, JOIN, BOOK, BROWSER, EFFECTS, RELOADED, CLEARED, TABLE, TABLE_GUI,
+        PLACE_TURTLE, TURTLE_MODEL, OPEN_COMPUTER, COMPUTER_GUI, PORTAL, DONE
+    }
 
     public ThaumcraftClientSmoke() {
         NeoForge.EVENT_BUS.addListener(this::tick);
@@ -158,13 +171,36 @@ public final class ThaumcraftClientSmoke {
                     if (!screenIs(client, ENCHANTING) || frames < ACTIVE_FRAMES) return;
                     client.screen.onClose();
                     System.out.println("MCMD_CLIENT_TINKERER_RENDERED");
-                    require(BuiltInRegistries.BLOCK.containsKey(PORTAL), "Missing Bedrock portal registration");
+                    if (withComputercraft) prepareTurtle(client);
+                    else placePortal(client);
+                }
+                case PLACE_TURTLE -> {
+                    var stack = client.player.getMainHandItem();
+                    if (!stack.is(BuiltInRegistries.ITEM.get(TURTLE)) || !client.level.getBlockState(turtlePosition.below()).is(Blocks.STONE)) return;
+                    require(stack.getHoverName().getString().contains("Dissipating"), "Turtle name did not include the Fume Dissipator upgrade");
+                    useTop(client, turtlePosition.below());
+                    advance(Stage.TURTLE_MODEL);
+                }
+                case TURTLE_MODEL -> {
+                    var turtle = client.level.getBlockEntity(turtlePosition);
+                    if (turtle == null || !checkTurtleModel(client, turtle)) return;
                     server(client, actor -> {
-                        require(actor.serverLevel().getServer().getLevel(BEDROCK) != null, "Missing Bedrock dimension in fresh world");
-                        require(actor.serverLevel().setBlockAndUpdate(actor.blockPosition(), BuiltInRegistries.BLOCK.get(PORTAL).defaultBlockState()),
-                                "Could not place a Bedrock portal at the player's feet");
+                        actor.setItemInHand(InteractionHand.MAIN_HAND, ItemStack.EMPTY);
+                        require(actor.serverLevel().setBlockAndUpdate(computerPosition, BuiltInRegistries.BLOCK.get(COMPUTER).defaultBlockState()),
+                                "Could not place a normal computer");
                     });
-                    advance(Stage.PORTAL);
+                    advance(Stage.OPEN_COMPUTER);
+                }
+                case OPEN_COMPUTER -> {
+                    if (!client.player.getMainHandItem().isEmpty() || client.level.getBlockEntity(computerPosition) == null) return;
+                    useTop(client, computerPosition);
+                    advance(Stage.COMPUTER_GUI);
+                }
+                case COMPUTER_GUI -> {
+                    if (!screenIs(client, COMPUTER_SCREEN) || frames < ACTIVE_FRAMES) return;
+                    client.screen.onClose();
+                    System.out.println("MCMD_CLIENT_COMPUTERCRAFT_SCREEN_AND_TURTLE_MODEL");
+                    placePortal(client);
                 }
                 case PORTAL -> {
                     if (frames < ACTIVE_FRAMES) return;
@@ -192,11 +228,69 @@ public final class ThaumcraftClientSmoke {
                 case EFFECTS, RELOADED -> activePostChains().keySet().containsAll(WARP.values());
                 case CLEARED -> activePostChains().isEmpty();
                 case TABLE_GUI -> screenIs(client, ENCHANTING);
+                case COMPUTER_GUI -> screenIs(client, COMPUTER_SCREEN);
                 case PORTAL -> client.level != null && client.level.dimension().equals(BEDROCK) && client.screen == null;
                 default -> false;
             };
             frames = counting ? frames + 1 : 0;
         } catch (Throwable error) { finish(client, error); }
+    }
+
+    private void prepareTurtle(Minecraft client) {
+        require(BuiltInRegistries.ITEM.containsKey(TURTLE) && BuiltInRegistries.ITEM.containsKey(DISSIPATOR)
+                && BuiltInRegistries.BLOCK.containsKey(COMPUTER), "Missing the native computer, turtle, or Fume Dissipator");
+        var direction = client.player.getDirection();
+        turtlePosition = client.player.blockPosition().relative(direction, 2);
+        computerPosition = turtlePosition.relative(direction.getCounterClockWise());
+        server(client, actor -> {
+            var level = actor.serverLevel();
+            var turtle = new ItemStack(BuiltInRegistries.ITEM.get(TURTLE));
+            var tool = new ItemStack(BuiltInRegistries.ITEM.get(DISSIPATOR));
+            var grid = CraftingInput.of(2, 1, List.of(turtle, tool));
+            var recipe = level.getRecipeManager().getRecipeFor(RecipeType.CRAFTING, grid, level).orElseThrow();
+            var upgraded = recipe.value().assemble(grid, level.registryAccess());
+            require(upgraded.is(turtle.getItem()), "Crafting did not yield a turtle");
+            level.setBlockAndUpdate(turtlePosition.below(), Blocks.STONE.defaultBlockState());
+            level.setBlockAndUpdate(turtlePosition, Blocks.AIR.defaultBlockState());
+            actor.setItemInHand(InteractionHand.MAIN_HAND, upgraded);
+        });
+        advance(Stage.PLACE_TURTLE);
+    }
+
+    // Observe the registered model backing CC: Tweaked's turtle renderer without putting its optional API on the
+    // harness classpath. The placed turtle receives the upgrade via normal crafting, item placement and client sync.
+    private static boolean checkTurtleModel(Minecraft client, BlockEntity turtle) throws ReflectiveOperationException {
+        require(turtle.getBlockState().is(BuiltInRegistries.BLOCK.get(TURTLE)), "The crafted turtle did not place");
+        var sides = Class.forName("dan200.computercraft.api.turtle.TurtleSide");
+        var type = Class.forName("dan200.computercraft.api.turtle.ITurtleUpgrade");
+        var modellers = Class.forName("dan200.computercraft.client.turtle.TurtleUpgradeModellers");
+        var getUpgrade = turtle.getClass().getMethod("getUpgrade", sides);
+        for (var side : sides.getEnumConstants()) {
+            var upgrade = getUpgrade.invoke(turtle, side);
+            if (upgrade == null) continue;
+            var model = modellers.getMethod("getModel", type, DataComponentPatch.class, sides)
+                    .invoke(null, upgrade, DataComponentPatch.EMPTY, side);
+            var baked = model.getClass().getMethod("model").invoke(model);
+            var itemModel = client.getItemRenderer().getItemModelShaper().getItemModel(new ItemStack(BuiltInRegistries.ITEM.get(DISSIPATOR)));
+            require(baked == itemModel && baked != client.getModelManager().getMissingModel(), "The Fume Dissipator turtle model is missing or wrong");
+            return true;
+        }
+        return false;
+    }
+
+    private static void useTop(Minecraft client, BlockPos pos) {
+        var hit = new BlockHitResult(Vec3.atCenterOf(pos).add(0, .5, 0), Direction.UP, pos, false);
+        client.gameMode.useItemOn(client.player, InteractionHand.MAIN_HAND, hit);
+    }
+
+    private void placePortal(Minecraft client) {
+        require(BuiltInRegistries.BLOCK.containsKey(PORTAL), "Missing Bedrock portal registration");
+        server(client, actor -> {
+            require(actor.serverLevel().getServer().getLevel(BEDROCK) != null, "Missing Bedrock dimension in fresh world");
+            require(actor.serverLevel().setBlockAndUpdate(actor.blockPosition(), BuiltInRegistries.BLOCK.get(PORTAL).defaultBlockState()),
+                    "Could not place a Bedrock portal at the player's feet");
+        });
+        advance(Stage.PORTAL);
     }
 
     private static boolean screenIs(Minecraft client, String className) {
