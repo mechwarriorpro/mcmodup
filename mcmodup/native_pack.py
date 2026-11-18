@@ -434,7 +434,6 @@ def _aliases(path: Path | None) -> dict[str, str]:
 def inventory(source: Path, target: Path, build_options: BuildOptions | None = None, *,
               approved_sources: dict[str, SourcePort] | None = None) -> UpdateInventory:
     source, target = (path.expanduser().resolve() for path in (source, target))
-    source_ports = {} if build_options is None else load_ports(build_options) if approved_sources is None else approved_sources
     for root in (source, target):
         if not root.is_dir() or not (root / "mods").is_dir():
             raise InputError(f"Expected an installed instance with a mods/ folder: {root}")
@@ -499,37 +498,44 @@ def inventory(source: Path, target: Path, build_options: BuildOptions | None = N
         for mod_id in mod.ids:
             providers[mod_id].append(mod)
     state = UpdateInventory(source, target, src_bin, dst_bin, entries, _addon_edges(entries), providers, installed,
-                            target_legacy, passthrough, _aliases(source / "mcmodup-updates.json"), warnings, issues,
-                            build_options, approved_sources=source_ports)
-    if build_options is not None:
-        for label, item in entries.items():
-            ids = state.native_ids(item)
-            if item.problem or not ids:
-                state.recipe_issues[label] = item.problem or "No recognizable legacy mod IDs."
-                continue
-            try:
-                recipe = source_ports.get(_digest(item.path)) if source_ports else None
-            except OSError as exc:
-                state.recipe_issues[label] = f"Cannot fingerprint the original archive: {exc}"
-                continue
-            if recipe is None:
-                issue = "No source recipe for this exact legacy archive (SHA-256)."
-            elif recipe.ids.keys() != ids:
-                issue = "The source recipe's native IDs do not match. Review mcmodup-updates.json for renamed IDs."
-            elif recipe.preview and not build_options.allow_preview:
-                issue = "Only a preview source recipe exists. It does not meet full parity; requires --allow-preview-ports."
-            elif not matches(dst_bin.neoforge, recipe.neoforge):
-                issue = f"The source recipe needs NeoForge {recipe.neoforge}; target has {dst_bin.neoforge}."
-            elif isinstance(recipe.archive, Path) and not recipe.archive.is_file():
-                issue = f"Local source ZIP not found: {recipe.archive.name!r}."
-            else:
-                predicted = NativeMod(Path(recipe.artifact.rsplit("/", 1)[-1]), f"build/{label}", recipe.ids, recipe.dependencies,
-                                      False, True, f"source:{recipe.legacy_sha256}", recipe=recipe, original=item.path)
-                state.recipes[label] = predicted
-                for mod_id in ids:
-                    providers[mod_id].append(predicted)
-                continue
-            state.recipe_issues[label] = issue
+                            target_legacy, passthrough, _aliases(source / "mcmodup-updates.json"), warnings, issues)
+    return with_source_ports(state, build_options, approved_sources=approved_sources) if build_options else state
+
+
+def with_source_ports(state: UpdateInventory, options: BuildOptions, *,
+                      approved_sources: dict[str, SourcePort] | None = None) -> UpdateInventory:
+    """Resolve trusted recipes against an existing inventory without rescanning its bytecode."""
+    source_ports = load_ports(options) if approved_sources is None else approved_sources
+    providers = defaultdict(list, {key: [mod for mod in mods if not mod.recipe] for key, mods in state.providers.items()})
+    state = replace(state, providers=providers, build_options=options, approved_sources=source_ports, recipes={}, recipe_issues={})
+    for label, item in state.entries.items():
+        ids = state.native_ids(item)
+        if item.problem or not ids:
+            state.recipe_issues[label] = item.problem or "No recognizable legacy mod IDs."
+            continue
+        try:
+            recipe = source_ports.get(_digest(item.path)) if source_ports else None
+        except OSError as exc:
+            state.recipe_issues[label] = f"Cannot fingerprint the original archive: {exc}"
+            continue
+        if recipe is None:
+            issue = "No source recipe for this exact legacy archive (SHA-256)."
+        elif recipe.ids.keys() != ids:
+            issue = "The source recipe's native IDs do not match. Review mcmodup-updates.json for renamed IDs."
+        elif recipe.preview and not options.allow_preview:
+            issue = "Only a preview source recipe exists. It does not meet full parity; requires --allow-preview-ports."
+        elif not matches(state.target_platform.neoforge, recipe.neoforge):
+            issue = f"The source recipe needs NeoForge {recipe.neoforge}; target has {state.target_platform.neoforge}."
+        elif isinstance(recipe.archive, Path) and not recipe.archive.is_file():
+            issue = f"Local source ZIP not found: {recipe.archive.name!r}."
+        else:
+            predicted = NativeMod(Path(recipe.artifact.rsplit("/", 1)[-1]), f"build/{label}", recipe.ids, recipe.dependencies,
+                                  False, True, f"source:{recipe.legacy_sha256}", recipe=recipe, original=item.path)
+            state.recipes[label] = predicted
+            for mod_id in ids:
+                providers[mod_id].append(predicted)
+            continue
+        state.recipe_issues[label] = issue
     return state
 
 
@@ -562,8 +568,7 @@ class UpdatePlan:
                           for mod in self.mods], "gameplay_verified": False}
 
 
-def plan(inventory: UpdateInventory, selections: list[str]) -> UpdatePlan:
-    selected = sorted(set(selections))
+def selected_addons(inventory: UpdateInventory, selected: list[str]) -> dict[str, dict[str, str]]:
     if any(label not in inventory.entries for label in selected):
         raise InputError("Select exact archive paths from the mod list, for example mods/Example.jar.")
     closure = set(selected)
@@ -576,6 +581,13 @@ def plan(inventory: UpdateInventory, selections: list[str]) -> UpdatePlan:
                 closure.add(addon)
                 pending.append(addon)
                 added[addon] = {"required_by": label, "reason": why}
+    return added
+
+
+def plan(inventory: UpdateInventory, selections: list[str]) -> UpdatePlan:
+    selected = sorted(set(selections))
+    added = selected_addons(inventory, selected)
+    closure = set(selected) | added.keys()
     problems = list(inventory.target_issues)
     roots = set()
     forced = {}
@@ -760,15 +772,20 @@ def _parents(path: str) -> list[str]:
     return ["/".join(parts[:i]) for i in range(1, len(parts))]
 
 
-def stage(update: UpdatePlan, output: Path) -> Path:
-    if not update.selected or update.problems:
-        raise InputError("Choose at least one mod and resolve all update blockers first.")
+def stage_destination(state: UpdateInventory, output: Path) -> Path:
     output = output.expanduser()
     if output.exists() or output.is_symlink():
         raise InputError("Choose a new output directory; existing files are never replaced.")
     output = output.resolve()
-    if any(output.is_relative_to(root) for root in (update.inventory.source, update.inventory.target)):
+    if any(output.is_relative_to(root) for root in (state.source, state.target)):
         raise InputError("Write the update outside the source and target instances.")
+    return output
+
+
+def stage(update: UpdatePlan, output: Path) -> Path:
+    if not update.selected or update.problems:
+        raise InputError("Choose at least one mod and resolve all update blockers first.")
+    output = stage_destination(update.inventory, output)
     if update.build_order:
         # Keep dependency copies and all intermediate JARs outside the packs and the final output.
         with tempfile.TemporaryDirectory(prefix="mcmodup-source-build-") as directory:

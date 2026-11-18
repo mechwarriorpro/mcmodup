@@ -16,15 +16,15 @@ from urllib.error import URLError
 from urllib.request import build_opener
 from zipfile import ZipFile, ZipInfo
 
-from mcmodup.inputs import InputError
-from mcmodup.source_ports import _copy_limited, _NoRedirect, digest
-from prepare_tinkerer_preview import EXAMPLES, TC_COMMIT, TC_SOURCE_HASH, TT_COMMIT, TT_SOURCE_HASH, change, prepare_pair
+from .inputs import InputError
+from .source_ports import _copy_limited, _NoRedirect, digest
+from .tinkerer_port import SOURCE_TEMPLATES, TC_COMMIT, TC_SOURCE_HASH, TT_COMMIT, TT_SOURCE_HASH, change, prepare_pair
 
 CC_VERSION = "1.116.1"
 CC_JAR = f"cc-tweaked-1.21.1-forge-{CC_VERSION}.jar"  # 'forge' is the NeoForge release.
 CC_SHA512 = "6f4e0329d8d9d54375241d0fab5219a6963e3ca678cb8d9fff8e7a39b1a825a5f62f3f5518e9a53f86de7f601797af6efdfdff74fc8fb6fc369e930eb639ec25"
 RELOAD_BACKPORT_VERSION = "0.1.0-alpha.24-mcmodup.cc.1"
-TINKERER_BACKPORT_VERSION = "0.1.0-alpha.7-mcmodup.cc.1"
+TINKERER_BACKPORT_VERSION = "0.1.0-alpha.7-mcmodup.cc.2"
 CC_CASES = {
     "Optional ComputerCraft registration": "computercraftisloadedandtheglueregistered",
     "Add-on peripheral capabilities": "addonperipheralsarefoundattheirblocks",
@@ -166,7 +166,7 @@ def finish_reload(updates: dict, current: ZipFile, root: str) -> None:
     text = change(text, "implements IAspectSource, EssentiaStorageEndpoint", "implements IAspectSource, EssentiaStorageEndpoint, IJarLabel")
     updates[tile] = change(text, "    public Aspect getFilter()", "    @Override public Aspect getFilter()").encode()
     updates["common/src/main/java/thaumcraft/api/aspects/IJarLabel.java"] = (
-        EXAMPLES / "port-patches/thaumcraft/IJarLabel.java").read_bytes()
+        SOURCE_TEMPLATES / "IJarLabel.java").read_bytes()
     gradle = current.read(f"{root}/gradle.properties").decode()
     updates["gradle.properties"] = change(gradle, "mod_version=0.1.0-alpha.24\n", f"mod_version={RELOAD_BACKPORT_VERSION}\n").encode()
 
@@ -208,7 +208,6 @@ def finish_tinkerer(updates: dict, current: ZipFile, root: str) -> None:
  if (installedComputers.size() > 1) throw new GradleException('Multiple CC: Tweaked JARs in the build inputs')
  if (installedComputers.isEmpty()) modGameTestRuntimeOnly "cc.tweaked:cc-tweaked-1.21.1-forge:$rootProject.cc_tweaked_version"''')
     edit("gradle.properties", "# Thaumcraft 4 Reload, for both loaders", f"cc_tweaked_version={CC_VERSION}\n\n# Thaumcraft 4 Reload, for both loaders")
-    edit("gradle.properties", "mod_version=0.1.0-alpha.7\n", f"mod_version={TINKERER_BACKPORT_VERSION}\n")
     metadata = "neoforge/src/main/resources/META-INF/neoforge.mods.toml"
     edit(metadata, 'modId="computercraft"\ntype="optional"\nversionRange="*"',
          f'modId="computercraft"\ntype="optional"\nversionRange="[{CC_VERSION}]"')
@@ -224,8 +223,6 @@ def configure_recipes(source: Path, output: Path, base: dict, add_on: dict) -> N
                 artifact=f"neoforge/build/libs/Thaumcraft-neoforge-{RELOAD_BACKPORT_VERSION}.jar")
     base["features"].update(TC_CASES)
     base["limitations"].append(f"Includes the golem and machine API delta from Reload {TC_API.commit[:7]} and read-only jar labels.")
-    add_on.update(ids={"thaumictinkerer": TINKERER_BACKPORT_VERSION},
-                  artifact=f"neoforge/build/libs/ThaumicTinkerer-neoforge-{TINKERER_BACKPORT_VERSION}.jar")
     for dep in add_on["dependencies"]:
         if dep["id"] == "thaumcraft":
             dep["range"] = f"[{RELOAD_BACKPORT_VERSION}]"
@@ -249,7 +246,8 @@ def prepare(output: Path, inputs: Path | None = None) -> Path:
                       lambda n: n.startswith(("common/", "compat/", "neoforge/", "fabric/", "lang-extra/"))
                       or n in {"NOTICE.md", "docs/deviations/ComputerCraft.md", "docs/api-requests/ComputerCraft.md"},
                       finish_tinkerer)
-        return prepare_pair(tt, output, configure=lambda directory, base, addon: configure_recipes(tc, directory, base, addon))
+        return prepare_pair(tt, output, version=TINKERER_BACKPORT_VERSION,
+                            configure=lambda directory, base, addon: configure_recipes(tc, directory, base, addon))
 
 
 if __name__ == "__main__":

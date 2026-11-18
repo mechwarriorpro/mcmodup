@@ -6,9 +6,9 @@ on:
     paths:
       - '.github/workflows/thaumcraft-asset-audit.yml'
       - 'tests/thaumcraft_asset_probe.py'
-      - 'examples/thaumcraft4-reload-preview.json'
-      - 'examples/port-patches/thaumic-tinkerer/**'
-      - 'tests/prepare_tinkerer_preview.py'
+      - 'mcmodup/templates/source-ports/thaumcraft4-reload-preview.json'
+      - 'mcmodup/templates/source-ports/**'
+      - 'mcmodup/tinkerer_port.py'
 
 permissions:
   contents: read
@@ -29,7 +29,7 @@ jobs:
         run: |
           scratch=$(mktemp -d "$RUNNER_TEMP/tc4-assets.XXXXXX")
           trap 'rm -rf -- "$scratch"' EXIT
-          recipe=examples/thaumcraft4-reload-preview.json
+          recipe=mcmodup/templates/source-ports/thaumcraft4-reload-preview.json
           opts=(--proto '=https' --proto-redir '=https' --fail --silent --show-error --location --retry 2 --max-time 90)
           curl "${opts[@]}" --max-filesize 12565807 -o "$scratch/original.jar" \
             https://edge.forgecdn.net/files/2227/552/Thaumcraft-1.7.10-4.2.3.5.jar
@@ -56,5 +56,5 @@ jobs:
             https://github.com/GTNewHorizons/ThaumicTinkerer/releases/download/2.13.0/ThaumicTinkerer-2.13.0.jar
           curl "${opts[@]}" --max-filesize 8388608 -o "$scratch/source.zip" \
             https://codeload.github.com/acak1221/Thaumic-Tinkerer-1.21.1/zip/c2e67665446ffada85ec9342384f578875cabb12
-          recipe=$(PYTHONPATH=.:tests python -m prepare_tinkerer_preview "$scratch/source.zip" "$scratch/pair")
+          recipe=$(python -m mcmodup.tinkerer_port "$scratch/source.zip" "$scratch/pair")
           PYTHONPATH=.:tests python -m thaumcraft_asset_probe "$scratch/original.jar" "$scratch/pair/tinkerer-neoforge-source.zip" "$recipe" --annotations --require-coverage

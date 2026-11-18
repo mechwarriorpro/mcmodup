@@ -12,8 +12,8 @@ import shutil
 from typing import Callable
 from zipfile import ZipFile, ZipInfo
 
-from mcmodup.inputs import InputError
-from mcmodup.source_ports import digest
+from .inputs import InputError
+from .source_ports import digest
 
 TC_COMMIT = "299a9c01cc4904597381f96cc4bbb8cb9ff667de"
 TC_SOURCE_HASH = "6b3fa7bc6fd73d217d6fbba7ce5819a9d3760cffb5fecac3cde953588de740e4"
@@ -21,9 +21,9 @@ TT_COMMIT = "c2e67665446ffada85ec9342384f578875cabb12"
 TT_SOURCE_HASH = "6ef30454521bfc65a894d3425784a3ccdd9931701edd50f0c483ef9cc3322ded"
 TT_ROOT = f"Thaumic-Tinkerer-1.21.1-{TT_COMMIT}"
 TT_LEGACY_HASH = "6aee6009a0ae0fa7929258f34530b1dc01c1245bfccae400fd673419ebe812b3"
-EXAMPLES = Path(__file__).resolve().parents[1] / "examples"
-TC_RECIPE = EXAMPLES / "thaumcraft4-reload-preview.json"
-BEDROCK_EFFECTS = EXAMPLES / "port-patches/thaumic-tinkerer/BedrockEffects.java"
+TINKERER_VERSION = "0.1.0-alpha.7-mcmodup.1"
+SOURCE_TEMPLATES = Path(__file__).with_name("templates") / "source-ports"
+TC_RECIPE = SOURCE_TEMPLATES / "thaumcraft4-reload-preview.json"
 
 
 def change(body: str, old: str, new: str) -> str:
@@ -57,7 +57,8 @@ def prepare(archive: Path, output: Path) -> Path:
     return prepare_pair(archive, output)
 
 
-def prepare_pair(archive: Path, output: Path, *, configure: Callable[[Path, dict, dict], None] | None = None) -> Path:
+def prepare_pair(archive: Path, output: Path, *, version: str = TINKERER_VERSION,
+                 configure: Callable[[Path, dict, dict], None] | None = None) -> Path:
     """Wire an already-verified add-on source (or its reviewed CC backport) to the pair recipe."""
     output.mkdir(parents=True, exist_ok=False)
     try:
@@ -68,6 +69,9 @@ def prepare_pair(archive: Path, output: Path, *, configure: Callable[[Path, dict
         entry = client + "ThaumicTinkererNeoForgeClient.java"
         dimension = f"{TT_ROOT}/common/src/main/resources/data/thaumictinkerer/dimension_type/bedrock.json"
         dimension_test = f"{TT_ROOT}/common/src/test/java/thaumic/tinkerer/kamiworld/KamiWorldResourcesTest.java"
+        worldgen = f"{TT_ROOT}/common/src/main/java/thaumic/tinkerer/common/dim/"
+        feature = worldgen + "BedrockOreClustersFeature.java"
+        properties = f"{TT_ROOT}/gradle.properties"
         with ZipFile(archive) as upstream, ZipFile(local, "x") as scratch:
             assets = asset_mappings(upstream)
             neo = upstream.read(loader_script).decode("utf-8")
@@ -89,11 +93,17 @@ plugins { id 'dev.architectury.loom' version '1.11.458' apply false }
                     '"effects": "thaumictinkerer:bedrock"').encode(),
                 dimension_test: change(upstream.read(dimension_test).decode(),
                     '"minecraft:overworld", type.get("effects").getAsString(), "the sky of the beach biome and the overworld"',
-                    '"thaumictinkerer:bedrock", type.get("effects").getAsString(), "the legacy Bedrock fog and cloud provider"').encode(),
+                    '"thaumictinkerer:bedrock", type.get("effects").getAsString(), "the legacy Bedrock effects provider"').encode(),
+                feature: change(upstream.read(feature).decode(),
+                    "OreClusterGenerator.generate(context.random(), chunkX, chunkZ, density,",
+                    "var populationRandom = LegacyBedrockSeed.population(level.getSeed(), chunkX, chunkZ);\n"
+                    "        OreClusterGenerator.generate(populationRandom, chunkX, chunkZ, density,").encode(),
+                properties: change(upstream.read(properties).decode(), "mod_version=0.1.0-alpha.7\n", f"mod_version={version}\n").encode(),
             }
             for info in upstream.infolist():
                 scratch.writestr(info, replacements.get(info.filename, upstream.read(info)))
-            scratch.writestr(ZipInfo(client + "BedrockEffects.java"), BEDROCK_EFFECTS.read_bytes())
+            for path, name in ((client, "BedrockEffects.java"), (worldgen, "LegacyBedrockSeed.java")):
+                scratch.writestr(ZipInfo(path + name), (SOURCE_TEMPLATES / name).read_bytes())
         manifest = json.loads(TC_RECIPE.read_text(encoding="utf-8"))
         [base] = manifest["ports"]
         # Do not pair the original alpha.24 release with the add-on's broken obsidian tile recipe.
@@ -104,14 +114,14 @@ plugins { id 'dev.architectury.loom' version '1.11.458' apply false }
         add_on = {
             "legacy_sha256": TT_LEGACY_HASH, "source_zip": local.name,
             "source_sha256": digest(local), "source_root": TT_ROOT,
-            "ids": {"thaumictinkerer": "0.1.0-alpha.7"}, "neoforge": "[21.1.259,21.2)",
+            "ids": {"thaumictinkerer": version}, "neoforge": "[21.1.259,21.2)",
             "target_property": "neoforge_version",
             "dependencies": [
                 {"id": "architectury", "range": "[13.0.11,)"},
                 {"id": "thaumcraft", "range": "*"},
                 *({"id": key, "range": "*", "type": "optional"} for key in ("emi", "jei", "jade")),
             ],
-            "artifact": "neoforge/build/libs/ThaumicTinkerer-neoforge-0.1.0-alpha.7.jar",
+            "artifact": f"neoforge/build/libs/ThaumicTinkerer-neoforge-{version}.jar",
             "tasks": [":neoforge:assemble", ":neoforge:runGameTest"],
             "game_report": "neoforge/build/tinkerer-gametest-results.xml", "minimum_tests": 371,
             "features": {
@@ -119,13 +129,16 @@ plugins { id 'dev.architectury.loom' version '1.11.458' apply false }
                 "Add-on recipes": "paritygametests.recipesmatchtheoriginal",
                 "Add-on aspect tags": "paritygametests.objecttagsmatchtheoriginal",
                 "Osmotic Enchanter works with native wand": "enchantmentsgametests.theenchanterenchantsatoolfromawandbetweensixpillars",
+                "Bedrock terrain and ore clusters": "kamiworldgametests.bedrockdimensionissolidbedrockwithoreveins",
+                "Bedrock density and blacklist": "kamiworldgametests.bedrockoreconfigdecidesdensityandblacklist",
             },
             "asset_map": assets,
             "require_asset_coverage": True,
             "status": "preview",
             "limitations": [
                 "Matches GTNH Thaumic Tinkerer 2.13.0 only. Include the exact original Thaumcraft JAR and select the base mod to build this pair.",
-                "This repack restores the original Bedrock base fog and cloud height on NeoForge. It does not reproduce the other old sky and lighting hooks.",
+                "Bedrock uses the legacy ore-population seed and full-bright lightmap input, base fog and cloud height. "
+                "Modern tag order, overlapping cluster winners and the final client renderer can differ.",
                 "Known omissions include ComputerCraft, OpenComputers and IC2 integrations; old worlds, client parity and other add-ons are unverified.",
                 "The add-on is CC BY-NC-SA 3.0. Thaumcraft code and assets have separate terms. Keep these outputs local.",
             ],

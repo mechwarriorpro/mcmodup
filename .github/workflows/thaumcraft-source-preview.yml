@@ -13,8 +13,11 @@ on:
   push:
     paths:
       - '.github/workflows/thaumcraft-source-preview.yml'
-      - 'examples/thaumcraft4-reload-preview.json'
+      - 'mcmodup/templates/source-ports/thaumcraft4-reload-preview.json'
+      - 'mcmodup/__main__.py'
+      - 'mcmodup/builtin_ports.py'
       - 'mcmodup/source_ports.py'
+      - 'pyproject.toml'
       - 'mcmodup/native_pack.py'
       - 'tests/thaumcraft_pack_smoke.py'
       - 'tests/fixtures/ThaumcraftPackSmoke.java'
@@ -42,6 +45,8 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -qy xvfb xauth libgl1 libgl1-mesa-dri libopenal1
+      - name: Install the mcmodup CLI
+        run: python -m pip install .
       - name: Build and exercise exact Thaumcraft from source without publishing inputs or outputs
         shell: bash
         env:
@@ -70,29 +75,23 @@ jobs:
             https://maven.neoforged.net/releases/net/neoforged/neoforge/21.1.267/neoforge-21.1.267-universal.jar
           curl "${curl_opts[@]}" -o "$target/lib/architectury-neoforge-13.0.11.jar" \
             https://maven.architectury.dev/dev/architectury/architectury-neoforge/13.0.11/architectury-neoforge-13.0.11.jar
-          recipe=examples/thaumcraft4-reload-preview.json
           smoke=()
+          build=()
           if [[ "$TEST_TINKERER" == true ]]; then
             curl "${curl_opts[@]}" -o "$old/mods/ThaumicTinkerer-2.13.0.jar" \
               https://github.com/GTNewHorizons/ThaumicTinkerer/releases/download/2.13.0/ThaumicTinkerer-2.13.0.jar
             if [[ "$TEST_COMPUTERCRAFT" == true ]]; then
-              read -r cc_jar cc_sha512 < <(PYTHONPATH=.:tests python -c 'from tinkerer_computercraft import CC_JAR, CC_SHA512; print(CC_JAR, CC_SHA512)')
+              read -r cc_jar cc_sha512 < <(python -c 'from mcmodup.tinkerer_computercraft import CC_JAR, CC_SHA512; print(CC_JAR, CC_SHA512)')
               curl "${curl_opts[@]}" --max-filesize 3102370 -o "$target/mods/$cc_jar" \
                 "https://cdn.modrinth.com/data/gu7yAYhd/versions/SQI2qmh5/$cc_jar"
               printf '%s  %s\n' "$cc_sha512" "$target/mods/$cc_jar" | sha512sum --check
-              recipe=$(PYTHONPATH=.:tests python -m tinkerer_computercraft "$scratch/pair")
+              build+=(--keep-recipe "$scratch/pair")
               smoke+=(--computercraft-source "$scratch/pair/tinkerer-neoforge-source.zip")
-            else
-              curl "${curl_opts[@]}" -o "$scratch/tinkerer.zip" \
-                https://codeload.github.com/acak1221/Thaumic-Tinkerer-1.21.1/zip/c2e67665446ffada85ec9342384f578875cabb12
-              recipe=$(PYTHONPATH=.:tests python -m prepare_tinkerer_preview "$scratch/tinkerer.zip" "$scratch/pair")
             fi
             smoke+=(--with-tinkerer)
           fi
-          python -m mcmodup update-pack "$old" --target "$target" --source-ports "$recipe" \
-            --allow-preview-ports --json
-          python -m mcmodup update-pack "$old" --target "$target" --mod "mods/$(basename "$old_jar")" \
-            --source-ports "$recipe" --allow-preview-ports -o "$scratch/staged"
+          mcmodup build-jars "$old" --target "$target" --mod "mods/$(basename "$old_jar")" \
+            --allow-preview-ports -o "$scratch/staged" "${build[@]}"
           PYTHONPATH=.:tests LIBGL_ALWAYS_SOFTWARE=1 ALSOFT_DRIVERS=null \
             xvfb-run -a -s '-screen 0 1280x800x24' python -u -m thaumcraft_pack_smoke "$scratch/staged" --client "${smoke[@]}" \
             | tee "$scratch/evidence.txt" "$GITHUB_STEP_SUMMARY"

@@ -1,5 +1,6 @@
 package mcmodup.thaumcraftcheck;
 
+import com.mojang.blaze3d.platform.NativeImage;
 import com.mojang.logging.LogUtils;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -10,6 +11,7 @@ import java.util.function.Consumer;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.AccessibilityOnboardingScreen;
 import net.minecraft.client.gui.screens.TitleScreen;
+import net.minecraft.client.renderer.LightTexture;
 import net.minecraft.client.renderer.PostChain;
 import net.minecraft.client.tutorial.TutorialSteps;
 import net.minecraft.core.BlockPos;
@@ -42,6 +44,7 @@ import net.neoforged.fml.common.Mod;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
 import net.neoforged.neoforge.client.event.RenderFrameEvent;
 import net.neoforged.neoforge.common.NeoForge;
+import org.joml.Vector3f;
 
 /** Runs on a real client with a fresh integrated server and unmodified staged JARs in mods/. */
 @Mod("mcmodup_thaumcraft_client")
@@ -64,7 +67,7 @@ public final class ThaumcraftClientSmoke {
     private final boolean paired = Boolean.getBoolean("mcmodup.withTinkerer");
     private final boolean withComputercraft = Boolean.getBoolean("mcmodup.withComputercraft");
     private Stage stage = Stage.START;
-    private int ticks, frames;
+    private int ticks, frames, bedrockTicks;
     private CompletableFuture<?> operation;
     private BlockPos enchanterPosition, turtlePosition, computerPosition;
     private Map<String, PostChain> initialChains;
@@ -203,7 +206,7 @@ public final class ThaumcraftClientSmoke {
                     placePortal(client);
                 }
                 case PORTAL -> {
-                    if (frames < ACTIVE_FRAMES) return;
+                    if (frames < ACTIVE_FRAMES || client.level.getDayTime() != 18000 || ++bedrockTicks < 3) return;
                     var effects = client.level.effects();
                     var expected = new Vec3(160 / 255F * .15F, 128 / 255F * .15F, 160 / 255F * .15F);
                     var night = effects.getBrightnessDependentFogColor(Vec3.ZERO, 0);
@@ -211,7 +214,8 @@ public final class ThaumcraftClientSmoke {
                     require(night.distanceTo(expected) < 1e-7 && day.distanceTo(expected) < 1e-7,
                             "Legacy Bedrock base fog must keep its original colour in daylight and at night");
                     require(effects.getCloudHeight() == 0, "Legacy Bedrock cloud height must be zero");
-                    System.out.println("MCMD_CLIENT_BEDROCK_PORTAL_FOG_CLOUDS");
+                    checkBedrockLightmap(client);
+                    System.out.println("MCMD_CLIENT_BEDROCK_PORTAL_FOG_CLOUDS_LIGHTMAP");
                     finish(client, null);
                 }
                 default -> { }
@@ -283,10 +287,32 @@ public final class ThaumcraftClientSmoke {
         client.gameMode.useItemOn(client.player, InteractionHand.MAIN_HAND, hit);
     }
 
+    private static void checkBedrockLightmap(Minecraft client) throws ReflectiveOperationException {
+        // Verify the hook for a low-light pixel and check the actual lightmap drawn by the renderer (not world light levels).
+        var colors = new Vector3f(.2F, .4F, .6F);
+        client.level.effects().adjustLightmapColors(client.level, 0, 0, .8F, 0, 0, 0, colors);
+        require(colors.x == 1F && colors.y == 1F && colors.z == 1F, "Legacy Bedrock lightmap input must be full bright");
+        var field = LightTexture.class.getDeclaredField("lightPixels");
+        field.setAccessible(true);
+        var image = (NativeImage) field.get(client.gameRenderer.lightTexture());
+        int rgb = image.getPixelRGBA(15, 15) & 0xFFFFFF;
+        int intensity = rgb & 255;
+        require(intensity >= 250 && rgb == intensity * 0x010101, "Bedrock lightmap must be nearly white after vanilla colour processing");
+        for (int sky = 0; sky < 16; sky++) {
+            for (int block = 0; block < 16; block++) {
+                require((image.getPixelRGBA(block, sky) & 0xFFFFFF) == rgb, "Bedrock lightmap must be uniform regardless of sky and block light");
+            }
+        }
+    }
+
     private void placePortal(Minecraft client) {
         require(BuiltInRegistries.BLOCK.containsKey(PORTAL), "Missing Bedrock portal registration");
         server(client, actor -> {
-            require(actor.serverLevel().getServer().getLevel(BEDROCK) != null, "Missing Bedrock dimension in fresh world");
+            var server = actor.serverLevel().getServer();
+            require(server.getLevel(BEDROCK) != null, "Missing Bedrock dimension in fresh world");
+            var overworld = server.overworld();
+            overworld.getGameRules().getRule(GameRules.RULE_DAYLIGHT).set(false, server);
+            overworld.setDayTime(18000);
             require(actor.serverLevel().setBlockAndUpdate(actor.blockPosition(), BuiltInRegistries.BLOCK.get(PORTAL).defaultBlockState()),
                     "Could not place a Bedrock portal at the player's feet");
         });

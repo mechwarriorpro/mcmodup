@@ -100,6 +100,17 @@ def _parser() -> argparse.ArgumentParser:
     updater.add_argument("--json", action="store_true", help="show the catalog or plan as JSON")
     ui.add_argument("--host", default="127.0.0.1", help="interface for the local workbench (default: 127.0.0.1)")
     ui.add_argument("--port", type=int, default=8765, help="local HTTP port (default: 8765)")
+
+    build = commands.add_parser("build-jars", help="compile the built-in native source ports and stage tested JARs")
+    build.add_argument("input", type=Path, help="installed pack with the exact legacy JARs under mods/")
+    build.add_argument("--target", type=Path, required=True, help="installed NeoForge 1.21.1 pack with the native dependencies")
+    build.add_argument("--mod", action="append", required=True, metavar="ARCHIVE", help="select an original archive by relative path (repeatable)")
+    build.add_argument("--output", "-o", type=Path, required=True, help="new directory outside both packs for the staged mods/ folder")
+    build.add_argument("--allow-preview-ports", action="store_true", help="allow a native build with known parity gaps")
+    build.add_argument("--build-timeout", type=int, default=1200, metavar="SECONDS", help="Gradle timeout per project (default: 1200)")
+    build.add_argument("--source-zips", type=Path, metavar="DIR", help="read the pinned source ZIPs from this directory instead of fetching them")
+    build.add_argument("--keep-recipe", type=Path, metavar="NEW_DIR", help="preserve the generated recipe and its local sources for review")
+    build.add_argument("--json", action="store_true", help="emit the staged build report as JSON")
     return parser
 
 
@@ -116,7 +127,21 @@ def _pack_context(args: argparse.Namespace) -> ApiContext:
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     try:
-        if args.command in {"update-pack", "pack-ui"}:
+        if args.command == "build-jars":
+            from .builtin_ports import build_jars
+            from .native_pack import REPORT_NAME
+
+            output = build_jars(args.input, args.target, args.mod, args.output, allow_preview=args.allow_preview_ports,
+                                timeout=args.build_timeout, source_zips=args.source_zips, keep_recipe=args.keep_recipe)
+            report = json.loads((output / REPORT_NAME).read_text(encoding="utf-8"))
+            if args.json:
+                print(json.dumps(report | {"output": str(output)}, indent=2))
+            else:
+                print(f"Built and staged native preview JARs under {output / 'mods'}:")
+                for name, built in report["native_builds"].items():
+                    print(f"  {name}: {built['gametests']['passed']} source GameTests passed")
+                print(f"Not full parity. See {REPORT_NAME} for coverage and limitations, and INSTALL.txt for installation.")
+        elif args.command in {"update-pack", "pack-ui"}:
             from . import native_pack
             from .source_ports import BuildOptions
 

@@ -6,7 +6,7 @@ from zipfile import ZipFile
 
 from mcmodup.inputs import InputError
 from mcmodup.source_ports import digest
-from tinkerer_computercraft import Pin, merge_archive, merge_file
+from mcmodup.tinkerer_computercraft import Pin, merge_archive, merge_file
 
 
 class ComputerCraftSourceTests(unittest.TestCase):

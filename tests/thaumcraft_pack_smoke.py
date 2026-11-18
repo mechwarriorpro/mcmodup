@@ -13,8 +13,8 @@ from mcmodup.port import _build_gradle, _metadata, write_workspace
 from mcmodup.source_ports import digest
 from native_pack_smoke import run_gradle
 from neoforge_smoke import empty_test_structure
-from prepare_tinkerer_preview import TT_ROOT
-from tinkerer_computercraft import CC_CASES, CC_SHA512, CC_VERSION
+from mcmodup.tinkerer_port import TT_ROOT
+from mcmodup.tinkerer_computercraft import CC_CASES, CC_SHA512, CC_VERSION
 
 
 CLIENT_ID = "mcmodup_thaumcraft_client"
@@ -56,7 +56,7 @@ neoForge.runs.named('client') {{
     log = run_gradle(project, "runClient")
     markers = ["MCMD_CLIENT_PASSED", "MCMD_CLIENT_BOOK_RENDERED", "MCMD_CLIENT_WARP_RENDERED_RELOADED_CLEARED"]
     if with_tinkerer:
-        markers.extend(("MCMD_CLIENT_TINKERER_RENDERED", "MCMD_CLIENT_BEDROCK_PORTAL_FOG_CLOUDS"))
+        markers.extend(("MCMD_CLIENT_TINKERER_RENDERED", "MCMD_CLIENT_BEDROCK_PORTAL_FOG_CLOUDS_LIGHTMAP"))
     if with_cc:
         markers.append("MCMD_CLIENT_COMPUTERCRAFT_SCREEN_AND_TURTLE_MODEL")
     assert all(marker in log for marker in markers), log[-12000:]
@@ -65,8 +65,8 @@ neoForge.runs.named('client') {{
     assert mod_hashes(mods) == expected, "A client runtime input changed"
     print("Staged production JARs passed a fresh NeoForge client world: the Thaumonomicon opened and rendered, "
           "all four Warp post chains rendered, survived a pack reload and cleared, and the world saved." +
-          (" The Osmotic Enchanter opened and rendered, and the Bedrock portal reached its dimension with legacy base fog and clouds."
-           if with_tinkerer else ""))
+          (" The Osmotic Enchanter opened and rendered, and the Bedrock portal reached its dimension with legacy base fog,"
+           " cloud height and a uniform full-bright lightmap at midnight." if with_tinkerer else ""))
     if with_cc:
         print("The fresh CC: Tweaked client rendered a computer screen and resolved the Fume Dissipator model on a crafted and placed turtle.")
 
@@ -118,10 +118,12 @@ neoForge.runs.create('gameTestServer') {{
     write_workspace(project, files)
     mods = copy_mods(staged, project, expected)
     log = run_gradle(project, "runGameTestServer")
-    tests = 1 + int(with_tinkerer) + (len(CC_CASES) if cc_fixtures else 0)
+    tests = 1 + 2 * with_tinkerer + (len(CC_CASES) if cc_fixtures else 0)
     assert f"All {tests} required tests passed" in log, log[-12000:]
     assert mod_hashes(mods) == expected, "A server runtime input changed"
     print("Staged production Thaumcraft and Architectury passed the native NeoForge crucible smoke test without Connector.")
+    if with_tinkerer:
+        print("The staged Bedrock generator matched the legacy population seed for two complete chunks (using modern ore tags).")
     if cc_fixtures:
         print(f"CC: Tweaked {CC_VERSION}: {len(CC_CASES)} integration GameTests passed against the production JARs, "
               "including live Lua calls to the peripherals, golem control, turtle crafting and gas removal.")
@@ -188,7 +190,7 @@ if __name__ == "__main__":
     parser.add_argument("staged", type=Path)
     parser.add_argument("--with-tinkerer", action="store_true")
     parser.add_argument("--client", action="store_true", help="also launch a graphical client (requires a display)")
-    parser.add_argument("--computercraft-source", type=Path, help="exact source ZIP produced by tinkerer_computercraft")
+    parser.add_argument("--computercraft-source", type=Path, help="exact Tinkerer source ZIP saved by build-jars --keep-recipe")
     args = parser.parse_args()
     if args.computercraft_source and not args.with_tinkerer:
         parser.error("--computercraft-source requires --with-tinkerer")
