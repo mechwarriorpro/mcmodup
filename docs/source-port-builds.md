@@ -28,17 +28,53 @@ python3 -m mcmodup update-pack LegacyPack --target NeoForgePack \
   --mod mods/Thaumcraft-1.7.10-4.2.3.5.jar -o .mcmodup/thaumcraft-preview
 ```
 
-This recipe checks compilation, NeoForge GameTests (including research, crucible, infusion, golems, taint and the Outer Lands), and the emitted JAR's mod IDs, dependency declarations and assets. It also converts extra original UTF-8 `.lang` files to modern locale JSON without overwriting the port's authored translations. That preserves the old keys but does not localize all renamed keys. The [first independent CI pass](https://github.com/mechwarriorpro/mcmodup/actions/runs/44294552551) built alpha.24, passed its NeoForge GameTests, then loaded the staged production JAR with the pack's Architectury in a separate NeoForge smoke test without Connector. The recipe also supplies the exact original JAR for five static mob/spawn unit checks; these are separate from the server GameTests. It remains **preview-only**. The [known deviations](https://github.com/acak1221/Thaumcraft-1.21.1/blob/1417e30fa04ce349a8d811d8f1b3d7515cc58643/docs/audit/KNOWN_DEVIATIONS.md) include unverified client and multiplayer behavior. Original add-on binaries need native ports; integrated accessory slots are not a promise of compatibility with every Baubles add-on. No old save migration. On a filesystem that cannot hold different `Bore.png` and `bore.png` files from the pinned source, build on a case-sensitive filesystem (such as the WSL Linux filesystem), not on a Windows-mounted drive.
+**Verified on NeoForge 21.1.267:** [Independent CI](https://github.com/mechwarriorpro/mcmodup/actions/runs/44297262770) built alpha.24, passed **539 NeoForge GameTests** and **five static mob/spawn checks against the exact original JAR**, then loaded the staged production JAR with the pack's Architectury in a separate crucible smoke test without Connector. The exact-JAR asset audit found 1,024 byte-identical paths, 20 converted locales, and 46 unverified paths out of 1,090 original paths. Unverified paths are missing or changed without a reviewed mapping. The locale conversion preserves legacy keys and leaves authored translations alone; it does not localize every renamed key.
+
+**Still preview-only:** The [known deviations](https://github.com/acak1221/Thaumcraft-1.21.1/blob/1417e30fa04ce349a8d811d8f1b3d7515cc58643/docs/audit/KNOWN_DEVIATIONS.md) include unverified client and multiplayer behavior. Original add-on binaries need native ports. Integrated accessory slots do not guarantee compatibility with Baubles add-ons. There is no old save migration. If your filesystem cannot hold different `Bore.png` and `bore.png` files, build on a case-sensitive filesystem (such as the WSL Linux filesystem), not on a Windows-mounted drive.
+
+## Thaumic Tinkerer paired preview
+
+This matches **GTNH Thaumic Tinkerer 2.13.0** for Minecraft 1.7.10, not every Thaumic Tinkerer release. Put that [original JAR](https://github.com/GTNewHorizons/ThaumicTinkerer/releases/tag/2.13.0) alongside the exact original Thaumcraft 4.2.3.5 JAR in `LegacyPack/mods/`. Use a clean 1.21.1 / NeoForge target and the same pack-local Architectury as above. Do not substitute the unmodified Reload alpha.24 release JAR: the pair needs the [post-release obsidian-tile fix](https://github.com/acak1221/Thaumcraft-1.21.1/commit/299a9c01cc4904597381f96cc4bbb8cb9ff667de).
+
+From this checkout, prepare the paired recipe in a new local directory. This verifies the pinned add-on source ZIP and rewires its Gradle build to use the just-built Thaumcraft and the pack-local Architectury. It does not use a prebuilt modern add-on JAR.
+
+```sh
+mkdir -p .mcmodup
+curl -fL -o .mcmodup/tinkerer-source.zip \
+  https://codeload.github.com/acak1221/Thaumic-Tinkerer-1.21.1/zip/c2e67665446ffada85ec9342384f578875cabb12
+PYTHONPATH=.:tests python3 -m prepare_tinkerer_preview .mcmodup/tinkerer-source.zip .mcmodup/tinkerer-pair
+python3 -m mcmodup pack-ui LegacyPack --target NeoForgePack \
+  --source-ports .mcmodup/tinkerer-pair/thaumcraft-tinkerer-preview.json --allow-preview-ports \
+  -o .mcmodup/staged-tinkerer-pair
+```
+
+Select **Thaumcraft**. The plan should automatically include Thaumic Tinkerer and list Thaumcraft first in the build order. Do not stage this recipe with a different base JAR or assume it covers other detected add-ons. Use `update-pack ... --mod mods/Thaumcraft-1.7.10-4.2.3.5.jar` with the same recipe, target and output flags for the CLI equivalent.
+
+[Independent paired CI](https://github.com/mechwarriorpro/mcmodup/actions/runs/44297262922) passed **543** base and **371** add-on NeoForge GameTests. A separate NeoForge server loaded the staged production JARs without Connector and confirmed the add-on registered its Osmotic Enchanter infusion through the base API and that its five obsidian-tile ingredients match normal crafted stacks. That is not a test of every recipe, integration, client renderer, multiplayer session or old save. The [add-on's limitations and attribution](https://github.com/acak1221/Thaumic-Tinkerer-1.21.1/blob/c2e67665446ffada85ec9342384f578875cabb12/NOTICE.md) include omitted legacy integrations and non-commercial, share-alike terms. Keep the outputs local; neither of these CI previews publishes third-party JARs.
+
+## Coverage by original mod
 
 | Original | What's available | Not a full port because… |
 |---|---|---|
-| Thaumcraft 4.2.3.5 | Exact native source-build preview above | Asset mapping, client and multiplayer parity, and the actual add-on set are not fully verified. |
+| Thaumcraft 4.2.3.5 | Exact native source-build preview, plus the paired Tinkerer preview | Asset mapping, client and multiplayer parity, and other add-ons are not fully verified. |
+| GTNH Thaumic Tinkerer 2.13.0 | Exact native add-on preview paired with a pinned Reload build | Legacy integrations, saves and client parity are not established. |
 | Minechem 1.6.4 5.0.5 FINAL | [Original tagged source](https://github.com/iopleke/Minechem/tree/1.6.4-5.0.5-FINAL) and the partial chemistry profile | Not all machines, recipes, effects, worldgen, graphics or integrations have been ported. |
 | Atomic Science 1.6.4 and ICBM 1.6.4 | [Exact Voltz archives and dependency audits](usage-examples.md#atomic-science-120-and-icbm-141344-forge-164-input-examples) | No reviewed native source build for these originals or their required old dependency APIs. Later mods with similar features aren't replacements. |
 
 ## What the source-build test covers
 
 The [Retro Ruby CI smoke test](https://github.com/mechwarriorpro/mcmodup/actions/runs/44294784277) builds the fixture base and automatically selected add-on from source ZIPs, checks the original texture and adapted locale, and loads their staged production JARs with the actual pack-local library. The add-on calls the base and library APIs to set an item's stack size, and a NeoForge GameTest checks that stack size without Connector. This verifies the build path, not a third-party mod's full parity.
+
+Try the same checklist in read-only mode without a JDK or third-party mod files. Choose a new sample directory, then select **Retro Ruby** to see its add-on and library in the plan:
+
+```sh
+sample=.mcmodup/source-demo
+mkdir -p .mcmodup
+PYTHONPATH=.:tests python3 -m source_pack_smoke --demo "$sample"
+python3 -m mcmodup pack-ui "$sample/Legacy source-build example" \
+  --target "$sample/NeoForge 1.21.1 example" \
+  --source-ports "$sample/reviewed-source-ports.json"
+```
 
 ## Supply a completed port or add-on source recipe
 
