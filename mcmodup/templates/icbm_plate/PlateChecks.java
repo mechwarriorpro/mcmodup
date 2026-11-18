@@ -16,6 +16,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.crafting.CraftingInput;
 import net.minecraft.world.item.crafting.CraftingRecipe;
+import net.minecraft.world.level.GameRules;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.PressurePlateBlock;
@@ -54,6 +55,7 @@ public final class PlateChecks {
         var state = level.getBlockState(pos);
         test.assertTrue(state.getPistonPushReaction() == PushReaction.DESTROY && state.getCollisionShape(level, pos).isEmpty(),
                 "The plate must be breakable by pistons and not obstruct entities");
+        test.assertTrue(state.isRandomlyTicking(), "The original plate also allowed random rechecks");
         test.assertTrue(Block.getDrops(state, level, pos, null).isEmpty(), "The original plate must not drop itself");
         test.succeed();
     }
@@ -61,6 +63,9 @@ public final class PlateChecks {
     @GameTest(template = "empty", timeoutTicks = 60)
     public static void contactAndRelease(GameTestHelper test) {
         var level = test.getLevel();
+        var randomTicking = level.getGameRules().getRule(GameRules.RULE_RANDOMTICKING);
+        var previousSpeed = randomTicking.get();
+        randomTicking.set(0, level.getServer()); // only measure scheduled ticks in this case
         var block = BuiltInRegistries.BLOCK.get(PLATE);
         var pos = place(test);
         var outside = new ItemEntity(level, pos.getX() - 0.25, pos.getY() + 0.05, pos.getZ() + 0.5, new ItemStack(Items.STICK));
@@ -86,6 +91,7 @@ public final class PlateChecks {
         test.runAfterDelay(21, () -> {
             verifySignal(test, pos, 0);
             test.assertTrue(!level.getBlockTicks().hasScheduledTick(pos, block), "Unpowered plate kept scheduling checks");
+            randomTicking.set(previousSpeed, level.getServer());
             test.succeed();
         });
     }

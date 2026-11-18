@@ -18,12 +18,17 @@ import net.minecraft.world.phys.AABB;
 public final class GlassPlate extends PressurePlateBlock {
     public GlassPlate() {
         super(BlockSetType.OAK, Properties.of().strength(0.3F, 0.6F).sound(SoundType.GLASS)
-            .noCollission().noOcclusion().pushReaction(PushReaction.DESTROY).noLootTable());
+            .randomTicks().noCollission().noOcclusion().pushReaction(PushReaction.DESTROY).noLootTable());
     }
 
     @Override
     protected void tick(BlockState state, ServerLevel level, BlockPos pos, RandomSource random) {
         if (state.getValue(POWERED)) update(level, pos, 15);
+    }
+
+    @Override
+    protected void randomTick(BlockState state, ServerLevel level, BlockPos pos, RandomSource random) {
+        tick(state, level, pos, random);
     }
 
     @Override

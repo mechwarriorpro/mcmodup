@@ -10,7 +10,7 @@ import sys
 import traceback
 from zipfile import ZipFile
 
-from legacy_recipe_fixture import java8, pinned, run_server
+from legacy_recipe_fixture import run_server
 from mixed_legacy_pack_smoke import CCL, MULTIPART, note
 from native_pack_smoke import run_gradle
 from pack_release_smoke import boot
@@ -54,33 +54,28 @@ def legacy(root: Path) -> None:
                 unpack(pack, member, server / member)
         config = pack.read("config/modstats.cfg").replace(b"B:AllowUpdates=true", b"B:AllowUpdates=false")
         assert b"B:AllowUpdates=false" in config
-        (server / "config").mkdir()
+        for name in ("ICBM", "Calclavia", "UniversalElectricity", "CodeChickenCore", "multipart", "forge"):
+            path = f"config/{name}.cfg"
+            unpack(pack, path, server / path)
         (server / "config/modstats.cfg").write_bytes(config)
     assert file_digest(server / ICBM) == LEGACY_SHA256
     assert file_digest(server / "Voltz.jar") == FORGE_SHA256
     assert file_digest(server / "minecraft_server.1.6.4.jar") == SERVER_SHA256
     classes = root / "legacy-probe"
     classes.mkdir()
-    built = subprocess.run([java8("javac"), "-proc:none", "-encoding", "UTF-8", "-classpath", str(server / "Voltz.jar"),
+    jdk = Path(os.environ["JAVA_HOME"]) / "bin"
+    version = subprocess.run([jdk / "java", "-version"], text=True, capture_output=True, check=True, timeout=15)
+    assert 'version "1.7.' in (version.stderr + version.stdout), "Use JDK 7 for the original Voltz runtime"
+    built = subprocess.run([jdk / "javac", "-proc:none", "-encoding", "UTF-8", "-classpath", str(server / "Voltz.jar"),
                             "-d", str(classes), str(FIXTURES / "LegacyIcbmPlateSmoke.java")], capture_output=True, text=True, timeout=60)
     assert built.returncode == 0, built.stderr[-2400:]
     with ZipFile(server / "mods/mcmodup-plate-check.jar", "x") as probe:
         for path in classes.rglob("*.class"):
             probe.write(path, path.relative_to(classes).as_posix())
-    # The bundled LaunchWrapper 1.8 throws ConcurrentModificationException while
-    # finding coremod tweakers. Prepend the pinned launcher fix, leaving the
-    # historical game, Forge patches, selected mods and gameplay classes intact.
-    launcher = "launchwrapper-1.12.jar"
-    pinned(f"https://libraries.minecraft.net/net/minecraft/launchwrapper/1.12/{launcher}", server / launcher,
-           "111e7bea9c968cdb3d06ef4632bf7ff0824d0f36")
-    classpath = [launcher]
-    for name, sha1 in {"log4j-api": "fb385330d89c2d61058ef649403f214633569205",
-                       "log4j-core": "dd9c8ecba5c8dc5e1574804d0bfdc1ef155ad9ea"}.items():
-        filename = f"{name}-2.25.3.jar"
-        pinned(f"https://repo.maven.apache.org/maven2/org/apache/logging/log4j/{name}/2.25.3/{filename}", server / filename, sha1)
-        classpath.append(filename)
-    observed = run_server(server, [java8("java"), "-Xmx1G", "-Djava.awt.headless=true", "-cp", os.pathsep.join([*classpath, "Voltz.jar"]),
-                                  "cpw.mods.fml.relauncher.ServerLaunchWrapper", "nogui"],
+    # The original FML sorts LaunchWrapper's active tweaker list with
+    # Collections.sort; Java 8 invalidates the active iterator. Use Java 7
+    # and the bundled launcher rather than patching any original JAR.
+    observed = run_server(server, [str(jdk / "java"), "-Xmx1G", "-Djava.awt.headless=true", "-jar", "Voltz.jar", "nogui"],
                           legacy=True, success_marker="MCMODUP_PLATE_PASS", failure_marker="MCMODUP_PLATE_FAIL")
     note("Exact Voltz glass plate baseline", observed)
 

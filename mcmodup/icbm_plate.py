@@ -55,7 +55,8 @@ def _project(workspace: Path) -> None:
     prefix = f"{MOD_ID}:block/{item}"
     # Retain the same render geometry across powered states, using the original
     # texture and the native pressure-plate model parents.
-    models = {f"{assets}/models/block/{name}.json": _json({"parent": f"minecraft:block/{parent}", "textures": {"texture": prefix}})
+    models = {f"{assets}/models/block/{name}.json": _json({"parent": f"minecraft:block/{parent}", "render_type": "minecraft:translucent",
+                                                        "textures": {"texture": prefix}})
               for name, parent in ((item, "pressure_plate_up"), (item + "_down", "pressure_plate_down"))}
     title = "ICBM Glass Pressure Plate (Preview)"
     desc = "Local port of one block from Voltz ICBM 1.4.1.344. Not a replacement for ICBM or its add-ons."

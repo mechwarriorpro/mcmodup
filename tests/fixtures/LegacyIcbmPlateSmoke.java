@@ -25,6 +25,7 @@ public final class LegacyIcbmPlateSmoke {
             require(itemId(craft(world, 1, 2, 20, 20)) != id && itemId(craft(world, 2, 1, 20, 102)) != id, "Unexpected alternate plate recipe");
             require((Integer) block.getClass().getMethod("func_71925_a", Random.class).invoke(block, new Random(24)) == 0, "Quantity dropped was not zero");
             require((Integer) block.getClass().getMethod("func_71915_e").invoke(block) == 1, "Plate push reaction was not destroy");
+            require((Boolean) block.getClass().getMethod("func_71881_r").invoke(block), "Plate was not registered for random rechecks");
             Class<?> worldType = type("world.World"), entityType = type("entity.Entity");
             require((Integer) block.getClass().getMethod("func_71859_p_", worldType).invoke(block, world) == 10, "Unexpected plate tick delay");
             Object spawn = worldType.getMethod("func_72861_E").invoke(world);
