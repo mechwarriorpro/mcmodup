@@ -93,7 +93,20 @@ def cc_test_sources(source: Path, source_sha256: str) -> dict[str, bytes]:
     return files
 
 
-def check_server(staged: Path, project: Path, expected: dict[str, str], with_tinkerer: bool, cc_fixtures: dict[str, bytes]) -> None:
+def staged_flat_preset(staged: Path, built: dict[str, str]) -> str:
+    # NeoForge 1.21.1's GameTestServer uses the flat preset instead of merging the mods' dimension
+    # files like the normal client and dedicated server do. Include the exact LevelStems from the JARs,
+    # without providing replacement biome, dimension type, or generator definitions in the harness.
+    preset = json.loads((FIXTURES / "ThaumcraftFlatPreset.json").read_text(encoding="utf-8"))
+    for mod, name in (("thaumcraft", "outer_lands"), ("thaumictinkerer", "bedrock")):
+        if mod in built:
+            with ZipFile(staged / "mods" / built[mod]) as jar:
+                preset["dimensions"][f"{mod}:{name}"] = json.loads(jar.read(f"data/{mod}/dimension/{name}.json"))
+    return json.dumps(preset, indent=2) + "\n"
+
+
+def check_server(staged: Path, project: Path, expected: dict[str, str], with_tinkerer: bool,
+                 cc_fixtures: dict[str, bytes], flat_preset: str) -> None:
     java = f"src/main/java/{PACKAGE.replace('.', '/')}"
     gradle = _build_gradle(SERVER_ID, PACKAGE, "1.0.0") + f"""
 neoForge.runs.create('gameTestServer') {{
@@ -107,6 +120,7 @@ neoForge.runs.create('gameTestServer') {{
         "settings.gradle": "rootProject.name = 'thaumcraft-staged-test'\n",
         "gradle.properties": "org.gradle.jvmargs=-Xmx2G\n",
         "src/main/resources/META-INF/neoforge.mods.toml": _metadata(ModMetadata(""), SERVER_ID, SERVER_ID, "1.0.0", "Unlicense"),
+        "src/main/resources/data/minecraft/worldgen/world_preset/flat.json": flat_preset,
         f"src/main/resources/data/{SERVER_ID}/structure/empty.nbt": empty_test_structure(),
         f"{java}/ThaumcraftPackSmoke.java": (FIXTURES / "ThaumcraftPackSmoke.java").read_bytes(),
         **cc_fixtures,
@@ -164,7 +178,8 @@ def check(staged: Path, project: Path, with_tinkerer: bool = False, client: bool
             assert not any(n.startswith(("dan200/computercraft/", "org/squiddev/cobalt/", "com/jcraft/jzlib/")) for n in names)
             assert "data/thaumictinkerer/computercraft/turtle_upgrade/gas_remover.json" in names
         cc_fixtures = cc_test_sources(cc_source, add_on["source_sha256"])
-    check_server(staged, project, expected, with_tinkerer, cc_fixtures)
+    flat_preset = staged_flat_preset(staged, built)
+    check_server(staged, project, expected, with_tinkerer, cc_fixtures, flat_preset)
     print(f"Thaumcraft preview: {base['gametests']['passed']} source GameTests; "
           f"{base['original_jar_checks']['passed']} original-JAR checks; "
           f"{len(base.get('converted_locales', []))} restored locale files; "
@@ -180,7 +195,7 @@ def check(staged: Path, project: Path, with_tinkerer: bool = False, client: bool
     if cc_source is not None:
         # Remove only CC from separate test instances; do not rebuild or mutate the staged port JARs.
         without_cc = {name: checksum for name, checksum in expected.items() if name != cc_file.name}
-        check_server(staged, project.with_name("server-no-cc"), without_cc, True, {})
+        check_server(staged, project.with_name("server-no-cc"), without_cc, True, {}, flat_preset)
         if client:
             check_client(staged, project.with_name("client-no-cc"), without_cc, True, False)
         print("The same built Thaumcraft and Tinkerer JARs also passed with optional CC: Tweaked absent.")
