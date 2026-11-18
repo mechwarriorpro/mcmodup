@@ -37,6 +37,17 @@ jobs:
           download CBR_1.0.zip https://edge.forgecdn.net/files/713/755/CBR_1.0.zip 353289623195f43a7b5bc2e06066e831d4362728
           download Saddle_Recipe.jar https://edge.forgecdn.net/files/772/757/Saddle_Recipe.jar f4b6441696eb58e8d42747fe1909ba43edd936c7
           download 'Craftable Saddles mc 1.7.10.jar' https://edge.forgecdn.net/files/2336/175/Craftable%20Saddles%20mc%201.7.10.jar 939434ba9ff8e7788839dd5ecf01a74909d60f2a
+          # Optional historical single-purpose release. Only the author's normal download and exact digest.
+          if curl --proto '=https' --proto-redir '=https' --fail --location --silent --show-error --max-time 30 \
+            'https://www.mediafire.com/file/ebse2afvwh2bh8x/RottenFlesh-to-Leather-v1.2.2.zip/file' -o mediafire.html; then
+            link=$(python -c 'import html,re,sys; page=open(sys.argv[1]).read(); print(next((html.unescape(url) for url in re.findall(r'href="(https://download[0-9]+\.mediafire\.com/[^"\s]+)"', page) if "ebse2afvwh2bh8x" in url), ""))' mediafire.html)
+            if [ -n "$link" ]; then
+              curl --proto '=https' --proto-redir '=https' --fail --location --silent --show-error --max-time 30 \
+                --max-filesize 1161 --output RottenFlesh.zip "$link" &&
+                echo '50efe6ed2c2d0dc6061cf90e08e1fb1fd4b339eda9c53847a0351d6ef517067e  RottenFlesh.zip' | sha256sum --check || rm -f RottenFlesh.zip
+            fi
+            rm mediafire.html
+          fi
           cd "$GITHUB_WORKSPACE"
           python - "$RUNNER_TEMP/recipe-originals" <<'PY'
           from pathlib import Path
@@ -47,20 +58,20 @@ jobs:
           from mcmodup.classfiles import CLASS_LIMIT, class_entries, read_class
 
           for path in sorted(Path(sys.argv[1]).iterdir()):
-              def notice(text):
-                  print(f'::notice title={path.name}::' + text.replace('%', '%25').replace('\n', '%0A'))
-
               with open_input(path) as archive:
-                  notice('entries: ' + ', '.join(archive.files)[:2000])
+                  summary = ['entries: ' + ', '.join(archive.files)[:700]]
                   for owner, entry in class_entries(archive.files).items():
                       cls = read_class(archive.read(entry, CLASS_LIMIT))
-                      notice(f'{owner} {cls.parents} {cls.legacy_mod!r}; methods: ' + ', '.join(
-                          name + descriptor for name, descriptor in cls.members if descriptor.startswith('(')))
+                      summary += [f'{owner} {cls.parents} {cls.legacy_mod!r}', 'members: ' + ', '.join(
+                          name + ':' + descriptor for name, descriptor in cls.members)]
                       calls = sorted(s.key for s in cls.references if s.kind == 'method')
-                      notice(f'{owner} calls: ' + ', '.join(calls)[:2200])
+                      summary.append('calls: ' + ', '.join(calls)[:1500])
                       fields = sorted(s.key for s in cls.references if s.kind == 'field' and s.owner != owner)
-                      notice(f'{owner} external fields: ' + ', '.join(fields)[:2200])
-                      disassembly = subprocess.check_output(['javap', '-p', '-c', '-classpath', str(path), owner.replace('/', '.')], text=True)
-                      ops = sorted(set(re.findall(r'^\s+\d+:\s+(\w+)', disassembly, re.M)))
-                      notice(f'{owner} instruction set: ' + ', '.join(ops))
+                      summary.append('external fields: ' + ', '.join(fields)[:2500])
+                      dump = subprocess.check_output(['javap', '-p', '-c', '-v', '-classpath', str(path), owner.replace('/', '.')], text=True)
+                      ops = sorted(set(re.findall(r'^\s+\d+:\s+(\w+)', dump, re.M)))
+                      summary.append('instruction set: ' + ', '.join(ops))
+                      summary.append('annotations: ' + ', '.join(line.strip() for line in dump.splitlines()
+                          if line.lstrip().startswith(('cpw.mods.fml', 'clientSideRequired=', 'serverSideRequired=', 'acceptableRemoteVersions=')))[:500])
+                  print(f'::notice title={path.name}::' + '\n'.join(summary)[:8000].replace('%', '%25').replace('\n', '%0A'))
           PY
