@@ -8,7 +8,7 @@ import shlex
 import shutil
 import subprocess
 import sys
-from zipfile import ZipFile
+from zipfile import BadZipFile, ZipFile
 
 from mcmodup.audit import ModMetadata
 from mcmodup.native_pack import inventory
@@ -35,7 +35,7 @@ def convert(root: Path, version: str, name: str, mod_id: str) -> tuple[Path, dic
     assert list((source / "mods").iterdir()) == [source / label] and not list((target / "mods").iterdir())
     before = {(base, path): file_digest(path) for base in (source, target) for path in base.rglob("*") if path.is_file()}
     result = subprocess.run([sys.executable, "-m", "mcmodup", "update-pack", str(source), "--target", str(target),
-                             "--mod", label, "--output-pack", str(output), "--json"], capture_output=True, text=True, timeout=80)
+                             "--mod", label, "--allow-recipe-preview", "--output-pack", str(output), "--json"], capture_output=True, text=True, timeout=80)
     if result.returncode:
         try:
             problems = "; ".join(json.loads(result.stdout)["problems"])
@@ -53,9 +53,10 @@ def convert(root: Path, version: str, name: str, mod_id: str) -> tuple[Path, dic
     assert before == {(base, path): file_digest(path) for base in (source, target) for path in base.rglob("*") if path.is_file()}
     report = json.loads((output / "update-report.json").read_text())
     assert report["staged"] and report["ready"] and not report["native_builds"] and not report["connector_required"]
-    assert report["mode"] == "automatic-recipe-conversion", report
+    assert report["mode"] == "automatic-recipe-preview" and not report["parity_verified"], report
     artifact, = report["files"]
     assert artifact["action"] == "convert" and artifact["from"] == f"convert/{label}" and set(artifact["ids"]) == {mod_id}
+    assert artifact["conversion"]["preview"] and not artifact["conversion"]["parity_verified"]
     assert artifact["conversion"]["source_minecraft"] == version and artifact["conversion"]["source_sha256"] == before[source, source / label]
     output_file = output / artifact["file"]
     assert file_digest(output_file) == artifact["sha256"] != before[source, source / label]
@@ -160,7 +161,7 @@ def legacy_verify(root: Path, version: str, cases: Path) -> str:
                       .replace("@SERVER_STARTED@", event or "@Mod.ServerStarted"), encoding="utf-8")
     artifact = compile_probe(source, scratch, [forge], legacy=True)
     shutil.copyfile(artifact, server / "mods" / artifact.name)
-    return run_server(server, legacy_command(server, version, [f"-Dmcmodup.recipe.source={version}", f"-Dmcmodup.recipe.cases={cases}"]), legacy=True)
+    return run_server(server, legacy_command(version, [f"-Dmcmodup.recipe.source={version}", f"-Dmcmodup.recipe.cases={cases}"]), legacy=True)
 
 
 def modern_verify(root: Path, output: Path, report: dict, cases: Path) -> str:
@@ -183,22 +184,23 @@ def modern_verify(root: Path, output: Path, report: dict, cases: Path) -> str:
 
 def main(root: Path) -> None:
     failures = []
+    expected_errors = (AssertionError, OSError, ValueError, subprocess.SubprocessError, BadZipFile)
     for version, (name, mod_id) in CASES.items():
         try:
             output, report = convert(root, version, name, mod_id)
             boot(output, report["instance_runtime"]["launch"]["unix"])
             cases = input_cases(root, output, report, version, mod_id)
-        except (AssertionError, OSError, ValueError) as exc:
+        except expected_errors as exc:
             failures.append(version)
             notice(f"Conversion {version} failed", str(exc)[:3300])
             continue
-        for label, check in (("original Forge", lambda: legacy_verify(root, version, cases)),
-                             ("generated NeoForge", lambda: modern_verify(root, output, report, cases))):
+        for label, check in (("generated NeoForge", lambda: modern_verify(root, output, report, cases)),
+                             ("original Forge", lambda: legacy_verify(root, version, cases))):
             try:
                 notice(f"{version} {label} behavior checked", check())
-            except (AssertionError, OSError, ValueError) as exc:
+            except expected_errors as exc:
                 failures.append(f"{version} {label}")
-                notice(f"{version} {label} behavior failed", str(exc)[-3200:])
+                notice(f"{version} {label} behavior failed", f"{type(exc).__name__}: {exc}"[:3200])
     assert not failures, failures
 
 

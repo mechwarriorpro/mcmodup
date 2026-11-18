@@ -107,24 +107,32 @@ def run_server(root: Path, command: list[str], *, marker: bool = True, legacy: b
                                             f"level-type={'FLAT' if legacy else 'minecraft:flat'}\n"
                                             "simulation-distance=3\ngenerate-structures=false\nspawn-npcs=false\n")
     recent = deque(maxlen=100)
-    ready, verified, result_summary = False, not marker, ""
+    ready, verified, result_summary, failure_line = False, not marker, "", ""
+    causes = []
     with subprocess.Popen(command, cwd=root, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, stdin=subprocess.PIPE,
                           text=True, encoding="utf-8", errors="replace", bufsize=1) as process:
         def observe():
-            nonlocal ready, verified, result_summary
+            nonlocal ready, verified, result_summary, failure_line
             for line in process.stdout:
                 recent.append(line)
+                if "Caused by:" in line and len(causes) < 8:
+                    causes.append(line.strip())
                 ready |= "Done (" in line and "For help" in line
                 if SUCCESS in line:
                     verified, result_summary = True, line.partition(SUCCESS)[2].strip()
-                if (ready and verified) or FAILURE in line:
+                if FAILURE in line:
+                    verified, failure_line = False, line.partition(FAILURE)[2].strip()
+                if (ready and verified) or failure_line:
                     try:
                         process.stdin.write("stop\n")
                         process.stdin.flush()
                     except BrokenPipeError:
                         pass
                     # Continue draining stdout during shutdown without sending more stop commands.
-                    recent.extend(process.stdout)
+                    for later in process.stdout:
+                        recent.append(later)
+                        if "Caused by:" in later and len(causes) < 8:
+                            causes.append(later.strip())
                     break
 
         reader = Thread(target=observe, daemon=True)
@@ -136,7 +144,10 @@ def run_server(root: Path, command: list[str], *, marker: bool = True, legacy: b
             process.wait()
             result = -1
         reader.join(timeout=5)
-    assert result == 0 and ready and verified, f"Server verification failed (ready={ready}, verified={verified}, exit={result}):\n" + "".join(recent)[-5000:]
+    assert result == 0 and ready and verified, (
+        f"Server verification failed (ready={ready}, verified={verified}, exit={result}): {failure_line}\n"
+        + "\n".join(causes) + "\n" + "".join(recent)[-1700:]
+    )
     return result_summary
 
 
@@ -144,7 +155,7 @@ def java8(program: str) -> str:
     return str(Path(os.environ["JAVA_HOME_8_X64"]) / "bin" / program)
 
 
-def legacy_command(root: Path, version: str, options: list[str]) -> list[str]:
+def legacy_command(version: str, options: list[str]) -> list[str]:
     # The 1.5.2 universal targets the old dedicated-server entry point. Running
     # the unmodified Forge ZIP first in the classpath applies its official patches.
     main = (["-cp", f"forge.jar{os.pathsep}minecraft_server.jar", "net.minecraft.server.MinecraftServer"]

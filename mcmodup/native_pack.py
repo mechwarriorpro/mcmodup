@@ -11,7 +11,7 @@ import tomllib
 from zipfile import BadZipFile, ZipFile
 import zlib
 
-from . import MINECRAFT_VERSION, SOURCE_VERSIONS
+from . import MINECRAFT_VERSION, NEOFORGE_VERSION, SOURCE_VERSIONS
 from .audit import ModMetadata
 from .catalogs import PROFILES
 from .classfiles import CLASS_LIMIT, class_entries, read_class
@@ -20,7 +20,7 @@ from .legacy_dependencies import LegacyDependencies, legacy_conflicts
 from .native_resolution import Resolution, dependency_report, resolve
 from .pack import PackMod, _load
 from .private_libraries import PRIVATE_ROOT, PrivateLibrary, inspect as inspect_private_libraries
-from .recipe_conversion import RecipeConversion, analyze as analyze_recipes
+from .recipe_conversion import PROVENANCE as RECIPE_PROVENANCE, RecipeConversion, analyze as analyze_recipes
 from .runtime import ARCHIVE_EXTENSIONS, InstanceRuntime, Platform, discover, instance_runtime, local_files
 from .source_ports import BuildOptions, Dependency, MOD_ID, SHA256, SourcePort, build, load_ports, require_jdk
 from .source_ports import digest as _digest, safe_component as _safe_filename
@@ -100,7 +100,7 @@ def _native(path: Path, label: str, neoforge: str, installed: bool = False) -> N
         requirements = set()
         platform = {"minecraft": MINECRAFT_VERSION, "neoforge": neoforge}
         evidence = False
-        partial = "META-INF/MCModUp-NOTICE.txt" in jar.files
+        partial = bool({"META-INF/MCModUp-NOTICE.txt", RECIPE_PROVENANCE}.intersection(entries))
         deps = data.get("dependencies", {})
         if not isinstance(deps, dict):
             raise InputError("Invalid NeoForge dependencies table")
@@ -235,6 +235,7 @@ class UpdateInventory:
     id_map: Path | None = None
     conversions: dict[str, NativeMod] = field(default_factory=dict)
     conversion_issues: dict[str, str] = field(default_factory=dict)
+    allow_recipe_preview: bool = False
 
     def native_ids(self, item: LegacyEntry) -> set[str]:
         return {self.aliases.get(mod_id, mod_id) for mod_id in item.ids}
@@ -260,7 +261,10 @@ class UpdateInventory:
                 status, reason = "available", "Matching local NeoForge builds found. Select to check dependencies and add-ons."
             elif conversion:
                 count = len(conversion.conversion.recipes)
-                status, reason = "convertible", f"Convert {count} literal recipe{'s' if count != 1 else ''} from this original archive."
+                status = "recipe-preview"
+                reason = f"Translate {count} literal recipe{'s' if count != 1 else ''} from the original. Not a full-parity update."
+                if not self.allow_recipe_preview:
+                    reason += " Requires --allow-recipe-preview with --output-pack."
             elif not item.problem and supported:
                 status, reason = "partial", "Only a partial conversion profile exists here. It is not a replacement or add-on compatible."
             else:
@@ -273,9 +277,10 @@ class UpdateInventory:
                          "releases": {m.mod_id: m.version for m in item.audit.audit.mods if m.mod_id} if item.audit else {},
                          "native_ids": sorted(ids), "status": status, "reason": reason, "addons": len(self.addons.get(label, {})),
                          **({"source_build": recipe.recipe.describe()} if recipe else {}),
-                         **({"conversion": conversion.conversion.report()} if status == "convertible" else {})})
+                         **({"conversion": conversion.conversion.report()} if status == "recipe-preview" else {})})
         return {"source": self.source.name, "target": self.target.name, "minecraft": MINECRAFT_VERSION,
                 "neoforge": self.target_platform.neoforge, "source_build_mode": self.build_options is not None,
+                "allow_recipe_preview": self.allow_recipe_preview,
                 "source_bin": self.source_platform.report(),
                 "target_bin": self.target_platform.report(), "rows": rows, "warnings": self.warnings, "target_issues": self.target_issues}
 
@@ -330,7 +335,10 @@ def _aliases(path: Path | None) -> dict[str, str]:
 
 
 def inventory(source: Path, target: Path, build_options: BuildOptions | None = None, *,
-              approved_sources: dict[str, SourcePort] | None = None, id_map: Path | None = None) -> UpdateInventory:
+              approved_sources: dict[str, SourcePort] | None = None, id_map: Path | None = None,
+              allow_recipe_preview: bool = False) -> UpdateInventory:
+    if build_options and allow_recipe_preview:
+        raise InputError("Use recipe preview separately from reviewed source ports.")
     source, target = (path.expanduser().resolve() for path in (source, target))
     if not source.is_dir() or not any((source / name).is_dir() for name in ("mods", "coremods")):
         raise InputError(f"Expected an installed source instance with mods/ or coremods/: {source}")
@@ -413,7 +421,8 @@ def inventory(source: Path, target: Path, build_options: BuildOptions | None = N
             providers[mod_id].append(mod)
     map_path = id_map.expanduser().resolve(strict=True) if id_map is not None else source / "mcmodup-updates.json"
     state = UpdateInventory(source, target, src_bin, dst_bin, entries, {}, providers, installed,
-                            target_legacy, passthrough, _aliases(map_path), warnings, issues, id_map=id_map)
+                            target_legacy, passthrough, _aliases(map_path), warnings, issues, id_map=id_map,
+                            allow_recipe_preview=allow_recipe_preview)
     if build_options is None:
         _with_recipe_conversions(state)
     state.addons, state.legacy_declarations, state.legacy_binary = _legacy_graph(entries, libraries, runtime_owners)
@@ -428,8 +437,8 @@ def _with_recipe_conversions(state: UpdateInventory) -> None:
             continue
         runtime_version = state.source_platform.legacy
         if (item.version not in SOURCE_VERSIONS or (runtime_version and runtime_version != item.version) or
-                not any(e.version == item.version and e.kind in {"declared", "local runtime"}
-                        for e in item.audit.audit.version_evidence)):
+                (runtime_version != item.version and not any(e.version == item.version and e.kind == "declared"
+                                                            for e in item.audit.audit.version_evidence))):
             state.conversion_issues[label] = "The exact original Minecraft version needs a local runtime or a mod declaration."
             continue
         try:
@@ -446,6 +455,8 @@ def _with_recipe_conversions(state: UpdateInventory) -> None:
                                                 conversion.authors, conversion.license)]
             if state.providers.get(conversion.mod_id):
                 continue
+            if state.target_platform.neoforge != NEOFORGE_VERSION:
+                raise InputError(f"Recipe previews require installed NeoForge {NEOFORGE_VERSION}.")
             state.conversions[label] = NativeMod(Path(conversion.filename), f"convert/{label}",
                                                 {conversion.mod_id: conversion.version}, (), False, True,
                                                 conversion.sha256, conversion=conversion)
@@ -545,7 +556,7 @@ class UpdatePlan:
         requirements, binary = self._legacy_evidence()
         resolution = replace(self.resolution, mods=tuple(self.mods)) if self.resolution else Resolution(tuple(self.mods))
         mode = ("native-source-build" if self.inventory.build_options else
-                "automatic-recipe-conversion" if any(mod.conversion for mod in self.mods) else "native-neoforge")
+                "automatic-recipe-preview" if any(mod.conversion for mod in self.mods) else "native-neoforge")
         return {"schema_version": 1, "mode": mode,
                 "output_mode": "pack" if self.output_pack else "mods",
                 "instance_runtime": self.runtime.report() if self.runtime else None,
@@ -635,8 +646,13 @@ def plan(inventory: UpdateInventory, selections: list[str], *, output_pack: bool
                 continue
         else:
             artifact = inventory.conversions.get(label)
-            if artifact is None and label in inventory.conversion_issues and ids and not any(inventory.providers.get(key) for key in ids):
-                problems.append(f"{label!r}: automatic recipe conversion blocked: {inventory.conversion_issues[label]}")
+            if artifact is not None:
+                if not inventory.allow_recipe_preview or not output_pack or len(closure) != 1:
+                    problems.append(f"{label!r}: this is a recipe preview, not a full-parity update. "
+                                    "Select this archive alone with --allow-recipe-preview and --output-pack.")
+                    artifact = None
+            elif label in inventory.conversion_issues and ids and not all(inventory.providers.get(key) for key in ids):
+                problems.append(f"{label!r}: recipe preview blocked: {inventory.conversion_issues[label]}")
         if artifact is not None:
             for key in ids:
                 if key in forced and forced[key] is not artifact:
@@ -818,8 +834,8 @@ def _write_stage(update: UpdatePlan, output: Path) -> None:
             if mod.conversion:
                 dest.write_bytes(mod.conversion.jar)
                 checked = _native(dest, mod.label, update.inventory.target_platform.neoforge)
-                if checked is None or checked.ids != mod.ids or not checked.target_evidence or checked.partial:
-                    raise InputError(f"Generated recipe JAR for {mod.label!r} did not match its NeoForge metadata.")
+                if checked is None or checked.ids != mod.ids or not checked.target_evidence or not checked.partial:
+                    raise InputError(f"Generated recipe JAR for {mod.label!r} did not match its NeoForge preview metadata.")
             else:
                 if mod.path.resolve() != mod.path:
                     raise InputError(f"{mod.label!r} became a symbolic link during staging. Scan and retry.")
@@ -843,7 +859,8 @@ def _write_stage(update: UpdatePlan, output: Path) -> None:
         report = update.report | {"staged": True}
         (output / REPORT_NAME).write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
         preview_note = ("This output contains preview builds with known parity gaps. See update-report.json.\n"
-                        if any(row["status"] == "preview" for row in update.native_builds.values()) else "")
+                        if any(mod.conversion for mod in update.mods) or
+                        any(row["status"] == "preview" for row in update.native_builds.values()) else "")
         if update.runtime and update.runtime.launch:
             how = ("From this new directory, use Java 21 to start the copied NeoForge server runtime.\n"
                    "Review Minecraft's EULA yourself; eula.txt and server settings are not copied.\n" +

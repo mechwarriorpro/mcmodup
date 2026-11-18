@@ -16,7 +16,7 @@ from pathlib import Path
 import re
 from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
 
-from . import MINECRAFT_VERSION, SOURCE_VERSIONS
+from . import MINECRAFT_VERSION, NEOFORGE_VERSION, SOURCE_VERSIONS
 from .audit import ModMetadata, _read_metadata
 from .classfiles import ClassFile, Instruction, LEGACY_MOD_ANNOTATION, Symbol, class_entries, read_class
 from .inputs import InputError, open_input
@@ -99,18 +99,25 @@ class RecipeConversion:
 
     @property
     def filename(self) -> str:
-        return f"{self.mod_id}-{self.version}-mcmodup-{MINECRAFT_VERSION}.jar"
+        return f"{self.mod_id}-{self.version}-recipe-preview-{MINECRAFT_VERSION}.jar"
 
     def recipe_id(self, index: int) -> str:
         return f"{self.mod_id}:legacy_{index + 1:03d}"
 
     def report(self) -> dict:
+        limitations = ["Legacy client/server compatibility and add-ons are not reproduced.",
+                       "Only static recipe registrations are translated; this is not proof of gameplay parity."]
+        if self.ignored_log_calls:
+            limitations.append("Literal legacy startup log messages are not reproduced.")
+        if any(recipe.legacy_experience for recipe in self.recipes):
+            limitations.append("NeoForge uses modern furnace XP bookkeeping (including automated extraction).")
         return {"profile": PROFILE, "source_minecraft": self.source_version, "source_sha256": self.source_sha256,
                 "source_mod_id": self.legacy_id, "recipes": dict(sorted(Counter(r.kind for r in self.recipes).items())),
                 "legacy_network_flags": dict(self.legacy_network), "ignored_diagnostic_calls": self.ignored_log_calls,
                 "unbound_metadata_ids": list(self.unbound_metadata_ids),
                 "inactive_metadata_dependencies": list(self.inactive_metadata_dependencies),
-                "verification": "static-literal-registrations"}
+                "verification": "static-literal-registrations", "preview": True, "parity_verified": False,
+                "limitations": limitations}
 
     def metadata(self) -> str:
         lines = ['modLoader="lowcodefml"', 'loaderVersion="[1,)"', f"license={_toml(self.license)}", "", "[[mods]]",
@@ -118,7 +125,7 @@ class RecipeConversion:
                  f"description={_toml(self.description or 'Automatically converted legacy vanilla recipes.')}"]
         if self.authors:
             lines.append(f"authors={_toml(self.authors)}")
-        for dep, version in (("neoforge", "[21.1,21.2)"), ("minecraft", f"[{MINECRAFT_VERSION}]")):
+        for dep, version in (("neoforge", f"[{NEOFORGE_VERSION}]"), ("minecraft", f"[{MINECRAFT_VERSION}]")):
             lines.extend(("", f"[[dependencies.{self.mod_id}]]", f'modId="{dep}"', 'type="required"',
                           f'versionRange="{version}"', 'ordering="NONE"', 'side="BOTH"'))
         return "\n".join(lines) + "\n"

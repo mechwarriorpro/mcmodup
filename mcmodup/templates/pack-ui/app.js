@@ -3,10 +3,10 @@ const $ = (id) => document.getElementById(id);
 const selected = new Set();
 let catalog, preview, ticket = 0, staging = false, completed = false;
 const statusLabels = {
-  available: 'Available', convertible: 'Convert original', installed: 'In target', buildable: 'Source build', preview: 'Preview build',
+  available: 'Available', 'recipe-preview': 'Recipe preview', installed: 'In target', buildable: 'Source build', preview: 'Preview build',
   partial: 'Partial only', blocked: 'Blocked', auto: 'Auto add-on',
 };
-const selectable = row => ['available', 'convertible', 'buildable'].includes(row.status) ||
+const selectable = row => ['available', 'buildable'].includes(row.status) ||
   (catalog?.output_pack && row.status === 'installed');
 function element(tag, className, text) {
   const node = document.createElement(tag);
@@ -50,7 +50,8 @@ function list(focusId) {
     const check = element('input');
     check.type = 'checkbox';
     check.checked = chosen;
-    check.disabled = Boolean(auto) || staging;
+    check.disabled = Boolean(auto) || staging ||
+      (row.status === 'recipe-preview' && !(catalog.allow_recipe_preview && catalog.output_pack));
     check.setAttribute('aria-label', `${row.name} (${row.id})`);
     check.addEventListener('change', () => {
       if (check.checked) selected.add(row.id); else selected.delete(row.id);
@@ -90,7 +91,7 @@ function showPlan(loading = false) {
   const content = $('plan-content');
   content.replaceChildren();
   if (loading) {
-    content.append(element('p', 'plan-empty', 'Checking port recipes, native builds and dependencies…'));
+    content.append(element('p', 'plan-empty', 'Checking recipe previews, native builds and dependencies…'));
     return;
   }
   if (targetIssues.length) {
@@ -121,10 +122,19 @@ function showPlan(loading = false) {
     for (const limitation of row.source_build.limitations) list.append(element('li', '', limitation));
     content.append(list);
   }
-  details(content, 'Convert from original archives', files.filter(row => row.action === 'convert').map(row => ({
+  const recipeFiles = files.filter(row => row.action === 'convert');
+  details(content, 'Recipe preview from original', recipeFiles.map(row => ({
     name: Object.keys(row.ids).join(', '), action: 'convert',
     detail: `${row.from.slice(8)} · ${Object.values(row.conversion.recipes).reduce((total, count) => total + count, 0)} recipes`,
   })));
+  for (const row of recipeFiles) {
+    const limits = element('ul', 'limits');
+    for (const limitation of row.conversion.limitations) limits.append(element('li', '', limitation));
+    content.append(limits);
+  }
+  if (catalog?.allow_recipe_preview && catalog.output_pack) {
+    $('stage-title').textContent = recipeFiles.length ? 'Stage recipe preview' : 'Create new pack';
+  }
   details(content, 'Local files to add', files.filter(row => !['keep', 'build', 'convert'].includes(row.action)).map(row => ({
     name: Object.keys(row.ids).join(', '), detail: row.from, action: row.action,
   })));
@@ -183,7 +193,9 @@ $('stage').addEventListener('click', async () => {
     const result = await request('/api/stage', selected);
     preview = result.plan;
     completed = true;
-    notice(catalog.output_pack
+    notice(preview.mode === 'automatic-recipe-preview'
+      ? `Recipe preview created at ${result.output}. This is not a full-parity update. See INSTALL.txt.`
+      : catalog.output_pack
       ? `New pack created at ${result.output}. See INSTALL.txt for launch instructions. Both input packs are unchanged.`
       : `Updated mods staged at ${result.output}. See INSTALL.txt for the safe folder swap. Both input packs are unchanged.`);
     $('stage-hint').textContent = 'Staging complete. Start a new workbench with a new output folder to stage again.';

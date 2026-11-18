@@ -135,6 +135,8 @@ def _parser() -> argparse.ArgumentParser:
                              help="pin a reviewed local native provider by its JAR fingerprint (repeatable)")
         command.add_argument("--source-ports", type=Path, metavar="TRUSTED_JSON",
                              help="build selected exact legacy releases and add-ons using this trusted source recipe manifest")
+        command.add_argument("--allow-recipe-preview", action="store_true",
+                             help="try automatic recipe translation for one original in a fresh --output-pack; not full parity")
         command.add_argument("--allow-preview-ports", action="store_true",
                              help="allow marked preview recipes with documented parity gaps (still requires GameTests)")
         command.add_argument("--build-timeout", type=int, default=1200, metavar="SECONDS",
@@ -192,7 +194,8 @@ def main(argv: list[str] | None = None) -> int:
             if args.allow_preview_ports and not args.source_ports:
                 raise InputError("--allow-preview-ports requires --source-ports.")
             options = BuildOptions(args.source_ports, args.allow_preview_ports, args.build_timeout) if args.source_ports else None
-            state = native_pack.inventory(args.input, args.target or args.input, options, id_map=args.id_map)
+            state = native_pack.inventory(args.input, args.target or args.input, options, id_map=args.id_map,
+                                          allow_recipe_preview=args.allow_recipe_preview)
             pins = native_pack.parse_pins(args.provider)
             new_pack = args.output_pack is not None
             destination = args.output_pack or args.output
@@ -223,6 +226,8 @@ def main(argv: list[str] | None = None) -> int:
                 if args.json:
                     print(json.dumps(report, indent=2))
                 else:
+                    if report["mode"] == "automatic-recipe-preview":
+                        print("Recipe preview only: generated from the original archive, without full parity.")
                     for path, related in report["auto_addons"].items():
                         print(f"Add-on {path!r}: {related['reason']}")
                     for conflict in report["legacy_version_conflicts"]:

@@ -83,7 +83,7 @@ def handler(state: UpdateInventory, output: Path | None, *, output_pack: bool = 
                 with build_lock:
                     # Re-read local files before writing, so a stale browser plan cannot stage changed inputs.
                     refreshed = inventory(state.source, state.target, state.build_options, approved_sources=state.approved_sources,
-                                          id_map=state.id_map)
+                                          id_map=state.id_map, allow_recipe_preview=state.allow_recipe_preview)
                     update = plan(refreshed, selections, output_pack=output_pack, pins=pins)
                     if update.problems:
                         self._json(HTTPStatus.CONFLICT, {"error": "The refreshed plan has blockers.", "plan": update.report})

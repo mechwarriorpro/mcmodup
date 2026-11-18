@@ -10,6 +10,9 @@ on:
       - 'tests/fixtures/*Recipe*Smoke.java'
       - 'mcmodup/recipe*.py'
       - 'mcmodup/classfiles.py'
+      - 'mcmodup/__main__.py'
+      - 'mcmodup/audit.py'
+      - 'mcmodup/runtime.py'
       - 'mcmodup/native_pack.py'
       - 'mcmodup/native_resolution.py'
 
@@ -74,16 +77,4 @@ jobs:
           java -jar installer.jar --installServer target > install.log 2>&1 || { tail -75 install.log; exit 1; }
       - name: Compare original Forge recipes with their generated NeoForge mods
         shell: bash
-        run: |
-          log="$RUNNER_TEMP/recipe-conversion/result.log"
-          if ! PYTHONPATH=.:tests python -m recipe_conversion_smoke "$RUNNER_TEMP/recipe-conversion" > "$log" 2>&1; then
-            python - "$log" <<'PY'
-          import pathlib
-          import sys
-          detail = pathlib.Path(sys.argv[1]).read_text(errors="replace")[-7000:]
-          print("::error title=Original recipe conversion failed::" + detail.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A"))
-          PY
-            cat "$log"
-            exit 1
-          fi
-          cat "$log"
+        run: PYTHONPATH=.:tests python -m recipe_conversion_smoke "$RUNNER_TEMP/recipe-conversion"
