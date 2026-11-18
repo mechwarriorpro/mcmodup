@@ -1,6 +1,6 @@
 """Read local Minecraft/loader evidence and locate the files for a fresh target instance."""
 
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 import hashlib
 import json
 import os
@@ -187,13 +187,16 @@ _LIB_JAR = re.compile(r"libraries/(?:[\w.+-]+/)+[\w.+-]+\.jar", re.ASCII)
 _BOOTSTRAP = "cpw.mods.bootstraplauncher.BootstrapLauncher"
 
 
-def _server_args(root: Path, rel: str, version: str, sep: str) -> set[str]:
+def _server_args(root: Path, rel: str, version: str, sep: str) -> tuple[set[str], str]:
     path = root / rel
-    if path.stat().st_size > 128 * 1024:
+    if path.resolve() != path:
+        raise InputError(f"Use real NeoForge server arguments, not a symbolic link: {rel}")
+    with path.open("rb") as stream:
+        raw = stream.read(128 * 1024 + 1)
+    if len(raw) > 128 * 1024:
         raise InputError(f"Server installer arguments are too large: {rel}")
-    text = path.read_text(encoding="utf-8")
     try:
-        args = shlex.split(text, comments=True)
+        args = shlex.split(raw.decode("utf-8"), comments=True)
     except ValueError as exc:
         raise InputError(f"Unreadable NeoForge server arguments: {rel}") from exc
 
@@ -202,16 +205,23 @@ def _server_args(root: Path, rel: str, version: str, sep: str) -> set[str]:
             return args[args.index(option) + 1]
         return ""
 
-    if (_BOOTSTRAP not in args or value("--launchTarget") not in {"forgeserver", "neoforgeserver"} or
+    neoform = value("--fml.neoFormVersion")
+    if (_BOOTSTRAP not in args or value("--launchTarget") != "forgeserver" or
             value("--fml.mcVersion") != MINECRAFT_VERSION or value("--fml.neoForgeVersion") != version or
-            "-DlibraryDirectory=libraries" not in args or any(arg.startswith(("@", "-javaagent:", "-agentlib:", "-agentpath:")) for arg in args)):
+            not re.fullmatch(r"[0-9]{8}\.[0-9]{6}", neoform) or "-DlibraryDirectory=libraries" not in args or
+            any(arg.startswith(("@", "-javaagent:", "-agentlib:", "-agentpath:")) for arg in args)):
         raise InputError(f"Use stock NeoForge {version} server installer arguments: {rel}")
     class_path = next((arg.partition("=")[2] for arg in args if arg.startswith("-DlegacyClassPath=")), "")
     module_path = value("-p") or value("--module-path")
     paths = {part for group in (class_path, module_path) if group for part in group.split(sep)}
     if not paths or any(not _LIB_JAR.fullmatch(p) or any(part in {".", ".."} for part in p.split("/")) for p in paths):
         raise InputError(f"Use relative installer library paths in {rel}")
-    return paths
+    # ProductionServerProvider and NeoForgeServerLaunchHandler find these by Maven
+    # coordinates derived from the flags above. They aren't listed in legacyClassPath.
+    game = f"{MINECRAFT_VERSION}-{neoform}"
+    paths.update(f"{SERVER_LIB_DIR}/{game}/server-{game}-{kind}.jar" for kind in ("srg", "extra"))
+    paths.update(f"{NEO_LIB_DIR}/{version}/neoforge-{version}-{kind}.jar" for kind in ("server", "universal"))
+    return paths, hashlib.sha256(raw).hexdigest()
 
 
 def instance_runtime(root: Path, platform: Platform) -> InstanceRuntime:
@@ -220,21 +230,17 @@ def instance_runtime(root: Path, platform: Platform) -> InstanceRuntime:
     known = {row.path: row for row in platform.files}
     if any(f.role == "neoforge" and f.path.startswith(base + "/") for f in platform.files):
         paths = set()
-        launch = {}
+        launch, files = {}, {}
         for os_name, separator in (("unix", ":"), ("win", ";")):
             rel = f"{base}/{os_name}_args.txt"
             if not (root / rel).is_file():
                 continue
-            paths.update(_server_args(root, rel, version, separator))
-            paths.add(rel)
+            libraries, checksum = _server_args(root, rel, version, separator)
+            paths.update(libraries)
+            files[rel] = checksum
             launch[os_name] = f"java -Xmx4G @{rel} nogui"
         if not launch:
             raise InputError(f"Target server has no installed {base}/unix_args.txt or win_args.txt")
-        if not any(p in known and known[p].role == "neoforge" for p in paths):
-            raise InputError("Server installer arguments do not reference the selected NeoForge runtime")
-        if not any((MINECRAFT_VERSION, p) in platform.minecraft for p in paths):
-            raise InputError(f"Server installer arguments do not reference an identifiable Minecraft {MINECRAFT_VERSION} JAR")
-        files = {}
         for rel in sorted(paths):
             path = root / rel
             if not path.is_file() or path.resolve() != path:

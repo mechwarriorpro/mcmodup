@@ -187,22 +187,26 @@ class PackCompatibilityTests(unittest.TestCase):
         version = "21.1.267"
         base = f"{NEO_LIB_DIR}/{version}"
         neo = f"{base}/neoforge-{version}-universal.jar"
-        mc = "libraries/net/minecraft/server/1.21.1/server-1.21.1.jar"
+        neoform = "20240808.144430"
+        mc = f"libraries/net/minecraft/server/1.21.1-{neoform}/server-1.21.1-{neoform}-extra.jar"
         helper = "libraries/example/runtime/1.0/runtime-1.0.jar"
         jar(self.target / neo, **{NEO_CLASS: fixture_class(NEO_CLASS.removesuffix(".class"))})
         jar(self.target / mc, **{"version.json": '{"id":"1.21.1"}'})
+        jar(self.target / mc.replace("-extra.jar", "-srg.jar"), **{"srg.txt": "Minecraft names"})
+        jar(self.target / neo.replace("-universal.jar", "-server.jar"), **{"patches.txt": "NeoForge patched Minecraft"})
         jar(self.target / helper, **{"marker.txt": "runtime library"})
-        for os_name, separator in (("unix", ":"), ("win", ";")):
+        for os_name in ("unix", "win"):
             (self.target / f"{base}/{os_name}_args.txt").write_text(
-                f"-p {helper}\n-DlegacyClassPath={neo}{separator}{mc}\n-DlibraryDirectory=libraries\n"
-                f"cpw.mods.bootstraplauncher.BootstrapLauncher\n--launchTarget forgeserver\n--fml.mcVersion 1.21.1\n--fml.neoForgeVersion {version}\n")
+                f"-p {helper}\n-DlegacyClassPath={helper}\n-DlibraryDirectory=libraries\n"
+                f"cpw.mods.bootstraplauncher.BootstrapLauncher\n--launchTarget forgeserver\n--fml.mcVersion 1.21.1\n"
+                f"--fml.neoForgeVersion {version}\n--fml.neoFormVersion {neoform}\n")
         (self.target / "run.sh").write_text("not stock; must not be copied")
         legacy(self.src, "mods/Base.jar", "base_mod")
         native(self.target, "lib/Base.jar", "base_mod")
         update = plan(inventory(self.src, self.target), ["mods/Base.jar"], output_pack=True)
         self.assertTrue(update.report["ready"], update.problems)
         self.assertEqual(update.report["instance_runtime"]["layout"], "neoforge-server")
-        self.assertEqual(len(update.runtime.files), 5)
+        self.assertEqual(len(update.runtime.files), 7)
         stage(update, self.out)
         self.assertFalse((self.out / "run.sh").exists())
         self.assertIn(f"@{base}/unix_args.txt", (self.out / "INSTALL.txt").read_text())
@@ -212,7 +216,7 @@ class PackCompatibilityTests(unittest.TestCase):
             stage(update, other)
         self.assertFalse(other.exists())
         (self.target / f"{base}/unix_args.txt").write_text(
-            (self.target / f"{base}/win_args.txt").read_text().replace(f"{neo};{mc}", f"{neo}:libraries/../external.jar"))
+            (self.target / f"{base}/win_args.txt").read_text().replace(f"-DlegacyClassPath={helper}", f"-DlegacyClassPath={helper}:libraries/../external.jar"))
         rejected = plan(inventory(self.src, self.target), ["mods/Base.jar"], output_pack=True)
         self.assertIn("relative installer library paths", " ".join(rejected.problems))
 
