@@ -47,8 +47,8 @@ class MappedPortTests(unittest.TestCase):
         self.mcp = self.catalog / "1.7.10.zip"
         jar(self.mcp, **{"mcp/conf/" + key: data for key, data in mcp_files("1.7.10", joined=True).items()})
 
-    def mod(self, *, file="Example.jar", mc="1.7.10", **classes):
-        metadata = {"modid": "example", "name": "Example", "version": "2.3.4",
+    def mod(self, *, file="Example.jar", mc="1.7.10", version="2.3.4", **classes):
+        metadata = {"modid": "example", "name": "Example", "version": version,
                     "mcversion": mc, "requiredMods": ["Other@[3.0,)"]}
         main = {"demo/Main.class": fixture_class("demo/Main", refs=("cpw/mods/fml/common/registry/GameRegistry",))}
         return jar(self.mods / file, **{"mcmod.info": json.dumps([metadata]), **(classes or main)})
@@ -106,7 +106,7 @@ class MappedPortTests(unittest.TestCase):
         self.assertIn("Conflicting Minecraft version evidence", result.stderr)
 
     def test_static_linkage_and_gameplay_are_separate(self):
-        mod = self.mod()
+        mod = self.mod(version="1.7.10-2.3.4")
         jar(self.mods / "Other.jar", **{"other/Main.class": fixture_class("other/Main"),
                                         "mcmod.info": '[{"modid":"other","version":"3.1"}]'})
         report = self.report(synthesizedClasses=2, synthesizedMembers=1, stubbed=["Owner.fake()V"],

@@ -30,9 +30,11 @@ def _rows(data, key: str, label: str) -> list[dict]:
     return data
 
 
-def _version(value: object) -> str:
+def _release(value: object, minecraft: str) -> str:
+    # Some mcmod.info files (for example Thaumcraft) prefix the exact Minecraft
+    # version to a release that @Mod and CheckJar report without that prefix.
+    text = value.strip().removeprefix(f"{minecraft}-") if isinstance(value, str) else ""
     # An unresolved build token is not evidence that two versions agree or disagree.
-    text = value.strip() if isinstance(value, str) else ""
     return "" if text in {"?", "unknown", "0.0.0-legacy"} or text.startswith(("@", "${")) else text
 
 
@@ -78,9 +80,9 @@ def linkage(path: Path, mod: PackMod, minecraft: str) -> dict:
     if recorded_mc != minecraft and not (recorded_mc is None and result in {"skipped", "not-legacy"}):
         raise InputError(f"{label}: CheckJar Minecraft {recorded_mc!r} does not match selected Minecraft {minecraft}.")
     _check_record(row, label)
-    recorded_mods = {r["id"].casefold(): _version(r.get("version"))
+    recorded_mods = {r["id"].casefold(): _release(r.get("version"), minecraft)
                      for r in _rows(row.get("mods", []), "id", f"{label}: mods") if r["id"]}
-    local_mods = {m.mod_id.casefold(): _version(m.version) for m in mod.audit.mods if m.mod_id}
+    local_mods = {m.mod_id.casefold(): _release(m.version, minecraft) for m in mod.audit.mods if m.mod_id}
     shared = local_mods.keys() & recorded_mods.keys()
     if local_mods and recorded_mods and not shared:
         raise InputError(f"{label}: CheckJar mod IDs do not match {filename!r}.")
@@ -98,10 +100,10 @@ def gameplay(path: Path, mod: PackMod, minecraft: str) -> dict:
     data, origin = _document(path)
     title = f"{origin['file']}: expected Legacy Connector docs/data/mods.json with a 'mods' array"
     rows = _rows(data.get("mods") if isinstance(data, dict) else None, "name", title)
-    local = {(m.name.strip().casefold(), _version(m.version)) for m in mod.audit.mods if m.name and _version(m.version)}
+    local = {(m.name.strip().casefold(), _release(m.version, minecraft)) for m in mod.audit.mods if m.name and _release(m.version, minecraft)}
     obs = []
     for row in rows:
-        if row.get("mc") != minecraft or (row["name"].strip().casefold(), _version(row.get("version"))) not in local:
+        if row.get("mc") != minecraft or (row["name"].strip().casefold(), _release(row.get("version"), minecraft)) not in local:
             continue
         source = row.get("source")
         if source not in ("client", "server", None) or not isinstance(row.get("notes"), str) or not row["notes"].strip():

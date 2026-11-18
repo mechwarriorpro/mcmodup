@@ -47,7 +47,7 @@ On the pinned [Legacy Connector checkout](https://github.com/kylepitcock/Legacy-
   -PcheckJson=/abs/private/thaumcraft-check.json
 ```
 
-Pass the **raw per-JAR array**, not the website's summarized `probe.json`. The CLI checks filename and Minecraft version and compares available mod IDs/release versions. CheckJar does not include input hashes; rerun it against your exact files and peers. For scoped historical observations, optionally pass a local copy of the pinned [`docs/data/mods.json`](https://github.com/kylepitcock/Legacy-Connector/blob/062c6e8d902083abae3adae2e856a657c7560ebb/docs/data/mods.json). The planner matches Minecraft version, display name and mod release and excludes offline probe/corpus rows. Different releases (e.g. upstream ICBM **1.4.2** vs Voltz **1.4.1.344**) are not evidence for one another.
+Pass the **raw per-JAR array**, not the website's summarized `probe.json`. The CLI checks filename and Minecraft version and compares available mod IDs/release versions (allowing the exact Minecraft version as a release prefix). CheckJar does not include input hashes; rerun it against your exact files and peers. For scoped historical observations, optionally pass a local copy of the pinned [`docs/data/mods.json`](https://github.com/kylepitcock/Legacy-Connector/blob/062c6e8d902083abae3adae2e856a657c7560ebb/docs/data/mods.json). The planner matches Minecraft version, display name and mod release and excludes offline probe/corpus rows. Different releases (e.g. upstream ICBM **1.4.2** vs Voltz **1.4.1.344**) are not evidence for one another.
 
 ```sh
 python3 -m mcmodup plan-port /abs/LegacyPack \
