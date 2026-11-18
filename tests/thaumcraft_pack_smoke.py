@@ -42,6 +42,7 @@ def check_client(staged: Path, project: Path, expected: dict[str, str], with_tin
         "settings.gradle": "rootProject.name = 'thaumcraft-client-test'\n",
         "gradle.properties": "org.gradle.jvmargs=-Xmx2G\n",
         "build.gradle": _build_gradle(CLIENT_ID, PACKAGE, "1.0.0") + f"""
+dependencies {{ compileOnly fileTree(dir: 'run/mods', include: ['*.jar']) }}
 neoForge.runs.named('client') {{
     gameDirectory = project.file('run')
     jvmArgument '-Xmx3G'
@@ -61,6 +62,8 @@ neoForge.runs.named('client') {{
         markers.extend(("MCMD_CLIENT_TINKERER_RENDERED", "MCMD_CLIENT_BEDROCK_PORTAL_FOG_CLOUDS_LIGHTMAP"))
     if with_cc:
         markers.append("MCMD_CLIENT_COMPUTERCRAFT_SCREEN_AND_TURTLE_MODEL")
+    if with_ender_storage:
+        markers.append("MCMD_CLIENT_ENDER_RIFT_REMOTE_INVENTORY")
     assert all(marker in log for marker in markers), log[-12000:]
     assert "Unable to render warp post chain" not in log and "MCMD_CLIENT_FAILED" not in log, log[-12000:]
     assert (project / "run/saves/mcmodup-runtime-check/level.dat").is_file(), "Client did not save its fresh world"
@@ -71,6 +74,8 @@ neoForge.runs.named('client') {{
            " cloud height and a uniform full-bright lightmap at midnight." if with_tinkerer else ""))
     if with_cc:
         print("The fresh CC: Tweaked client rendered a computer screen and resolved the Fume Dissipator model on a crafted and placed turtle.")
+    if with_ender_storage:
+        print("A real Ender Rift cast opened and rendered the Ender Storage screen with the linked inventory in the fresh client.")
 
 
 def cc_test_sources(source: Path, source_sha256: str) -> dict[str, bytes]:

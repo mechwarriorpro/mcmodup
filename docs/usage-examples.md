@@ -92,7 +92,9 @@ The original [Voltz 3.0.0c server ZIP in Technic's archive](https://github.com/T
 | `mods/atomicscience.jar` | `AtomicScience` 1.2.0 | Requires Calclavia Core; references 74 classes in the pack's `calclavia-core-development-1.2.0.6-main.jar`. |
 | `mods/icbm-1.4.1.344.jar` | `ICBM`, `ICBM\|Explosion`, `ICBM\|Sentry` 1.4.1 | Same Calclavia Core (73 class references); `EulerAngle` is in `universal-electricity-3.1.0.74-core.jar`. Atomic Science is an optional ordering dependency and is present. |
 
-The `.344` is from the packaged filename, not the FML version string. Neither JAR declares an exact Minecraft version in the inspected mod metadata; use the pack's 1.6.4 profile. Installed packs may have different builds and dependencies. The ICBM Classic source tag `mc/1.6.4` is not an established exact match for this binary.
+These are the exact Voltz binaries, not interchangeable builds of the same FML version. [OpenEye identifies the Atomic Science JAR by SHA-256](https://openeye.openmods.info/file/sha256:80cf5bd9d485377acde3822154a5db47804fab3e8f78c388cfcf529239655938) as also known by the name `atomic-science-1.2.0.70-core.jar`. The `.344` in ICBM is likewise a build number from the packaged filename, not the FML version string. Neither JAR specifies Minecraft 1.6.4 in the inspected mod metadata; use the pack's profile.
+
+The ICBM Classic tag `mc/1.6.4` is a later **1.4.2** snapshot. An [earlier 1.4.1 revision](https://github.com/BuiltBrokenModding/ICBM-Classic/tree/1891f8182daca5a1dc557505d2d5573648cb8dff) has the same 304 top-level Java class paths and 225 byte-identical resource paths as Voltz's ICBM JAR, but its `build.properties` requests Calclavia Core `1.1.+` instead of `1.2.+`. This is a reference for investigation, not a verified source match or a NeoForge port.
 
 ```sh
 pack=.mcmodup/Voltz_Server_v3.0.0c.zip

@@ -11,6 +11,7 @@ import java.util.function.Consumer;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.AccessibilityOnboardingScreen;
 import net.minecraft.client.gui.screens.TitleScreen;
+import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.client.renderer.LightTexture;
 import net.minecraft.client.renderer.PostChain;
 import net.minecraft.client.tutorial.TutorialSteps;
@@ -26,6 +27,7 @@ import net.minecraft.world.Difficulty;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.item.crafting.CraftingInput;
 import net.minecraft.world.item.crafting.RecipeType;
 import net.minecraft.world.level.GameRules;
@@ -41,10 +43,14 @@ import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.fml.ModList;
 import net.neoforged.fml.common.Mod;
+import net.neoforged.neoforge.capabilities.Capabilities;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
 import net.neoforged.neoforge.client.event.RenderFrameEvent;
 import net.neoforged.neoforge.common.NeoForge;
 import org.joml.Vector3f;
+import thaumcraft.api.ItemApi;
+import thaumcraft.api.aspects.Aspect;
+import thaumcraft.api.wands.WandHelper;
 
 /** Runs on a real client with a fresh integrated server and unmodified staged JARs in mods/. */
 @Mod("mcmodup_thaumcraft_client")
@@ -63,6 +69,9 @@ public final class ThaumcraftClientSmoke {
     private static final ResourceLocation COMPUTER = ResourceLocation.parse("computercraft:computer_normal");
     private static final ResourceLocation DISSIPATOR = ResourceLocation.parse("thaumictinkerer:gas_remover");
     private static final String COMPUTER_SCREEN = "dan200.computercraft.client.gui.ComputerScreen";
+    private static final ResourceLocation ENDER_RIFT = ResourceLocation.parse("thaumictinkerer:focus_ender_chest");
+    private static final ResourceLocation ENDER_CHEST = ResourceLocation.parse("enderstorage:ender_chest");
+    private static final String ENDER_STORAGE_SCREEN = "codechicken.enderstorage.client.gui.GuiEnderItemStorage";
     private static final int ACTIVE_FRAMES = 5;
     private final boolean paired = Boolean.getBoolean("mcmodup.withTinkerer");
     private final boolean withComputercraft = Boolean.getBoolean("mcmodup.withComputercraft");
@@ -75,7 +84,7 @@ public final class ThaumcraftClientSmoke {
 
     private enum Stage {
         START, JOIN, BOOK, BROWSER, EFFECTS, RELOADED, CLEARED, TABLE, TABLE_GUI,
-        PLACE_TURTLE, TURTLE_MODEL, OPEN_COMPUTER, COMPUTER_GUI, PORTAL, DONE
+        PLACE_TURTLE, TURTLE_MODEL, OPEN_COMPUTER, COMPUTER_GUI, ENDER_WAND, ENDER_GUI, PORTAL, DONE
     }
 
     public ThaumcraftClientSmoke() {
@@ -176,7 +185,7 @@ public final class ThaumcraftClientSmoke {
                     client.screen.onClose();
                     System.out.println("MCMD_CLIENT_TINKERER_RENDERED");
                     if (withComputercraft) prepareTurtle(client);
-                    else placePortal(client);
+                    else prepareRiftOrPortal(client);
                 }
                 case PLACE_TURTLE -> {
                     var stack = client.player.getMainHandItem();
@@ -204,6 +213,20 @@ public final class ThaumcraftClientSmoke {
                     if (!screenIs(client, COMPUTER_SCREEN) || frames < ACTIVE_FRAMES) return;
                     client.screen.onClose();
                     System.out.println("MCMD_CLIENT_COMPUTERCRAFT_SCREEN_AND_TURTLE_MODEL");
+                    prepareRiftOrPortal(client);
+                }
+                case ENDER_WAND -> {
+                    if (!WandHelper.getFocusItem(client.player.getMainHandItem()).is(BuiltInRegistries.ITEM.get(ENDER_RIFT))) return;
+                    client.gameMode.useItem(client.player, InteractionHand.MAIN_HAND);
+                    advance(Stage.ENDER_GUI);
+                }
+                case ENDER_GUI -> {
+                    if (!screenIs(client, ENDER_STORAGE_SCREEN) || frames < ACTIVE_FRAMES) return;
+                    var contents = ((AbstractContainerScreen<?>) client.screen).getMenu().getSlot(0).getItem();
+                    if (contents.isEmpty()) return; // Wait for the server's menu contents packet.
+                    require(contents.is(Items.DIAMOND) && contents.getCount() == 7, "The remote Ender Storage screen shows the wrong inventory");
+                    client.screen.onClose();
+                    System.out.println("MCMD_CLIENT_ENDER_RIFT_REMOTE_INVENTORY");
                     placePortal(client);
                 }
                 case PORTAL -> {
@@ -234,6 +257,7 @@ public final class ThaumcraftClientSmoke {
                 case CLEARED -> activePostChains().isEmpty();
                 case TABLE_GUI -> screenIs(client, ENCHANTING);
                 case COMPUTER_GUI -> screenIs(client, COMPUTER_SCREEN);
+                case ENDER_GUI -> screenIs(client, ENDER_STORAGE_SCREEN);
                 case PORTAL -> client.level != null && client.level.dimension().equals(BEDROCK) && client.screen == null;
                 default -> false;
             };
@@ -281,6 +305,47 @@ public final class ThaumcraftClientSmoke {
             return true;
         }
         return false;
+    }
+
+    private void prepareRiftOrPortal(Minecraft client) {
+        if (!withEnderStorage) {
+            placePortal(client);
+            return;
+        }
+        require(BuiltInRegistries.BLOCK.containsKey(ENDER_CHEST) && BuiltInRegistries.ITEM.containsKey(ENDER_RIFT),
+                "Missing native Ender Storage chest or Ender Rift focus");
+        server(client, actor -> {
+            var level = actor.serverLevel();
+            // Place the chest away from the enchanter and above ground in reach of the wand.
+            var pos = actor.blockPosition().west(3).above();
+            require(level.setBlockAndUpdate(pos, BuiltInRegistries.BLOCK.get(ENDER_CHEST).defaultBlockState()),
+                    "Could not place an Ender Storage chest");
+            var storage = level.getCapability(Capabilities.ItemHandler.BLOCK, pos, null);
+            require(storage != null && storage.insertItem(0, new ItemStack(Items.DIAMOND, 7), false).isEmpty(),
+                    "Could not prepare the native chest inventory");
+            var wand = ItemApi.getItem("itemWandCasting", 0);
+            var focus = new ItemStack(BuiltInRegistries.ITEM.get(ENDER_RIFT));
+            require(WandHelper.setFocus(wand, focus), "Could not mount the Ender Rift focus");
+            for (var aspect : Aspect.getPrimalAspects()) WandHelper.addRealVis(wand, aspect, 1000, true);
+            actor.setItemInHand(InteractionHand.MAIN_HAND, wand);
+            var aim = Vec3.atCenterOf(pos).subtract(actor.getEyePosition());
+            float yaw = actor.getYRot();
+            float pitch = actor.getXRot();
+            actor.setYRot((float) Math.toDegrees(Math.atan2(aim.z, aim.x)) - 90F);
+            actor.setXRot(-(float) Math.toDegrees(Math.atan2(aim.y, aim.horizontalDistance())));
+            actor.setShiftKeyDown(true);
+            try {
+                wand.getItem().use(level, actor, InteractionHand.MAIN_HAND);
+            } finally {
+                actor.setShiftKeyDown(false);
+                actor.setYRot(yaw);
+                actor.setXRot(pitch);
+            }
+            require(actor.containerMenu == actor.inventoryMenu && !WandHelper.getFocus(wand)
+                    .getSortingHelper(WandHelper.getFocusItem(wand)).equals("TTEC-VANILLA"), "Sneak-cast did not link the chest");
+            level.setBlockAndUpdate(pos, Blocks.AIR.defaultBlockState());
+        });
+        advance(Stage.ENDER_WAND);
     }
 
     private static void useTop(Minecraft client, BlockPos pos) {
