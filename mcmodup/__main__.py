@@ -143,6 +143,8 @@ def _parser() -> argparse.ArgumentParser:
                              help="Gradle timeout per source port (default: 1200)")
     updater.add_argument("--mod", action="append", default=[], metavar="ARCHIVE",
                          help="select a legacy archive by its relative path (repeatable); omit to list")
+    updater.add_argument("--include-native", action="append", default=[], metavar="MOD_ID",
+                         help="copy an already installed target mod and its required dependencies into --output-pack (repeatable)")
     updater.add_argument("--json", action="store_true", help="show the catalog or plan as JSON")
     ui.add_argument("--host", default="127.0.0.1", help="interface for the local workbench (default: 127.0.0.1)")
     ui.add_argument("--port", type=int, default=8765, help="local HTTP port (default: 8765)")
@@ -203,9 +205,9 @@ def main(argv: list[str] | None = None) -> int:
                 from .pack_ui import serve
 
                 serve(state, destination, args.host, args.port, output_pack=new_pack, pins=pins)
-            elif not args.mod:
+            elif not (args.mod or args.include_native):
                 if destination:
-                    raise InputError("Select at least one archive with --mod before staging updates.")
+                    raise InputError("Select a legacy archive with --mod or an installed target mod with --include-native.")
                 catalog = state.catalog()
                 if args.json:
                     print(json.dumps(catalog, indent=2))
@@ -217,7 +219,7 @@ def main(argv: list[str] | None = None) -> int:
                         print(f"Target issue: {issue}")
                     print("Use pack-ui for checkboxes, or --mod ARCHIVE to plan a selection.")
             else:
-                update = native_pack.plan(state, args.mod, output_pack=new_pack, pins=pins)
+                update = native_pack.plan(state, args.mod, output_pack=new_pack, pins=pins, include_native=args.include_native)
                 report = update.report
                 if report["ready"] and destination:
                     output = native_pack.stage(update, destination)

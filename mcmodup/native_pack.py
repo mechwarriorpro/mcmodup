@@ -517,6 +517,8 @@ class UpdatePlan:
     output_pack: bool = False
     provider_pins: dict[str, str] = field(default_factory=dict)
     legacy_hashes: dict[str, str] = field(default_factory=dict)
+    legacy_selection_conflicts: list[dict] = field(default_factory=list)
+    include_native: tuple[str, ...] = ()
 
     def _legacy_evidence(self) -> tuple[list[dict], dict[str, dict]]:
         state = self.inventory
@@ -564,14 +566,17 @@ class UpdatePlan:
                 "build_order": [mod.label.removeprefix("build/") for mod in self.build_order],
                 "minecraft": MINECRAFT_VERSION, "neoforge": self.inventory.target_platform.neoforge,
                 "source_bin": self.inventory.source_platform.report(), "target_bin": self.inventory.target_platform.report(),
-                "selected": self.selected, "auto_addons": self.addons, "ready": bool(self.selected) and not self.problems,
+                "selected": self.selected, "include_native": list(self.include_native), "auto_addons": self.addons,
+                "ready": bool(self.selected or self.include_native) and not self.problems,
                 "problems": self.problems, "warnings": self.inventory.warnings, "replaced_target_files": self.removed,
                 "legacy_requirements": requirements, "legacy_class_providers": binary,
                 "legacy_version_conflicts": legacy_conflicts(requirements), "legacy_archive_sha256": self.legacy_hashes,
+                "legacy_selection_conflicts": self.legacy_selection_conflicts,
                 "native_dependencies": dependency_report(resolution, self.inventory.providers), "provider_pins": self.provider_pins,
                 "files": [{"file": f"mods/{mod.path.name}", "from": mod.label, "ids": mod.ids,
                            "sha256": None if mod.recipe and not self.native_builds else mod.sha256,
                            "action": ("build" if mod.recipe else "convert" if mod.conversion else
+                                      "include-native" if mod.installed and not mod.ids.keys().isdisjoint(self.include_native) else
                                       "keep" if mod.installed and not self.output_pack else
                                       "update" if self.roots.intersection(mod.ids) else "dependency"),
                            **({"source_build": mod.recipe.describe()} if mod.recipe else {}),
@@ -624,8 +629,28 @@ def parse_pins(rows: list[str]) -> dict[str, str]:
     return pins
 
 
+def _selected_id_conflicts(inventory: UpdateInventory, closure: set[str], hashes: dict[str, str]) -> list[dict]:
+    # Distinct originals deliberately selected as roots/add-ons cannot be counted
+    # as two updates just because their legacy IDs map to one modern provider.
+    # This does not forbid two unselected legacy dependencies sharing one native
+    # implementation when their native consumers declare compatible ranges.
+    by_id = defaultdict(list)
+    for label in sorted(closure & hashes.keys()):
+        item = inventory.entries[label]
+        for key in item.ids:
+            versions = sorted({m.version for m in item.audit.audit.mods if m.mod_id.casefold() == key and m.version})
+            by_id[key].append({"archive": label, "minecraft": item.version, "releases": versions, "sha256": hashes[label]})
+    return [{"id": key, "status": "distinct_selected_originals", "archives": archives}
+            for key, archives in sorted(by_id.items()) if len({row["sha256"] for row in archives}) > 1]
+
+
 def plan(inventory: UpdateInventory, selections: list[str], *, output_pack: bool = False,
-         pins: dict[str, str] | None = None) -> UpdatePlan:
+         pins: dict[str, str] | None = None, include_native: tuple[str, ...] | list[str] = ()) -> UpdatePlan:
+    included = tuple(sorted(set(include_native)))
+    if included and not output_pack:
+        raise InputError("--include-native requires --output-pack; a mods-folder swap already retains installed candidates.")
+    if any(not MOD_ID.fullmatch(mod_id) for mod_id in included):
+        raise InputError("Use --include-native with a lowercase NeoForge mod ID from the target's mods/ folder.")
     selected = sorted(set(selections))
     added = selected_addons(inventory, selected)
     closure = set(selected) | added.keys()
@@ -633,12 +658,28 @@ def plan(inventory: UpdateInventory, selections: list[str], *, output_pack: bool
     pins = pins or {}
     roots = set()
     forced = {}
+    for mod_id in included:
+        installed = [mod for mod in inventory.installed if mod_id in mod.ids]
+        if len(installed) != 1 or installed[0].partial or not installed[0].target_evidence:
+            problems.append(f"Cannot include {mod_id!r}: install exactly one compatible native provider in target mods/. "
+                            "Partial conversions and candidates outside mods/ cannot be explicitly included.")
+            continue
+        candidate, = installed
+        roots.update(candidate.ids)
+        for key in candidate.ids:
+            if key in forced and forced[key] is not candidate:
+                problems.append(f"Explicit native inclusions conflict on mod ID {key!r}.")
+            forced[key] = candidate
     for label in sorted(closure):
         item = inventory.entries[label]
         ids = inventory.native_ids(item)
         if item.problem or not ids:
             problems.append(f"{label!r}: {item.problem or 'no recognizable legacy mod ID to match'}")
-        roots.update(ids)
+        invalid_ids = {key for key in ids if not MOD_ID.fullmatch(key)}
+        if invalid_ids:
+            problems.append(f"{label!r}: illegal NeoForge mod ID(s) {', '.join(map(repr, sorted(invalid_ids)))}. "
+                            "Use a reviewed ID map for a port that implements those modules.")
+        roots.update(ids - invalid_ids)
         if inventory.build_options is not None:
             artifact = inventory.recipes.get(label)
             if artifact is None:
@@ -647,7 +688,7 @@ def plan(inventory: UpdateInventory, selections: list[str], *, output_pack: bool
         else:
             artifact = inventory.conversions.get(label)
             if artifact is not None:
-                if not inventory.allow_recipe_preview or not output_pack or len(closure) != 1:
+                if not inventory.allow_recipe_preview or not output_pack or len(closure) != 1 or included:
                     problems.append(f"{label!r}: this is a recipe preview, not a full-parity update. "
                                     "Select this archive alone with --allow-recipe-preview and --output-pack.")
                     artifact = None
@@ -656,7 +697,7 @@ def plan(inventory: UpdateInventory, selections: list[str], *, output_pack: bool
         if artifact is not None:
             for key in ids:
                 if key in forced and forced[key] is not artifact:
-                    problems.append(f"Multiple selected legacy archives would produce native mod ID {key!r}.")
+                    problems.append(f"Multiple selections would supply native mod ID {key!r}.")
                 forced[key] = artifact
     resolution = resolve(roots, inventory.installed, inventory.providers, forced, pins, keep_target=not output_pack,
                          artifact_errors=_artifact_conflicts)
@@ -712,7 +753,7 @@ def plan(inventory: UpdateInventory, selections: list[str], *, output_pack: bool
         except InputError as exc:
             problems.append(str(exc))
     runtime = None
-    if output_pack and selected:
+    if output_pack and (selected or included):
         try:
             runtime = instance_runtime(inventory.target, inventory.target_platform)
         except (InputError, OSError) as exc:
@@ -733,8 +774,15 @@ def plan(inventory: UpdateInventory, selections: list[str], *, output_pack: bool
                 raise InputError("original changed after recipe analysis; scan again")
         except (InputError, OSError) as exc:
             problems.append(f"Could not fingerprint legacy input {label!r}: {exc}")
+    conflicts = _selected_id_conflicts(inventory, closure, legacy_hashes)
+    for conflict in conflicts:
+        archives = ", ".join(f"{row['archive']!r} (Minecraft {row['minecraft'] or 'unknown'})" for row in conflict["archives"])
+        problems.append(f"Distinct selected originals share mod ID {conflict['id']!r}: {archives}. "
+                        "A single native provider does not preserve both releases. Coexistence needs separate native IDs, "
+                        "classes and registry namespaces, or a verified combined port.")
     return UpdatePlan(inventory, selected, added, mods, roots, removed, list(dict.fromkeys(problems)), order,
-                      resolution=resolution, runtime=runtime, output_pack=output_pack, provider_pins=pins, legacy_hashes=legacy_hashes)
+                      resolution=resolution, runtime=runtime, output_pack=output_pack, provider_pins=pins, legacy_hashes=legacy_hashes,
+                      legacy_selection_conflicts=conflicts, include_native=included)
 
 
 def _dependencies(mod: NativeMod, providers: dict[str, NativeMod]) -> set[NativeMod]:
@@ -808,7 +856,7 @@ def stage_destination(state: UpdateInventory, output: Path) -> Path:
 
 
 def stage(update: UpdatePlan, output: Path) -> Path:
-    if not update.selected or update.problems:
+    if not (update.selected or update.include_native) or update.problems:
         raise InputError("Choose at least one mod and resolve all update blockers first.")
     output = stage_destination(update.inventory, output)
     for label, checksum in update.legacy_hashes.items():

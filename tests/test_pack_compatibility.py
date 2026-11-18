@@ -106,6 +106,61 @@ class PackCompatibilityTests(unittest.TestCase):
         self.assertEqual(update.removed, {"mods/Multipart-3.4.jar": "target/lib/Multipart-3.5.jar"})
         self.assertFalse(update.report["parity_verified"])
 
+    def test_two_selected_original_releases_cannot_collapse_to_one_native_provider(self):
+        old = legacy(self.src, "mods/1.6.4/Chemistry.jar", "Chemistry", version="1.0", owner="chemistry/Mod")
+        newer = legacy(self.src, "mods/1.7.10/Chemistry.jar", "chemistry", version="2.0", owner="chemistry/Mod")
+        native(self.target, "lib/Chemistry.jar", "chemistry")
+        state = inventory(self.src, self.target)
+        labels = [path.relative_to(self.src).as_posix() for path in (old, newer)]
+        for label in labels:
+            self.assertTrue(plan(state, [label], output_pack=True).report["ready"])
+        blocked = plan(state, labels, output_pack=True)
+        self.assertFalse(blocked.report["ready"])
+        [conflict] = blocked.report["legacy_selection_conflicts"]
+        self.assertEqual(conflict["id"], "chemistry")
+        self.assertEqual(conflict["archives"], [
+            {"archive": labels[0], "minecraft": "1.6.4", "releases": ["1.0"], "sha256": digest(old)},
+            {"archive": labels[1], "minecraft": "1.7.10", "releases": ["2.0"], "sha256": digest(newer)},
+        ])
+        with self.assertRaises(InputError):
+            stage(blocked, self.out)
+        self.assertFalse(self.out.exists())
+
+    def test_multi_module_archive_reports_invalid_native_ids_without_dropping_modules(self):
+        label = "mods/1.6.4/Modules.jar"
+        rows = [{"modid": modid, "version": "1"} for modid in ("Test", "Test|One", "Test|Two")]
+        jar(self.src / label, **{"mcmod.info": json.dumps(rows), "demo/Mod.class": fixture_class("demo/Mod")})
+        native(self.target, "mods/Modules.jar", "test", more=None)
+        state = inventory(self.src, self.target)
+        self.assertEqual(state.catalog()["rows"][0]["mods"], ["test", "test|one", "test|two"])
+        blocked = plan(state, [label], output_pack=True)
+        self.assertIn("illegal NeoForge mod ID(s) 'test|one', 'test|two'", " ".join(blocked.problems))
+        self.assertFalse(blocked.report["ready"])
+
+    def test_include_native_copies_exact_installed_archive_and_only_its_required_closure(self):
+        (self.src / "mods").mkdir(parents=True)
+        control = native(self.target, "mods/Control.jar", "control", requirements=(("helper", "[2]"),))
+        helper = native(self.target, "lib/Helper.jar", "helper", version="2")
+        unrelated = native(self.target, "mods/Unrelated.jar", "unrelated")
+        alternate = native(self.target, "lib/Control-new.jar", "control", version="3")
+        args = ("update-pack", self.src, "--target", self.target, "--include-native", "control", "--output-pack", self.out)
+        pinned_alternate = run_cli(*args, "--provider", f"control={digest(alternate)}", "--json")
+        self.assertEqual(pinned_alternate.returncode, 1, pinned_alternate.stdout + pinned_alternate.stderr)
+        self.assertFalse(self.out.exists())
+        result = run_cli(*args, "--json")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        report = json.loads(result.stdout)
+        self.assertEqual(report["selected"], [])
+        self.assertEqual(report["include_native"], ["control"])
+        self.assertEqual({r["file"]: r["action"] for r in report["files"]},
+                         {"mods/Control.jar": "include-native", "mods/Helper.jar": "dependency"})
+        self.assertEqual(digest(self.out / "mods/Control.jar"), digest(control))
+        self.assertEqual(digest(self.out / "mods/Helper.jar"), digest(helper))
+        self.assertFalse((self.out / "mods" / unrelated.name).exists())
+        with self.assertRaisesRegex(InputError, "requires --output-pack"):
+            plan(inventory(self.src, self.target), [], include_native=["control"])
+        self.assertFalse(plan(inventory(self.src, self.target), [], output_pack=True, include_native=["helper"]).report["ready"])
+
     def test_disjoint_native_requirements_block_even_if_both_jars_are_present(self):
         _, _, alpha, beta = self.pair()
         native(self.target, "lib/Alpha.jar", "alpha", requirements=(("cb_multipart", "[3.4]"),))

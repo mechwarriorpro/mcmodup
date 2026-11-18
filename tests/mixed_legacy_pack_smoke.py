@@ -1,0 +1,183 @@
+"""Check one exact mixed original selection, with a separate unchanged native control."""
+
+import argparse
+from dataclasses import dataclass
+import json
+import os
+from pathlib import Path
+import shutil
+from zipfile import ZipFile
+
+from mcmodup.audit import ModMetadata
+from mcmodup.classfiles import class_entries
+from mcmodup.inputs import open_input
+from mcmodup.native_pack import REPORT_NAME
+from mcmodup.port import _build_gradle, _metadata, write_workspace
+from mcmodup.runtime import file_digest
+from native_pack_smoke import run_gradle
+from neoforge_smoke import empty_test_structure
+from pack_release_smoke import boot
+from updater_sample import fingerprints, run
+
+
+@dataclass(frozen=True)
+class Original:
+    minecraft: str
+    name: str
+    filename: str
+    ids: tuple[str, ...]
+
+    @property
+    def label(self) -> str:
+        return f"mods/{self.minecraft}/{self.filename}"
+
+
+ORIGINALS = (
+    Original("1.6.4", "Minechem", "Minechem-1.6.4-5.0.5.FINAL.jar", ("minechem",)),
+    Original("1.7.10", "Minechem", "Minechem-1.7.10-5.0.5.394.jar", ("minechem",)),
+    Original("1.6.4", "Voltz ICBM", "icbm-1.4.1.344.jar", ("icbm", "icbm|explosion", "icbm|sentry")),
+    Original("1.6.4", "Voltz Atomic Science", "atomicscience.jar", ("atomicscience",)),
+    Original("1.7.10", "Thaumcraft 4", "Thaumcraft-1.7.10-4.2.3.5.jar", ("thaumcraft",)),
+    Original("1.6.4", "GeoStrata", "GeoStrata 1.6 v23b.zip", ("geostrata",)),
+    Original("1.6.4", "Mimicry", "Mimicry 1.6.4_965_1.3.9_final.zip", ()),
+    Original("1.6.4", "Random Things", "Random_Things_v._1.9__MC_1.6.4_.jar", ()),
+)
+VOLTZ_FILES = (
+    "mods/icbm-1.4.1.344.jar", "mods/atomicscience.jar",
+    "mods/calclavia-core-development-1.2.0.6-main.jar", "mods/universal-electricity-3.1.0.74-core.jar",
+    "mods/1.6.4/ForgeMultipart-universal-1.6.4-1.0.0.250.jar", "mods/1.6.4/CodeChickenLib-universal-1.6.4-1.0.0.61.jar",
+    "mods/codechickencore 0.9.0.7.jar", "mods/notenoughitems 1.6.1.8.jar",
+)
+MULTIPART = "CBMultipart-1.21.1-3.5.0.155.jar"
+CCL = "CodeChickenLib-1.21.1-4.6.1.526.jar"
+PACK_MODS = {MULTIPART, CCL}
+CHECK = "mcmodup_multipart_control"
+PACKAGE = "mcmodup.multipartcheck"
+
+
+def note(title: str, message: str) -> None:
+    escaped = message.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+    print(f"::notice title={title}::{escaped}", flush=True)
+
+
+def summary(lines: list[str]) -> None:
+    text = "\n".join(lines) + "\n"
+    print(text, flush=True)
+    if path := os.environ.get("GITHUB_STEP_SUMMARY"):
+        with Path(path).open("a", encoding="utf-8") as stream:
+            stream.write(text)
+
+
+def inspect_overlap(left: Path, right: Path) -> tuple[int, int]:
+    with open_input(left) as first, open_input(right) as second:
+        classes = class_entries(first.files).keys() & class_entries(second.files).keys()
+        assets = first.files.keys() & second.files.keys()
+        return sum(name.startswith("minechem/") for name in classes), sum(name.startswith("assets/minechem/") for name in assets)
+
+
+def originals(root: Path) -> None:
+    source, target = root / "legacy", root / "target"
+    assert file_digest(root / "voltz.zip") == "2eda607746a22edbf45612243adce37a876251e36d46c692a48344fe98eec84e"
+    # Exact member names only. Never extract the launcher, legacy runtime or configs.
+    with ZipFile(root / "voltz.zip") as pack:
+        for member in VOLTZ_FILES:
+            (source / "mods/1.6.4" / Path(member).name).write_bytes(pack.read(member))
+    assert file_digest(source / ORIGINALS[3].label) == "80cf5bd9d485377ecde3822154a5db47804fab3e8f78c388cfcf529239655938"
+    assert {path.name for path in (target / "mods").iterdir()} == PACK_MODS
+    before = fingerprints(source, target)
+    code, catalog = run("update-pack", source, "--target", target)
+    assert code == 0 and catalog["neoforge"] == "21.1.267", catalog
+    lookup = {row["id"]: row for row in catalog["rows"]}
+    lines = ["## One requested selection: Minecraft 1.21.1 / NeoForge 21.1.267", "",
+             "| Original | Minecraft | IDs found | SHA-256 | Updater catalog result |", "| --- | --- | --- | --- | --- |"]
+    for artifact in ORIGINALS:
+        row = lookup[artifact.label]
+        assert row["minecraft"] == artifact.minecraft and row["mods"], row
+        if artifact.ids:
+            assert set(artifact.ids) <= set(row["mods"]), row
+        checksum = before[source / artifact.label]
+        ids = ", ".join(row["mods"]).replace("|", "\\|")
+        lines.append(f"| {artifact.name} (`{artifact.filename}`) | {artifact.minecraft} | {ids} | `{checksum}` | {row['status']}: {row['reason']} |")
+        note(f"{artifact.name} {artifact.minecraft}", f"{', '.join(row['mods'])}; SHA-256 {checksum}; {row['status']}: {row['reason']}")
+    classes, assets = inspect_overlap(source / ORIGINALS[0].label, source / ORIGINALS[1].label)
+    assert classes > 0 and assets > 0, (classes, assets)
+    note("Minechem namespace overlap", f"{classes} shared minechem/ class names and {assets} identical assets/minechem/ paths across both originals.")
+
+    labels = sorted(artifact.label for artifact in ORIGINALS)
+    common = ["update-pack", source, "--target", target, "--include-native", "cb_multipart"]
+    for label in labels:
+        common.extend(("--mod", label))
+    for preview in (False, True):
+        out = root / ("complete-with-preview-opt-in" if preview else "complete")
+        code, report = run(*common, "--output-pack", out, *(["--allow-recipe-preview"] if preview else []))
+        assert report["selected"] == labels and report["include_native"] == ["cb_multipart"], report
+        assert code == 1 and not report["ready"] and not out.exists(), report
+        assert not report["parity_verified"] and not report["gameplay_verified"], report
+        assert all(report["legacy_archive_sha256"][label] == before[source / label] for label in labels), report
+        assert not any(row["action"] in {"build", "convert"} for row in report["files"]), report
+        conflict, = [row for row in report["legacy_selection_conflicts"] if row["id"] == "minechem"]
+        assert {row["archive"] for row in conflict["archives"]} == {artifact.label for artifact in ORIGINALS[:2]}, conflict
+        assert any("illegal NeoForge mod ID" in reason and "icbm|explosion" in reason and "icbm|sentry" in reason
+                   for reason in report["problems"]), report["problems"]
+        (root / f"{out.name}.json").write_text(json.dumps(report, indent=2) + "\n")
+        for reason in report["problems"]:
+            note("Combined plan blocked", reason)
+    assert fingerprints(source, target) == before, "Planning modified a source or target file"
+    summary([*lines, "", "**Combined plan blocked; no pack or converted JAR was staged.** The same selection also blocks with recipe previews opted in.",
+             f"The two original Minechem archives share `minechem`, {classes} `minechem/` class names, and {assets} `assets/minechem/` paths.",
+             "The single Voltz ICBM archive still accounts for all three modules. The legacy archives were inspected, not executed.", ""])
+
+
+def control(root: Path) -> None:
+    # This is not an attempt to boot a partial version of the requested pack.
+    source, target, out = root / "empty-source", root / "target", root / "native-control"
+    (source / "mods").mkdir(parents=True)
+    before = fingerprints(target)
+    code, report = run("update-pack", source, "--target", target, "--include-native", "cb_multipart", "--output-pack", out)
+    assert code == 0 and report["ready"] and report["staged"], report
+    assert not report["selected"] and report["include_native"] == ["cb_multipart"] and not report["connector_required"], report
+    assert {path.name for path in (out / "mods").glob("*.jar")} == PACK_MODS
+    files = {Path(row["file"]).name: row for row in report["files"]}
+    assert set(files[MULTIPART]["ids"]) == {"cb_multipart", "cb_microblock", "cb_multipart_minecraft"}, files
+    assert files[MULTIPART]["action"] == "include-native" and files[CCL]["action"] == "dependency", files
+    for name in PACK_MODS:
+        assert file_digest(out / "mods" / name) == before[target / "mods" / name] == files[name]["sha256"]
+    assert fingerprints(target) == before and not (out / "eula.txt").exists()
+    boot(out, report["instance_runtime"]["launch"]["unix"])
+    assert not json.loads((out / REPORT_NAME).read_text())["parity_verified"]
+    summary(["## Separate native control", "",
+             "Staged both native releases byte-for-byte and booted/shut down the stock dedicated server. "
+             "No legacy archive, converted mod or replacement port was present.", ""])
+
+    # Tests use a separate dev runtime so the stock boot above has no probe mod.
+    workspace = root / "multipart-gametest"
+    fixture = Path(__file__).with_name("fixtures") / "MultipartControlSmoke.java"
+    write_workspace(workspace, {
+        "settings.gradle": "rootProject.name = 'multipart-control-check'\n",
+        "gradle.properties": "org.gradle.jvmargs=-Xmx2G\n",
+        "src/main/resources/META-INF/neoforge.mods.toml": _metadata(ModMetadata(""), CHECK, CHECK, "1.0.0", "Unlicense"),
+        f"src/main/resources/data/{CHECK}/structure/empty.nbt": empty_test_structure(),
+        f"src/main/java/{PACKAGE.replace('.', '/')}/{fixture.name}": fixture.read_bytes(),
+        "build.gradle": _build_gradle(CHECK, PACKAGE, "1.0.0") + f"""
+dependencies {{ compileOnly fileTree(dir: 'run/mods', include: ['*.jar']) }}
+neoForge.runs.create('gameTestServer') {{
+    type = 'gameTestServer'
+    gameDirectory = project.file('run')
+    systemProperty 'neoforge.enabledGameTestNamespaces', '{CHECK}'
+}}
+""",
+    })
+    shutil.copytree(out / "mods", workspace / "run/mods")
+    output = run_gradle(workspace, "runGameTestServer")
+    assert "All 1 required tests passed" in output, output[-12000:]
+    note("Native Multipart control GameTest passed", "Saw and stone crafted two covers; item components and both parts survived serialization. No legacy interaction was tested.")
+    summary(["Native control GameTest: crafted stone covers with the native saw, placed two parts using the Multipart API, "
+             "and round-tripped the item component and saved tile. This does not exercise converted blocks or items.", ""])
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("scratch", type=Path)
+    parser.add_argument("check", choices=("originals", "control"))
+    args = parser.parse_args()
+    {"originals": originals, "control": control}[args.check](args.scratch.resolve())
