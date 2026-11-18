@@ -163,7 +163,7 @@ def _add_annotation(values: dict[str, str], origin: str,
 
 
 def audit(source: ModInput, source_version: str | None = None, *,
-          binary_annotations: Iterable[tuple[str, dict[str, str]]] = ()) -> Audit:
+          binary_annotations: Iterable[tuple[str, dict[str, str]]] = (), filename: str | None = None) -> Audit:
     result = Audit(str(source.path), "archive" if source.archive else "directory", warnings=source.warnings.copy())
     findings = {area: Finding(area, advice) for area, _, advice in RULES}
     annotation_mods = {}
@@ -226,8 +226,10 @@ def audit(source: ModInput, source_version: str | None = None, *,
                     mod.dependencies.extend(metadata.dependencies)
 
     declared = {e.version for e in result.version_evidence}
-    for version in sorted(set(FILENAME_VERSION.findall(source.path.stem if source.archive else source.path.name))):
-        result.version_evidence.append(VersionEvidence(version, source.path.name, "filename hint"))
+    name = filename if filename is not None else source.path.name
+    hint = PurePosixPath(name).stem if source.archive else name
+    for version in sorted(set(FILENAME_VERSION.findall(hint))):
+        result.version_evidence.append(VersionEvidence(version, name, "filename hint"))
     if source_version is not None:
         if source_version not in SOURCE_VERSIONS:
             raise InputError(f"Unsupported source version: {source_version}")

@@ -38,8 +38,9 @@ def _top_level(owner: str) -> str:
 def _verify_tool(path: Path, pack: ModPack) -> Path:
     resolved = path.expanduser().resolve()
     api_inputs = [*pack.context.legacy.paths, *pack.context.target.paths]
-    if resolved.is_relative_to(pack.root) or str(resolved) in api_inputs:
-        raise InputError("Keep the trusted Vineflower tool JAR outside the modpack and API inputs.")
+    if (resolved.is_relative_to(pack.root) or any(resolved == mod.path for mod in pack.mods.values())
+            or str(resolved) in api_inputs):
+        raise InputError("Keep the trusted Vineflower tool JAR outside the modpack and separate from the selected mod and API inputs.")
     if not resolved.is_file() or resolved.suffix.lower() != ".jar":
         raise InputError("--vineflower must be a local Vineflower release JAR.")
     with open_input(resolved) as artifact:
@@ -168,8 +169,8 @@ def decompile(pack: ModPack, mod: PackMod, options: DecompileOptions) -> Path:
             raise InputError("Decompiler output exceeds 64 MiB. Narrow the class selection.")
         manifest = {
             "purpose": "Local reference only; decompiled text is not original source and is not a finished port.",
-            "consumer": mod.archive, "source_version": mod.audit.source_version,
-            "requested_references": [{"symbol": name, "provider": str(location.file), "class": location.owner,
+            "consumer": mod.archive, "consumer_input": pack.origin(mod.path), "source_version": mod.audit.source_version,
+            "requested_references": [{"symbol": name, "provider": pack.origin(location.file), "class": location.owner,
                                       "spellings": [s.owner for s in pack.context.spellings(Symbol(name), mod.audit.source_version)]}
                                      for name, location in sorted(selected.items())],
             "member_references": [{"symbol": ref.key, "used_by": mod.references[ref],

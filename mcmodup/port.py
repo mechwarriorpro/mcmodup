@@ -224,6 +224,11 @@ def generate_port(source: ModInput, result: Audit, options: PortOptions) -> Path
     if options.github_actions:
         files[".github/workflows/build.yml"] = (TEMPLATES / "github-build.yml").read_text(encoding="utf-8")
 
+    write_workspace(output, files)
+    return output
+
+
+def write_workspace(output: Path, files: dict[str, str | bytes]) -> None:
     # The mkdir is exclusive. Never overwrite an existing source or output project.
     output.mkdir(parents=True, exist_ok=False)
     try:
@@ -242,4 +247,3 @@ def generate_port(source: ModInput, result: Audit, options: PortOptions) -> Path
     except BaseException:
         shutil.rmtree(output, ignore_errors=True)
         raise
-    return output

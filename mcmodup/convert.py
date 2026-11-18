@@ -1,0 +1,243 @@
+"""Compile a new NeoForge JAR from a recognized, explicitly partial legacy profile."""
+
+from dataclasses import dataclass
+import hashlib
+import json
+import os
+from pathlib import Path
+import shutil
+import subprocess
+import tempfile
+import tomllib
+import zipfile
+
+from . import JAVA_VERSION, MINECRAFT_VERSION, NEOFORGE_VERSION
+from .api import ClassLocation
+from .assets import PNG_SIGNATURE
+from .audit import ModMetadata
+from .catalogs import CatalogEntry, Profile, recover_catalog
+from .classfiles import CLASS_LIMIT, Symbol, read_class
+from .inputs import InputError, open_input
+from .pack import ModPack, PackMod
+from .port import _build_gradle, _metadata, write_workspace
+
+
+@dataclass(frozen=True)
+class Conversion:
+    output: Path
+    profile: Profile
+    entries: int
+
+
+def _document(value: dict) -> str:
+    return json.dumps(value, ensure_ascii=False, indent=2) + "\n"
+
+
+def _location(pack: ModPack, mod: PackMod, profile: Profile) -> ClassLocation:
+    if profile.owner in mod.classes:
+        return ClassLocation(mod.path, mod.classes[profile.owner], profile.owner)
+    if Symbol(profile.owner) not in mod.references and not any(ref.owner == profile.owner for ref in mod.references):
+        raise InputError(f"Selected mod does not contain or reference the expected catalog {profile.owner}.")
+    locations = pack.dependency_locations(mod, profile.owner)
+    if len(locations) != 1:
+        raise InputError(f"The pack must supply one unambiguous provider of {profile.owner}; found {len(locations)}.")
+    return next(iter(locations))
+
+
+def _textures(entries: list[CatalogEntry], mod: PackMod, location: ClassLocation) -> dict[str, bytes]:
+    remaining = {entry.texture for entry in entries}
+    textures = {}
+    for path in dict.fromkeys((mod.path, location.file)):
+        if not remaining:
+            break
+        with open_input(path) as source:
+            for key in sorted(remaining.intersection(source.files)):
+                content = source.read(key, 1024 * 1024)
+                if not content.startswith(PNG_SIGNATURE) or f"{key}.mcmeta" in source.files:
+                    raise InputError(f"Cannot convert catalog icon {key}: expected a standalone PNG without a sidecar.")
+                textures[key] = content
+                remaining.remove(key)
+    if remaining:
+        raise InputError(f"The selected legacy JAR and its catalog provider are missing expected textures: {', '.join(sorted(remaining)[:4])}.")
+    return textures
+
+
+def _java(package: str, namespace: str, entries: list[CatalogEntry]) -> str:
+    definitions = []
+    for entry in entries:
+        keys = [f"item.{namespace}.{entry.path}.detail_{i}" for i in range(len(entry.details))]
+        lore = ", ".join(f'Component.translatable("{key}")' for key in keys)
+        definitions.append(f'        entries.add(items.registerSimpleItem("{entry.path}", new Item.Properties()'
+                           f'.component(DataComponents.LORE, new ItemLore(List.of({lore})))));')
+    body = "\n".join(definitions)
+    return f'''package {package};
+
+import java.util.ArrayList;
+import java.util.List;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.network.chat.Component;
+import net.minecraft.world.item.CreativeModeTab;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.component.ItemLore;
+import net.neoforged.bus.api.IEventBus;
+import net.neoforged.fml.common.Mod;
+import net.neoforged.neoforge.registries.DeferredItem;
+import net.neoforged.neoforge.registries.DeferredRegister;
+
+/** An isolated content catalog, not a replacement for the original mod. */
+@Mod(CatalogPort.MOD_ID)
+public final class CatalogPort {{
+    public static final String MOD_ID = "{namespace}";
+
+    public CatalogPort(IEventBus bus) {{
+        var items = DeferredRegister.createItems(MOD_ID);
+        var tabs = DeferredRegister.create(Registries.CREATIVE_MODE_TAB, MOD_ID);
+        var entries = new ArrayList<DeferredItem<Item>>();
+{body}
+        tabs.register("catalog", () -> CreativeModeTab.builder()
+            .title(Component.translatable("itemGroup.{namespace}.catalog"))
+            .icon(() -> entries.getFirst().get().getDefaultInstance())
+            .displayItems((parameters, output) -> entries.forEach(item -> output.accept(item.get())))
+            .build());
+        items.register(bus);
+        tabs.register(bus);
+    }}
+}}
+'''
+
+
+def _project_files(profile: Profile, entries: list[CatalogEntry], textures: dict[str, bytes],
+                   digest: str, dependency_summary: dict, provider: ClassLocation) -> dict[str, str | bytes]:
+    namespace = profile.namespace
+    package = f"mcmodup.generated.{namespace}"
+    version = "1.0.0-partial"
+    description = (f"Automatically recovered legacy catalog data for {profile.mod_id}. "
+                   f"This is a partial mod with new IDs. Not ported: {profile.not_ported}")
+    notice = f"""PARTIAL PORT — NOT A REPLACEMENT FOR THE ORIGINAL MOD.
+
+Legacy mod: {profile.mod_id} (Minecraft {profile.version}, binary SHA-256 {digest})
+Use: catalog-only data and inventory items. Old Minecraft worlds and dependent mods are not supported.
+Not ported: {profile.not_ported}
+
+Original data and icons: {profile.attribution}
+License: {profile.license}.
+Review the original license and authorization before distributing. Do not distribute Thaumcraft
+adaptations without the owner's permission. This JAR contains no legacy JVM classes or dependencies.
+"""
+    src = "src/main/resources"
+    prefix = f"{src}/assets/{namespace}"
+    files: dict[str, str | bytes] = {
+        "settings.gradle": f"pluginManagement {{ repositories {{ gradlePluginPortal() }} }}\nrootProject.name = '{namespace}'\n",
+        "build.gradle": _build_gradle(namespace, package, version),
+        "gradle.properties": "org.gradle.jvmargs=-Xmx2G\n",
+        f"src/main/java/{package.replace('.', '/')}/CatalogPort.java": _java(package, namespace, entries),
+        f"{src}/META-INF/neoforge.mods.toml": _metadata(ModMetadata("", description=description), namespace, profile.title, version, profile.license),
+        f"{src}/META-INF/MCModUp-NOTICE.txt": notice,
+        f"{src}/data/{namespace}/mcmodup/catalog.json": _document({
+            "profile": profile.name, "full_port": False, "source_minecraft": profile.version,
+            "source_sha256": digest, "catalog_class": provider.owner, "target_minecraft": MINECRAFT_VERSION,
+            "target_neoforge": NEOFORGE_VERSION, "not_ported": profile.not_ported,
+            "dependencies_observed": dependency_summary,
+            "entries": [{"new_id": f"{namespace}:{entry.path}", **entry.legacy} for entry in entries],
+        }),
+    }
+    icon_ids = {}
+    for i, (path, data) in enumerate(sorted(textures.items())):
+        name = f"catalog/{i}"
+        icon_ids[path] = f"{namespace}:item/{name}"
+        files[f"{prefix}/textures/item/{name}.png"] = data
+    strings = {f"itemGroup.{namespace}.catalog": profile.title}
+    for entry in entries:
+        key = f"item.{namespace}.{entry.path}"
+        strings[key] = entry.label
+        strings.update({f"{key}.detail_{i}": line for i, line in enumerate(entry.details)})
+        files[f"{prefix}/models/item/{entry.path}.json"] = _document({
+            "parent": "minecraft:item/generated", "textures": {"layer0": icon_ids[entry.texture]},
+        })
+    files[f"{prefix}/lang/en_us.json"] = _document(strings)
+    return files
+
+
+def _gradle(workspace: Path, timeout: int) -> Path:
+    flags = ["--no-daemon", "--console=plain", "build"]
+    command = (["cmd", "/d", "/c", "gradlew.bat"] if os.name == "nt" else ["./gradlew"]) + flags
+    log = workspace / "mcmodup-build.log"
+    try:
+        with log.open("wb") as stream:
+            run = subprocess.run(command, cwd=workspace, stdin=subprocess.DEVNULL,
+                                 stdout=stream, stderr=subprocess.STDOUT, timeout=timeout)
+    except subprocess.TimeoutExpired as exc:
+        raise InputError(f"NeoForge Gradle build exceeded {timeout} seconds. No JAR was written.") from exc
+    if run.returncode:
+        with log.open("rb") as stream:
+            stream.seek(max(0, log.stat().st_size - 6000))
+            tail = stream.read().decode("utf-8", "replace").strip()
+        raise InputError(f"NeoForge build failed (exit {run.returncode}). Check JDK {JAVA_VERSION} and Gradle network access.\n{tail}")
+    jars = list((workspace / "build/libs").glob("*.jar"))
+    if len(jars) != 1:
+        raise InputError("Gradle did not produce exactly one output JAR.")
+    return jars[0]
+
+
+def _check_artifact(jar: Path, profile: Profile) -> None:
+    namespace = profile.namespace
+    owner = f"mcmodup/generated/{namespace}/CatalogPort"
+    try:
+        with zipfile.ZipFile(jar) as archive:
+            metadata = tomllib.loads(archive.read("META-INF/neoforge.mods.toml").decode())
+            classes = {name for name in archive.namelist() if name.endswith(".class")}
+            catalog = json.loads(archive.read(f"data/{namespace}/mcmodup/catalog.json"))
+            info = read_class(archive.read(f"{owner}.class"))
+    except (KeyError, ValueError, zipfile.BadZipFile) as exc:
+        raise InputError(f"Built JAR lacks valid NeoForge catalog metadata or code: {exc}") from exc
+    declared_mods = metadata.get("mods")
+    if (classes != {f"{owner}.class"} or info.owner != owner or Symbol("net/neoforged/fml/common/Mod") not in info.references
+            or not isinstance(declared_mods, list) or len(declared_mods) != 1 or not isinstance(declared_mods[0], dict)
+            or declared_mods[0].get("modId") != namespace or not isinstance(catalog, dict) or catalog.get("full_port") is not False):
+        raise InputError("Built JAR failed the generated-class, mod ID, or partial-port verification.")
+
+
+def convert_catalog(pack: ModPack, mod: PackMod, profile: Profile, output: Path, timeout: int) -> Conversion:
+    if not 1 <= timeout <= 1800:
+        raise InputError("Use --timeout 1–1800 seconds.")
+    output = output.expanduser()
+    if output.suffix.lower() != ".jar" or output.exists() or output.is_symlink():
+        raise InputError("Choose a new .jar output path. Existing files are never overwritten.")
+    output = output.resolve()
+    if pack.root.is_dir() and output.is_relative_to(pack.root):
+        raise InputError("Write the new JAR outside the legacy modpack.")
+    if mod.audit.source_version != profile.version or profile.mod_id not in {info.mod_id.casefold() for info in mod.audit.mods}:
+        raise InputError(f"This profile requires the {profile.mod_id!r} mod for Minecraft {profile.version}.")
+    location = _location(pack, mod, profile)
+    with open_input(location.file) as artifact:
+        info = read_class(artifact.read(location.entry, CLASS_LIMIT), collect_references=False, capture_initializer=True)
+    entries = recover_catalog(profile, info)
+    textures = _textures(entries, mod, location)
+    with mod.path.open("rb") as stream:
+        digest = hashlib.file_digest(stream, "sha256").hexdigest()
+    report = pack.report(mod.archive)["archives"][0]
+    observed = {
+        "declared": [{"id": entry["id"], "required": entry["required"], "status": entry["status"]}
+                     for entry in report["declared_dependencies"]],
+        "pack_provider_count": len(report["binary_dependencies"]),
+        "bundled_legacy_dependencies": False,
+    }
+    with tempfile.TemporaryDirectory(prefix="mcmodup-convert-") as scratch:
+        workspace = Path(scratch) / "project"
+        write_workspace(workspace, _project_files(profile, entries, textures, digest, observed, location))
+        built = _gradle(workspace, timeout)
+        _check_artifact(built, profile)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        # Don't expose a half-written result, or overwrite an output created during Gradle's run.
+        staging_path = None
+        try:
+            with tempfile.NamedTemporaryFile(dir=output.parent, delete=False) as staging:
+                staging_path = Path(staging.name)
+                with built.open("rb") as source:
+                    shutil.copyfileobj(source, staging)
+            os.link(staging_path, output)
+        finally:
+            if staging_path is not None:
+                staging_path.unlink(missing_ok=True)
+    return Conversion(output, profile, len(entries))

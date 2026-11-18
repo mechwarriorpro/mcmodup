@@ -11,6 +11,7 @@ import zlib
 
 
 TEXT_LIMIT = 2 * 1024 * 1024
+MOD_ARCHIVE_LIMIT = 256 * 1024 * 1024
 IGNORED_DIRS = {".git", ".gradle", ".idea", "build", "bin", "out", "target", "run", "runs", "__MACOSX"}
 
 
@@ -91,15 +92,15 @@ def _archive_files(archive: zipfile.ZipFile) -> tuple[dict[str, zipfile.ZipInfo]
 
 
 @contextmanager
-def open_input(path: Path) -> Iterator[ModInput]:
+def open_input(path: Path, *, archive_limit: int = MOD_ARCHIVE_LIMIT) -> Iterator[ModInput]:
     path = path.expanduser().resolve()
     if path.is_dir():
         yield ModInput(path, _directory_files(path))
         return
     if not path.is_file() or path.suffix.lower() not in {".jar", ".zip"}:
         raise InputError(f"Expected a source directory or a .jar/.zip file: {path}")
-    if path.stat().st_size > 256 * 1024 * 1024:
-        raise InputError("Archives larger than 256 MiB are not supported; use an unpacked source directory.")
+    if path.stat().st_size > archive_limit:
+        raise InputError(f"Archive exceeds the {archive_limit // (1024 * 1024)} MiB limit: {path}")
     try:
         archive = zipfile.ZipFile(path)
     except zipfile.BadZipFile as exc:

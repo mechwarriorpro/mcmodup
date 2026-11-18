@@ -114,6 +114,54 @@ class PackTests(unittest.TestCase):
         self.assertEqual(declared["forge"]["status"], "loader")
         self.assertTrue(any(c["symbol"] == "cpw/mods/fml/common/Mod" for c in result["api_checks"]))
 
+    def test_scan_pack_archive_with_separate_mod_jar(self):
+        consumer = self.consumer(refs=("provider/Widget#open()V",), dependency="required-after:widgets;after:BuildCraft|Energy")
+        pack = jar(self.root / "selected-pack.jar", **{
+            "instance/mods/1.7.10/Library.zip": self.library.read_bytes(),
+            "instance/resourcepacks/not-a-dependency.zip": b"not a mod",
+            "../mods/not-extracted.zip": b"unsafe archive member",
+            "instance/mods/1.7.10/Bad.jar": b"unreadable jar",
+        })
+        before = {file: file.read_bytes() for file in (pack, consumer, self.library)}
+        result = run_cli("scan-pack", pack, "--mod-jar", consumer, "--json")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        report = json.loads(result.stdout)
+        self.assertEqual(report["archives_indexed"], 2)
+        self.assertEqual(len(report["archives"]), 1)
+        consumer_report = report["archives"][0]
+        self.assertEqual(consumer_report["archive"], "selected/Consumer.jar")
+        self.assertEqual(consumer_report["source_version"], "1.7.10")
+        self.assertEqual(consumer_report["binary_dependencies"], [{
+            "archive": "instance/mods/1.7.10/Library.zip", "classes": ["provider/Widget"]}])
+        self.assertIn("BuildCraft|Energy", [dep["id"] for dep in consumer_report["declared_dependencies"]])
+        self.assertEqual(report["archive_errors"][0]["archive"], "instance/mods/1.7.10/Bad.jar")
+        self.assertIn("unsafe archive", "\n".join(report["warnings"]))
+        self.assertEqual({file: file.read_bytes() for file in before}, before)
+        self.assertFalse((self.root / "mods/not-extracted.zip").exists())
+
+    def test_mod_jar_also_in_pack_does_not_become_duplicate_provider(self):
+        consumer = self.consumer(refs=("provider/Widget",))
+        pack = jar(self.root / "pack.zip", **{
+            "mods/Consumer-1.7.10.jar": consumer.read_bytes(),
+            "mods/Library.zip": self.library.read_bytes(),
+        })
+        result = run_cli("scan-pack", pack, "--mod-jar", consumer, "--json")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        report = json.loads(result.stdout)
+        self.assertEqual(report["archives_indexed"], 2)
+        self.assertEqual(report["duplicate_mod_ids"], {})
+        self.assertEqual(report["archives"][0]["archive"], "mods/Consumer-1.7.10.jar")
+        selected_in_pack = run_cli("scan-pack", pack, "--mod", "Consumer-1.7.10.jar", "--json")
+        self.assertEqual(selected_in_pack.returncode, 0, selected_in_pack.stderr)
+        hints = json.loads(selected_in_pack.stdout)["archives"][0]["version_evidence"]
+        self.assertTrue(any(hint["origin"] == "Consumer-1.7.10.jar" for hint in hints))
+
+    def test_manifest_only_export_explains_missing_embedded_mods(self):
+        manifest_only = jar(self.root / "launcher-export.zip", **{"manifest.json": '{"files": []}'})
+        result = run_cli("scan-pack", manifest_only, "--mod-jar", self.consumer())
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("use the installed instance folder", result.stderr)
+
     def test_distinguishes_networking_generations_and_checks_target_candidates(self):
         target_owner = "net/neoforged/neoforge/network/event/RegisterPayloadHandlersEvent"
         target = jar(self.root / "target.jar", **{target_owner + ".class": fixture_class(target_owner)})
@@ -215,6 +263,15 @@ print('simulated decompiler output')
         self.assertEqual((out / "sources/provider/Widget.java").read_text(), "package provider; public class Widget {}")
         self.assertEqual(json.loads((out / "decompile-report.json").read_text())["staged_class_count"], 2)
         self.assertIn("*", (out / ".gitignore").read_text())
+
+        archive = jar(self.root / "pack.zip", **{"mods/Library.zip": self.library.read_bytes()})
+        archive_output = self.root / "archive-refs"
+        result = run_cli("decompile-deps", archive, "--mod-jar", consumer, "--vineflower", tool,
+                         "--java", runner, "--class", "provider.Widget", "-o", archive_output)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        report = json.loads((archive_output / "decompile-report.json").read_text())
+        self.assertEqual(report["consumer_input"], str(consumer.resolve()))
+        self.assertEqual(report["requested_references"][0]["provider"], f"{archive.resolve()}!/mods/Library.zip")
 
     @unittest.skipUnless(os.environ.get("MCMODUP_VINEFLOWER_JAR") and shutil.which("javac"),
                          "set MCMODUP_VINEFLOWER_JAR and install a full JDK for this integration test")

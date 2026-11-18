@@ -2,6 +2,17 @@
 
 Move legacy Forge mods for **Minecraft 1.5.2, 1.6.4, or 1.7.10** into a source-porting workspace for **Minecraft 1.21.1 on NeoForge**. The tool migrates simple assets and metadata and tells you where to start rewriting the mod. It doesn't make an old JAR playable on a new loader.
 
+## Build a new JAR from a supported part of a legacy mod
+
+`convert-jar` takes the original mod JAR and a pack folder or archive. It runs a local JDK 21/Gradle build of **new** NeoForge Java code and emits a `.jar` at the requested path. Its first profiles are explicitly partial: Minechem **elements** (1.6.4) and Thaumcraft **aspects** (1.7.10). They recover static catalog values from the legacy binary, use its icons, and register real inventory entries with tooltips and a creative tab. They **do not replace** either original mod.
+
+```sh
+python3 -m mcmodup convert-jar Minechem-1.6.4-5.0.5.FINAL.jar --pack MyPack.zip \
+  --profile minechem-elements --allow-partial -o ports/minechem-elements-1.21.1.jar
+```
+
+The command refuses to build without `--allow-partial`. It matches known bytecode declarations rather than executing legacy code. A class may be recovered from an unambiguous pack dependency if the primary JAR references it. Other dependencies are inventoried, not bundled or ported. A missing or mismatched input, unknown declaration shape, or failed Gradle build leaves no new output JAR. First-run Gradle downloads need internet access. See [both profiles and commands](docs/usage-examples.md) for scope and licensing before using private assets.
+
 ## Try it
 
 From this checkout, with **Python 3.11 or newer** (no Python dependencies):
@@ -27,13 +38,19 @@ You can also install the tool into a Python environment with `python -m pip inst
 
 ## Scan a modpack for dependencies and API changes
 
-Point `scan-pack` at the installed instance or its `mods` directory. It scans `mods/` and `coremods/` recursively (including versioned subfolders such as `mods/1.7.10/`), accepts legacy `.zip` mods, and doesn't run the pack or change any files.
+See [the Thaumcraft 1.7.10 and Minechem 1.6.4 usage examples](docs/usage-examples.md) for the original JAR + selected pack workflow and what still needs a manual port.
+
+Point `scan-pack` at an installed instance, its `mods` folder, or a `.jar`/`.zip` with embedded mod archives. It scans `mods/` and `coremods/` recursively (including versioned subfolders such as `mods/1.7.10/`) and accepts legacy `.zip` mods. It does not run the pack or change your inputs. A launcher export with only a download manifest is not a dependency source; use the installed instance.
 
 ```sh
 python3 -m mcmodup scan-pack /path/to/instance --source-version 1.7.10
 python3 -m mcmodup scan-pack /path/to/instance --source-version 1.7.10 \
   --mod mods/OldMod.jar --json > pack-report.json
+python3 -m mcmodup scan-pack /path/to/pack.jar --source-version 1.7.10 \
+  --mod-jar /path/to/OldMod.jar --json > pack-report.json
 ```
+
+Use `--mod` for a mod already in the pack, or `--mod-jar` to check a separately selected file against the pack. Both options also work with `decompile-deps`. An identical copy already present in the pack is not counted twice.
 
 The report separates **declared dependencies** (`mcmod.info` and compiled FML `@Mod` annotations) from **binary dependencies** identified by JVM class references. It shows missing or duplicate providers, class and member references, and which legacy API patterns need a rewrite. Declaration presence isn't version-range resolution. Reflection, dynamically loaded classes, shaded or nested libraries, and behavior won't all be visible in a static scan.
 
@@ -98,7 +115,7 @@ If you only have a compiled JAR, check for an existing 1.21.1 port or obtain aut
 
 ## Build reviewed changes with GitHub Actions
 
-Add `--github-actions` to `port` to generate `.github/workflows/build.yml` inside the new workspace. After you review the workspace and confirm redistribution rights, commit only authorized source and assets to your chosen branch in a repository you control. A push or pull request runs `./gradlew build` with JDK 21 and uploads the built mod JAR under **Actions**. The workflow does not commit, push, or release files for you. This repository's CI runs the Python tests, verifies Vineflower against a synthetic dependency, and builds the included demo project, not any user's pack.
+Add `--github-actions` to `port` to generate `.github/workflows/build.yml` inside the new workspace. After you review the workspace and confirm redistribution rights, commit only authorized source and assets to your chosen branch in a repository you control. A push or pull request runs `./gradlew build` with JDK 21 and uploads the built mod JAR under **Actions**. The workflow does not commit, push, or release files for you. This repository's CI runs the Python tests, verifies Vineflower and both conversion profiles, and builds the included demo project, not any user's pack.
 
 ## Development
 
@@ -106,4 +123,4 @@ Add `--github-actions` to `port` to generate `.github/workflows/build.yml` insid
 python3 -m unittest discover -s tests -v
 ```
 
-The CLI inspection and generation steps are local and never execute legacy code or extract archive paths. Tests exercise all three input versions, source ZIPs, pack inventories, JVM signatures and mappings, scoped decompiler staging, and generated metadata/assets. The target is pinned to NeoForge **21.1.267** with ModDevGradle **2.0.148**, based on the [1.21.1 MDK](https://github.com/NeoForgeMDKs/MDK-1.21.1-ModDevGradle/tree/d69737d705926b200c23769f0a674ff6379badb4). The bundled [Gradle 9.2.1](https://github.com/gradle/gradle/tree/v9.2.1) wrapper includes a pinned distribution checksum. Both upstream notices are included in generated workspaces.
+The CLI inspection and generation steps are local, never execute legacy code, and do not unpack archive paths into your working tree. Tests exercise all three input versions, source ZIPs, pack inventories, JVM signatures and mappings, scoped decompiler staging, and generated metadata/assets. The target is pinned to NeoForge **21.1.267** with ModDevGradle **2.0.148**, based on the [1.21.1 MDK](https://github.com/NeoForgeMDKs/MDK-1.21.1-ModDevGradle/tree/d69737d705926b200c23769f0a674ff6379badb4). The bundled [Gradle 9.2.1](https://github.com/gradle/gradle/tree/v9.2.1) wrapper includes a pinned distribution checksum. Both upstream notices are included in generated workspaces.

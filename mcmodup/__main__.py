@@ -9,15 +9,18 @@ import sys
 from . import MINECRAFT_VERSION, SOURCE_VERSIONS
 from .api import ApiContext, ApiIndex
 from .audit import audit, render_audit
+from .catalogs import PROFILES
+from .convert import convert_catalog
 from .decompile import DecompileOptions, decompile
 from .inputs import InputError, open_input
 from .mappings import LegacyNames, PortMap
-from .pack import ModPack, render_pack
+from .pack import open_pack, render_pack
 from .port import PortOptions, generate_port
 
 
-def _pack_arguments(command: argparse.ArgumentParser) -> None:
-    command.add_argument("input", type=Path, help="an installed modpack folder or its mods folder")
+def _pack_arguments(command: argparse.ArgumentParser, *, positional: bool = True) -> None:
+    if positional:
+        command.add_argument("input", type=Path, help="an installed modpack folder or a .jar/.zip with embedded mods")
     command.add_argument("--source-version", choices=SOURCE_VERSIONS,
                          help="verified Minecraft version of this pack and its legacy API/mappings")
     command.add_argument("--legacy-api", type=Path, action="append", default=[], metavar="JAR_OR_CLASSES",
@@ -25,6 +28,12 @@ def _pack_arguments(command: argparse.ArgumentParser) -> None:
     command.add_argument("--legacy-srg", type=Path, metavar="JOINED.SRG", help="obfuscated-to-SRG mappings for that legacy release")
     command.add_argument("--legacy-methods", type=Path, metavar="METHODS.CSV", help="optional SRG-to-MCP method names")
     command.add_argument("--legacy-fields", type=Path, metavar="FIELDS.CSV", help="optional SRG-to-MCP field names")
+
+
+def _mod_selection(command: argparse.ArgumentParser, *, required: bool = False) -> None:
+    select = command.add_mutually_exclusive_group(required=required)
+    select.add_argument("--mod", metavar="ARCHIVE", help="select an archive already in the pack by its relative path")
+    select.add_argument("--mod-jar", type=Path, metavar="JAR", help="select a separate legacy mod JAR to analyze against the pack")
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -49,7 +58,7 @@ def _parser() -> argparse.ArgumentParser:
 
     pack = commands.add_parser("scan-pack", help="index a modpack's bytecode, dependencies, and API changes")
     _pack_arguments(pack)
-    pack.add_argument("--mod", metavar="ARCHIVE", help="report only this archive while still indexing its peers")
+    _mod_selection(pack)
     pack.add_argument("--target-api", type=Path, action="append", default=[], metavar="JAR_OR_CLASSES",
                       help="compiled NeoForge 1.21.1 API or Mojang-named Minecraft classes (repeatable)")
     pack.add_argument("--port-map", type=Path, metavar="JSON", help="reviewed cross-version references to verify in the target API")
@@ -57,7 +66,7 @@ def _parser() -> argparse.ArgumentParser:
 
     refs = commands.add_parser("decompile-deps", help="locally decompile selected dependency classes for one mod")
     _pack_arguments(refs)
-    refs.add_argument("--mod", required=True, metavar="ARCHIVE", help="relative archive path from scan-pack")
+    _mod_selection(refs, required=True)
     refs.add_argument("--vineflower", required=True, type=Path, metavar="JAR", help="trusted local Vineflower executable JAR")
     refs.add_argument("--java", default="java", help="Java executable for Vineflower (default: java)")
     refs.add_argument("--class", dest="classes", action="append", default=[], metavar="CLASS",
@@ -65,6 +74,14 @@ def _parser() -> argparse.ArgumentParser:
     refs.add_argument("--max-classes", type=int, default=250, help="cap staged classes, including nested classes (default: 250)")
     refs.add_argument("--timeout", type=int, default=180, help="limit decompiler runtime in seconds (default: 180)")
     refs.add_argument("--output", "-o", type=Path, required=True, help="new local reference folder outside the modpack")
+    convert = commands.add_parser("convert-jar", help="build an explicitly partial NeoForge catalog JAR from legacy binaries")
+    convert.add_argument("input", type=Path, help="the original legacy mod JAR")
+    convert.add_argument("--pack", required=True, type=Path, help="installed modpack folder or a .jar/.zip with embedded mods")
+    convert.add_argument("--profile", required=True, choices=tuple(PROFILES), help="which verified static catalog to convert")
+    convert.add_argument("--allow-partial", action="store_true", help="acknowledge that the result is not the complete original mod")
+    convert.add_argument("--output", "-o", type=Path, required=True, help="new .jar path outside the legacy pack")
+    convert.add_argument("--timeout", type=int, default=600, help="Gradle build timeout in seconds (default: 600)")
+    _pack_arguments(convert, positional=False)
     return parser
 
 
@@ -81,17 +98,32 @@ def _pack_context(args: argparse.Namespace) -> ApiContext:
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     try:
-        if args.command in {"scan-pack", "decompile-deps"}:
-            pack = ModPack.load(args.input, _pack_context(args))
-            if args.command == "scan-pack":
-                report = pack.report(args.mod)
-                print(json.dumps(report, indent=2) if args.json else render_pack(report))
-            else:
-                output = decompile(pack, pack.select(args.mod), DecompileOptions(
-                    tool=args.vineflower, output=args.output, java=args.java, selected_classes=tuple(args.classes),
-                    max_classes=args.max_classes, timeout=args.timeout))
-                print(f"Wrote local dependency references: {output}")
-                print("See decompile-report.json and decompiler.log. These files are not included in a build or push.")
+        if args.command == "convert-jar":
+            if not args.allow_partial:
+                raise InputError("Full automatic conversion is not supported. These profiles build partial catalog JARs; "
+                                 "use --allow-partial only if that is what you want. No JAR was written.")
+            profile = PROFILES[args.profile]
+            args.source_version = args.source_version or profile.version
+            if args.source_version != profile.version:
+                raise InputError(f"{profile.name} is only supported for Minecraft {profile.version}.")
+            with open_pack(args.pack, _pack_context(args), args.input) as pack:
+                assert pack.selected_archive is not None
+                result = convert_catalog(pack, pack.select(pack.selected_archive), profile, args.output, args.timeout)
+            print(f"Built partial NeoForge {MINECRAFT_VERSION} JAR ({result.entries} recovered entries): {result.output}")
+            print(f"Not ported: {result.profile.not_ported}")
+        elif args.command in {"scan-pack", "decompile-deps"}:
+            with open_pack(args.input, _pack_context(args), args.mod_jar) as pack:
+                if args.command == "scan-pack":
+                    report = pack.report(args.mod)
+                    print(json.dumps(report, indent=2) if args.json else render_pack(report))
+                else:
+                    selection = args.mod or pack.selected_archive
+                    assert selection is not None  # decompile-deps requires either --mod or --mod-jar
+                    output = decompile(pack, pack.select(selection), DecompileOptions(
+                        tool=args.vineflower, output=args.output, java=args.java, selected_classes=tuple(args.classes),
+                        max_classes=args.max_classes, timeout=args.timeout))
+                    print(f"Wrote local dependency references: {output}")
+                    print("See decompile-report.json and decompiler.log. These files are not included in a build or push.")
         else:
             with open_input(args.input) as source:
                 result = audit(source, args.source_version)
