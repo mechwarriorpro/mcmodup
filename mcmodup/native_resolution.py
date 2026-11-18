@@ -57,6 +57,14 @@ def resolve(roots: set[str], installed: list["NativeMod"], providers: dict[str, 
     def priority(mod: "NativeMod") -> int:
         return 0 if mod.installed else 2 if mod.recipe else 1
 
+    def blocks_partial(mod: "NativeMod", key: str, rows: list[dict], required: set[str]) -> bool:
+        if not mod.partial:
+            return False
+        if mod.recipe and mod.recipe.isolated_preview:
+            return (forced.get(key) is not mod or key not in roots or
+                    any(row["type"] in {"required", "optional"} for row in rows))
+        return key in required
+
     def solve(mods: tuple["NativeMod", ...], depth: int) -> Resolution:
         nonlocal remaining
         while True:
@@ -74,7 +82,7 @@ def resolve(roots: set[str], installed: list["NativeMod"], providers: dict[str, 
             needed = goals | required
             for key, mod in sorted(active.items()):
                 rows = requests[key]
-                if mod.partial and key in required:
+                if blocks_partial(mod, key, rows, required):
                     return Resolution(mods, "blocked", f"{mod.label!r} is a partial port and cannot supply {key!r}.")
                 if not _fits(mod.ids[key], rows):
                     incompatible = any(row["type"] == "incompatible" and matches(mod.ids[key], row["range"]) for row in rows)
@@ -93,7 +101,7 @@ def resolve(roots: set[str], installed: list["NativeMod"], providers: dict[str, 
                     if any(
                         name in active or (name in forced and forced[name] is not mod) or
                         (name in pins and pins[name] != mod.sha256) or
-                        (mod.partial and name in required) or
+                        blocks_partial(mod, name, requests[name], required) or
                         (name in retained and not retained[name][0].ids.keys() <= mod.ids.keys()) or
                         not _fits(version, requests[name])
                         for name, version in mod.ids.items()

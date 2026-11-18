@@ -114,6 +114,11 @@ class SourcePort:
     legacy_ids: dict[str, str | None] | None = None
     method_imports: tuple[method_ports.MethodPort, ...] = ()
 
+    @property
+    def isolated_preview(self) -> bool:
+        """May be explicitly staged, but not advertised as a dependency provider."""
+        return bool(self.method_imports or None in (self.legacy_ids or {}).values())
+
     def describe(self) -> dict:
         result = {"original_sha256": self.legacy_sha256, "source_sha256": self.source_sha256,
                   "status": "preview" if self.preview else "reviewed", "legacy_assets": "checked after build",
@@ -635,7 +640,7 @@ def build(port: SourcePort, original: Path, task_dir: Path, dependencies: list[t
         converted, locales = prepare_assets(source, workspace, port)
         imported = method_ports.prepare(source, workspace, port.method_imports)
     provenance, method_report = b"", []
-    if imported:
+    if port.isolated_preview:
         method_report = [group.report() for group in imported]
         provenance = (json.dumps({"schema_version": 1, "original_sha256": port.legacy_sha256, "preview": True,
                                   "parity_verified": False, "legacy_ids": port.legacy_ids, "limitations": port.limitations,
@@ -658,9 +663,10 @@ def build(port: SourcePort, original: Path, task_dir: Path, dependencies: list[t
     output = _project_output(workspace, port.artifact, MOD_ARCHIVE_LIMIT)
     if imported:
         method_ports.verify(output, imported)
+    if port.isolated_preview:
         with open_input(output) as artifact:
             if method_ports.PROVENANCE not in artifact.files or artifact.read(method_ports.PROVENANCE) != provenance:
-                raise InputError("Built JAR did not retain its method-import preview provenance")
+                raise InputError("Built JAR did not retain its source preview provenance")
     evidence = {**port.describe(), "archive": str(port.archive) if isinstance(port.archive, str) else port.archive.name,
                 "dependencies_sha256": copied, "imports": len(port.imports), "converted_locales": locales,
                 "gametests": _test_evidence(_project_output(workspace, port.game_report, TEST_REPORT_LIMIT), port),

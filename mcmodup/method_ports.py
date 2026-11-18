@@ -12,7 +12,7 @@ from pathlib import Path
 import re
 import struct
 
-from .classfiles import CLASS_LIMIT, CLASS_NAME, DESCRIPTOR_CLASSES, METHOD_DESCRIPTOR, Symbol, _Pool, _Reader, read_class
+from .classfiles import CLASS_LIMIT, CLASS_NAME, DESCRIPTOR_CLASSES, FIELD_DESCRIPTOR, METHOD_DESCRIPTOR, Symbol, _Pool, _Reader, read_class
 from .inputs import InputError, ModInput, open_input
 
 
@@ -48,11 +48,12 @@ class MethodPort:
     members: dict[Symbol, Symbol]
 
     def type(self, name: str) -> str:
-        if name.startswith("["):
+        if name.startswith("[") and FIELD_DESCRIPTOR.fullmatch(name):
             return self.descriptor(name)
-        result = self.types.get(name, name)
-        if result in _JDK_TYPES or result in self.types.values():
-            return result
+        if name in _JDK_TYPES:
+            return name
+        if name in self.types:
+            return self.types[name]
         raise InputError(f"No native adapter type for {name!r}")
 
     def descriptor(self, text: str) -> str:
@@ -113,6 +114,8 @@ class _OutputPool:
     def add(self, tag: int, data: bytes) -> int:
         entry = bytes([tag]) + data
         if entry not in self.index:
+            if len(self.entries) + (2 if tag in {5, 6} else 1) > 65534:
+                raise InputError("Generated method constant pool is too large; split the group")
             self.index[entry] = len(self.entries) + 1
             self.entries.append(entry)
             if tag in {5, 6}:
@@ -229,7 +232,11 @@ def _code(data: memoryview, pool: _Pool, raw: dict[int, bytes], output: _OutputP
             tag, value = pool.entries[index]
             if tag not in ({5, 6} if op == 0x14 else {3, 4, 8}):
                 raise InputError("Only numeric and string literals can be transplanted")
-            replacement = output.add(tag, _u2(output.raw_utf(raw[value])) if tag == 8 else raw[index])
+            if tag == 8:
+                pool.utf(value)  # reject invalid or wrong-tag string targets
+                replacement = output.add(tag, _u2(output.raw_utf(raw[value])))
+            else:
+                replacement = output.add(tag, raw[index])
             if op == 0x12 and replacement > 255:
                 raise InputError("Method import would widen an ldc and move branch offsets; split the group")
             result[start + 1:code.pos] = bytes([replacement]) if op == 0x12 else _u2(replacement)
@@ -266,7 +273,10 @@ def transplant(data: bytes, port: MethodPort) -> ImportedMethods:
     reader = _Reader(data)
     if reader.u4() != 0xcafebabe or reader.u2() != 0 or not 49 <= (major := reader.u2()) <= 52:
         raise InputError("Method imports require ordinary Java 5–8 bytecode")
-    pool = _Pool(reader)
+    try:
+        pool = _Pool(reader)
+    except UnicodeError as exc:
+        raise InputError("Invalid legacy class modified UTF-8") from exc
     raw = _raw_constants(data)
     flags, owner = reader.u2(), pool.owner(reader.u2())
     if owner != port.owner or flags & 0x2200:

@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 import shutil
 import tempfile
-from zipfile import ZIP_DEFLATED, ZipFile
+from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
 
 from . import NEOFORGE_VERSION
 from .audit import ModMetadata
@@ -104,10 +104,13 @@ def prepare(output: Path) -> Path:
         with tempfile.TemporaryDirectory(prefix="mcmodup-icbm-plate-") as tmp:
             workspace = Path(tmp) / "project"
             _project(workspace)
-            with ZipFile(source, "x", compression=ZIP_DEFLATED) as archive:
+            with ZipFile(source, "x") as archive:
                 for path in sorted(workspace.rglob("*")):
                     if path.is_file():
-                        archive.writestr(path.relative_to(workspace).as_posix(), path.read_bytes())
+                        member = ZipInfo(path.relative_to(workspace).as_posix())
+                        member.create_system = 3  # normalized Unix file modes, even on Windows
+                        member.external_attr = (0o100755 if member.filename == "gradlew" else 0o100644) << 16
+                        archive.writestr(member, path.read_bytes(), compress_type=ZIP_DEFLATED)
         texture = f"assets/{MOD_ID}/textures/block/glass_pressure_plate.png"
         recipe = {"legacy_sha256": LEGACY_SHA256, "source_zip": source.name, "source_sha256": digest(source),
                   "ids": {MOD_ID: VERSION}, "legacy_ids": {"icbm": MOD_ID, "icbm|explosion": None, "icbm|sentry": None},

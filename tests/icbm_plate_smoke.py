@@ -70,10 +70,16 @@ def legacy(root: Path) -> None:
     # The bundled LaunchWrapper 1.8 throws ConcurrentModificationException while
     # finding coremod tweakers. Prepend the pinned launcher fix, leaving the
     # historical game, Forge patches, selected mods and gameplay classes intact.
-    bootstrap = "launchwrapper-1.12.jar"
-    pinned(f"https://libraries.minecraft.net/net/minecraft/launchwrapper/1.12/{bootstrap}", server / bootstrap,
+    launcher = "launchwrapper-1.12.jar"
+    pinned(f"https://libraries.minecraft.net/net/minecraft/launchwrapper/1.12/{launcher}", server / launcher,
            "111e7bea9c968cdb3d06ef4632bf7ff0824d0f36")
-    observed = run_server(server, [java8("java"), "-Xmx1G", "-Djava.awt.headless=true", "-cp", f"{bootstrap}{os.pathsep}Voltz.jar",
+    classpath = [launcher]
+    for name, sha1 in {"log4j-api": "fb385330d89c2d61058ef649403f214633569205",
+                       "log4j-core": "dd9c8ecba5c8dc5e1574804d0bfdc1ef155ad9ea"}.items():
+        filename = f"{name}-2.25.3.jar"
+        pinned(f"https://repo.maven.apache.org/maven2/org/apache/logging/log4j/{name}/2.25.3/{filename}", server / filename, sha1)
+        classpath.append(filename)
+    observed = run_server(server, [java8("java"), "-Xmx1G", "-Djava.awt.headless=true", "-cp", os.pathsep.join([*classpath, "Voltz.jar"]),
                                   "cpw.mods.fml.relauncher.ServerLaunchWrapper", "nogui"],
                           legacy=True, success_marker="MCMODUP_PLATE_PASS", failure_marker="MCMODUP_PLATE_FAIL")
     note("Exact Voltz glass plate baseline", observed)

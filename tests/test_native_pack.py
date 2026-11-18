@@ -38,7 +38,7 @@ def legacy(root, file, modid, *, name=None, requirements=(), refs=(), minecraft=
     })
 
 
-def native(root, file, modid, *, version="2.0", requirements=(), refs=(), mc="[1.21.1]", neoforge="[21.1,21.2)", more=None):
+def native(root, file, modid, *, version="2.0", requirements=(), refs=(), mc="[1.21.1]", neoforge="[21.1,21.2)", more=None, owner=None):
     meta = f'''modLoader="javafml"
 loaderVersion="[4,)"
 license="Test fixture"
@@ -54,7 +54,7 @@ modId="{dep}"
 type="{kind}"
 versionRange="{spec}"
 '''
-    owner = f"modern/demo/{modid.title()}"
+    owner = owner or f"modern/demo/{modid.title()}"
     return jar(root / file, **{"META-INF/neoforge.mods.toml": meta, f"{owner}.class": fixture_class(owner, refs=refs), **(more or {})})
 
 

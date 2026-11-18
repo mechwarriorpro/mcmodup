@@ -244,7 +244,7 @@ class UpdateInventory:
 
     def native_ids(self, item: LegacyEntry) -> set[str]:
         candidate = self.recipes.get(item.label)
-        if candidate and candidate.recipe.legacy_ids is not None:
+        if candidate and candidate.original == item.path and candidate.recipe.legacy_ids is not None:
             return set(candidate.ids)
         return {self.aliases.get(mod_id, mod_id) for mod_id in item.ids}
 
@@ -520,10 +520,12 @@ def with_source_ports(state: UpdateInventory, options: BuildOptions, *,
             issue = f"Local source ZIP not found: {recipe.archive.name!r}."
         else:
             predicted = NativeMod(Path(recipe.artifact.rsplit("/", 1)[-1]), f"build/{label}", recipe.ids, recipe.dependencies,
-                                  False, True, f"source:{recipe.legacy_sha256}", recipe=recipe, original=item.path)
+                                  False, True, f"source:{recipe.legacy_sha256}", partial=recipe.isolated_preview,
+                                  recipe=recipe, original=item.path)
             state.recipes[label] = predicted
-            for mod_id in predicted.ids:
-                providers[mod_id].append(predicted)
+            if not recipe.isolated_preview:
+                for mod_id in predicted.ids:
+                    providers[mod_id].append(predicted)
             continue
         state.recipe_issues[label] = issue
     return state
@@ -562,7 +564,7 @@ class UpdatePlan:
                 # Bind a peer's renamed ID through its actual legacy provider,
                 # not another release with the same ID. Intra-archive modules
                 # are already unambiguous even when a module was left out.
-                identity = label if key in state.entries[label].ids else provider["archive"] if provider else ""
+                identity = provider["archive"] if provider else label if key in state.entries[label].ids else ""
                 native_id = state.native_binding_id(identity, key)
                 binding = {"id": native_id, "status": "integration_not_established"}
                 if row["status"] == "loader":
@@ -732,8 +734,11 @@ def plan(inventory: UpdateInventory, selections: list[str], *, output_pack: bool
             if artifact is None:
                 problems.append(f"{label!r}: {inventory.recipe_issues[label]}")
                 continue
-            if not output_pack and (artifact.recipe.method_imports or None in (artifact.recipe.legacy_ids or {}).values()):
-                problems.append(f"{label!r}: this executable preview must be built into a fresh --output-pack.")
+            if artifact.recipe.isolated_preview:
+                if not output_pack:
+                    problems.append(f"{label!r}: this executable preview must be built into a fresh --output-pack.")
+                for addon in sorted(inventory.addons.get(label, {}).keys() & closure):
+                    problems.append(f"{addon!r} expects {label!r}; an executable preview cannot replace its legacy provider.")
         else:
             artifact = inventory.conversions.get(label)
             if artifact is not None:
@@ -807,8 +812,12 @@ def plan(inventory: UpdateInventory, selections: list[str], *, output_pack: bool
             runtime = instance_runtime(inventory.target, inventory.target_platform)
         except (InputError, OSError) as exc:
             problems.append(f"Target instance runtime: {exc}")
-    originals = set(closure)
-    for label in closure:
+    # Include originals built automatically to satisfy native dependencies as
+    # well as explicit selections; their packages must coexist too.
+    built_originals = {mod.label.removeprefix("build/") for mod in mods if mod.recipe}
+    scoped_originals = closure | built_originals
+    originals = set(scoped_originals)
+    for label in scoped_originals:
         originals.update(provider["archive"] for row in inventory.legacy_declarations.get(label, ()) for provider in row["candidates"])
         originals.update(p["archive"] for p in inventory.legacy_binary.get(label, {}).get("providers", ()))
     legacy_hashes = {}
@@ -818,12 +827,13 @@ def plan(inventory: UpdateInventory, selections: list[str], *, output_pack: bool
             if path.resolve() != path:
                 raise InputError("source archives must not be symbolic links")
             legacy_hashes[label] = _digest(path)
-            conversion = inventory.conversions.get(label)
-            if conversion and conversion.conversion.source_sha256 != legacy_hashes[label]:
+            conversion, recipe = inventory.conversions.get(label), inventory.recipes.get(label)
+            if ((conversion and conversion.conversion.source_sha256 != legacy_hashes[label]) or
+                    (recipe and recipe.recipe.legacy_sha256 != legacy_hashes[label])):
                 raise InputError("original changed after recipe analysis; scan again")
         except (InputError, OSError) as exc:
             problems.append(f"Could not fingerprint legacy input {label!r}: {exc}")
-    conflicts, splits = _selected_id_conflicts(inventory, closure, legacy_hashes, output_pack)
+    conflicts, splits = _selected_id_conflicts(inventory, scoped_originals, legacy_hashes, output_pack)
     for conflict in conflicts:
         archives = ", ".join(f"{row['archive']!r} (Minecraft {row['minecraft'] or 'unknown'})" for row in conflict["archives"])
         problems.append(f"Distinct selected originals share mod ID {conflict['id']!r}: {archives}. "
@@ -878,8 +888,7 @@ def _materialize(update: UpdatePlan, scratch: Path) -> UpdatePlan:
             verified = _native(jar, expected.label, neoforge)
             if (verified is None or not verified.target_evidence or verified.ids != expected.ids or
                     set(verified.dependencies) != set(expected.dependencies) or
-                    (verified.partial and not expected.recipe.preview) or
-                    (expected.recipe.method_imports and not verified.partial)):
+                    (verified.partial and not expected.recipe.preview) or (expected.partial and not verified.partial)):
                 raise InputError("Compiled JAR did not match the recipe's native IDs, versions, dependencies, or preview status")
             actual[expected] = replace(verified, recipe=expected.recipe)
             evidence[verified.path.name] = {**checked, "jar_sha256": verified.sha256}
