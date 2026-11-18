@@ -74,23 +74,36 @@ jobs:
             --max-time 60 --max-filesize 33554432 --output "$scratch/fml.zip" \
             "https://codeload.github.com/MinecraftForge/FML/zip/$ref"
           unzip -q -j "$scratch/fml.zip" "FML-$ref/conf/"{version.cfg,joined.srg,methods.csv,fields.csv,packages.csv} -d "$scratch/conf"
-          python -m mcmodup decompile-mod "$RUNNER_TEMP/Voltz_Server_v3.0.0c.zip" \
+          if ! python -m mcmodup decompile-mod "$RUNNER_TEMP/Voltz_Server_v3.0.0c.zip" \
             --mod mods/atomicscience.jar --source-version 1.6.4 --mcp "$scratch/conf" \
             --specialsource "$RUNNER_TEMP/SpecialSource-1.11.6-shaded.jar" --vineflower "$RUNNER_TEMP/vineflower-1.12.0.jar" \
-            --class atomicscience.fission.BlockUraniumOre -o "$scratch/mapped"
+            --class atomicscience.fission.BlockUraniumOre -o "$scratch/mapped" > "$scratch/decompile.log" 2>&1; then
+            python - "$scratch/decompile.log" <<'PY'
+          import pathlib
+          import sys
+          error = pathlib.Path(sys.argv[1]).read_text(errors="replace")[-2500:]
+          print("::error title=Historical mapping failed::" + error.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A"))
+          PY
+            exit 1
+          fi
           python - "$scratch/mapped" <<'PY'
           import json
           import pathlib
           import sys
           out = pathlib.Path(sys.argv[1])
           report = json.loads((out / "decompile-report.json").read_text())
-          assert report["mcp"]["minecraft"] == "1.6.4"
-          assert report["mod"]["sha256"] == "80cf5bd9d485377acde3822154a5db47804fab3e8f78c388cfcf529239655938"
-          assert report["source_files"] == ["atomicscience/fission/BlockUraniumOre.java"]
+          def require(condition, reason):
+              if not condition:
+                  print(f"::error title=Historical mapping failed::{reason}")
+                  raise SystemExit(1)
+          require(report["mcp"]["minecraft"] == "1.6.4", "Wrong MCP release")
+          require(report["mod"]["sha256"] == "80cf5bd9d485377acde3822154a5db47804fab3e8f78c388cfcf529239655938", "Wrong original JAR")
+          require(report["source_files"] == ["atomicscience/fission/BlockUraniumOre.java"], "Wrong selected class output")
           source = (out / "sources" / report["source_files"][0]).read_text()
-          assert all(name in source for name in ("randomDisplayTick(", "setHardness(", "blockIcon"))
-          assert not report["remaining_srg_symbols"]
-          assert not list(out.rglob("*.jar"))
+          missing = [name for name in ("randomDisplayTick", "setHardness", "blockIcon") if name not in source]
+          require(not missing, f"MCP names absent from the Java: {', '.join(missing)}")
+          require(not report["remaining_srg_symbols"], f"{len(report['remaining_srg_symbols'])} visible SRG symbols remained")
+          require(not list(out.rglob("*.jar")), "Unexpected binary in decompilation output")
           print("::notice title=Historical mapping checked::The exact Voltz Atomic Science class used MCP 8.11 names for both inherited methods and fields. No originals or references were published.")
           PY
       - name: Check machine recipe recovery on the historical Minechem release
