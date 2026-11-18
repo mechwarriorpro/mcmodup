@@ -21,7 +21,17 @@ TT_COMMIT = "c2e67665446ffada85ec9342384f578875cabb12"
 TT_SOURCE_HASH = "6ef30454521bfc65a894d3425784a3ccdd9931701edd50f0c483ef9cc3322ded"
 TT_ROOT = f"Thaumic-Tinkerer-1.21.1-{TT_COMMIT}"
 TT_LEGACY_HASH = "6aee6009a0ae0fa7929258f34530b1dc01c1245bfccae400fd673419ebe812b3"
-TINKERER_VERSION = "0.1.0-alpha.7-mcmodup.2"
+TINKERER_VERSION = "0.1.0-alpha.7-mcmodup.3"
+ENDER_STORAGE_VERSION = "2.13.0.191"
+CODE_CHICKEN_LIB_VERSION = "4.6.0.521"
+# Modrinth release identities, filenames, sizes and hashes for the staged tests. The build uses
+# the same Maven version IDs for its compile-only API when the pack doesn't contain the mods.
+ENDER_STORAGE_INPUTS = {
+    "enderstorage": ("BbrHg80P", "iDxzdaLT", f"EnderStorage-1.21.1-{ENDER_STORAGE_VERSION}.jar", 264089,
+                     "4a65d6c2d098e4db61237ff83b68f7d03d5dcd16572c6c12d159c9c1f2f49c7abcc1792432b0bd88589549cec8a4705b292492fbe1913b624537c2e4fbc968f2"),
+    "codechickenlib": ("2gq0ALnz", "tQEcfeph", f"CodeChickenLib-1.21.1-{CODE_CHICKEN_LIB_VERSION}.jar", 1562073,
+                       "ad315047f7a441a6347b0cab336bd0dda340d2fd221836e168831f7a309e63ad3fe98407b71c9bb3cbbfd6a95670a38b9e4c23c2a327edca4b497664f07c4e9d"),
+}
 SOURCE_TEMPLATES = Path(__file__).with_name("templates") / "source-ports"
 TC_RECIPE = SOURCE_TEMPLATES / "thaumcraft4-reload-preview.json"
 
@@ -81,6 +91,78 @@ def fire_with_native_flammability(text: str) -> bytes:
         final int blockFlammability = getBlockFlammability(world, pos, spread);""").encode()
 
 
+def ender_storage_overlays(upstream: ZipFile, neo: str) -> tuple[str, dict[str, bytes]]:
+    focus_path = f"{TT_ROOT}/common/src/main/java/thaumic/tinkerer/common/item/foci/ItemFocusEnderChest.java"
+    focus = upstream.read(focus_path).decode()
+    focus = change(focus, "import net.minecraft.network.chat.Component;", """import dev.architectury.platform.Platform;
+import java.util.List;
+import net.minecraft.network.chat.Component;
+import net.minecraft.server.level.ServerPlayer;""")
+    focus = change(focus, "import net.minecraft.world.item.Items;", "import net.minecraft.world.item.Items;\nimport net.minecraft.world.item.TooltipFlag;")
+    focus = change(focus, "import thaumic.tinkerer.common.research.TTResearchItem;",
+                   "import thaumic.tinkerer.common.research.TTResearchItem;\nimport thaumic.tinkerer.compat.enderstorage.EnderStorageCompat;")
+    focus = change(focus, """ * <p>The window is the vanilla one ({@code ChestMenu} of three rows over the player's ender chest). The EnderStorage
+ * branch of 1.7.10 (a different mod's chests) is not ported: that mod does not exist for 1.21.1.</p>""",
+                   """ * <p>With Ender Storage installed, sneak-use binds its chest or unbinds on obsidian. An unlinked
+ * focus, or a world without that optional mod, opens the vanilla Ender Chest.</p>""")
+    focus = change(focus, "    @Override\n    public ItemStack onFocusRightClick", """    public static boolean enderStorageLoaded() {
+        return Platform.isModLoaded("enderstorage");
+    }
+
+    @Override
+    public ItemStack onFocusRightClick""")
+    focus = change(focus, "        if (WandHelper.consumeAllVis(wandstack, player, VIS_USAGE, true, false)) {", """        if (enderStorageLoaded() && (level.isClientSide || !(player instanceof ServerPlayer server)
+                || EnderStorageCompat.tryCast(wandstack, server, VIS_USAGE))) return wandstack;
+        if (WandHelper.consumeAllVis(wandstack, player, VIS_USAGE, true, false)) {""")
+    focus = change(focus, '        return "TTEC" + super.getSortingHelper(focusstack);', """        return enderStorageLoaded() ? EnderStorageCompat.sortingKey(focusstack)
+                : "TTEC" + super.getSortingHelper(focusstack);""")
+    focus = change(focus, "    @Override\n    public AspectList getVisCost", """    @Override
+    public void appendHoverText(ItemStack stack, TooltipContext context, List<Component> tooltip, TooltipFlag flags) {
+        super.appendHoverText(stack, context, tooltip, flags);
+        if (enderStorageLoaded()) EnderStorageCompat.addTooltip(stack, tooltip);
+    }
+
+    @Override
+    public AspectList getVisCost""")
+    focus = change(focus, 'new ResearchPage("0"),', 'new ResearchPage(enderStorageLoaded() ? "ES" : "0"),')
+    oracle = f"{TT_ROOT}/common/src/gameTest/java/thaumic/tinkerer/testing/ParityRuntimeChecks.java"
+    parity = change(upstream.read(oracle).decode(), 'case "mod":\n                return false;',
+                    'case "mod":\n                return c.expr().equals("LoadedMods.enderStorageLoaded")\n'
+                    '                        && thaumic.tinkerer.common.item.foci.ItemFocusEnderChest.enderStorageLoaded();')
+    metadata = f"{TT_ROOT}/neoforge/src/main/resources/META-INF/neoforge.mods.toml"
+    toml = upstream.read(metadata) + f'''
+[[dependencies.thaumictinkerer]]
+modId="enderstorage"
+type="optional"
+versionRange="[{ENDER_STORAGE_VERSION}]"
+ordering="AFTER"
+side="BOTH"
+'''.encode()
+    es, ccl = (":".join(ENDER_STORAGE_INPUTS[name][:2]) for name in ("enderstorage", "codechickenlib"))
+    neo = change(neo, "dependencies {\n minecraft", """// Reuse exactly the selected pack libraries when present; absent integrations are compile-only.
+def buildInputs = fileTree(dir: providers.gradleProperty('mcmodupDependencyDir').get(), include: ['*.jar'])
+def provides = { name -> buildInputs.files.any { jar ->
+ new java.util.zip.ZipFile(jar).withCloseable { it.getEntry(name) != null }
+} }
+
+dependencies {
+ minecraft""")
+    neo = change(neo, " modImplementation fileTree(dir: providers.gradleProperty('mcmodupDependencyDir').get(), include: ['*.jar'])",
+                 f""" modImplementation buildInputs
+ if (!provides('codechicken/enderstorage/api/Frequency.class')) modCompileOnly 'maven.modrinth:{es}'
+ if (!provides('codechicken/lib/colour/EnumColour.class')) modCompileOnly 'maven.modrinth:{ccl}'""")
+    bridge = f"{TT_ROOT}/compat/src/main/java/thaumic/tinkerer/compat/enderstorage/EnderStorageCompat.java"
+    deviations = f"{TT_ROOT}/docs/deviations/Foci.md"
+    doc = change(upstream.read(deviations).decode(), """The EnderStorage branch of 1.7.10 (`EnderStorageFunctions`, the research page
+`ES`) is not ported: that mod does not exist for 1.21.1; the lang key `FOCUS_ENDER_CHEST.ES` stays unused.""",
+                 f"""The optional Ender Storage {ENDER_STORAGE_VERSION} branch restores the `ES` page and linking. Sneak-use
+an Ender Storage chest to link its colours and owner UUID, or obsidian to reset to vanilla storage, without spending vis.
+The focus stores a new native stack tag; this does not migrate legacy wands or Ender Storage data.""")
+    doc = change(doc, "the EnderStorage page and branch, the Botania and Blood Magic", "the Botania and Blood Magic")
+    return neo, {focus_path: focus.encode(), oracle: parity.encode(), metadata: toml, deviations: doc.encode(),
+                 bridge: (SOURCE_TEMPLATES / "EnderStorageCompat.java").read_bytes()}
+
+
 def prepare(archive: Path, output: Path) -> Path:
     if archive.stat().st_size > 8 * 1024 * 1024 or digest(archive) != TT_SOURCE_HASH:
         raise InputError("Need the exact Thaumic Tinkerer alpha.7 source ZIP")
@@ -115,6 +197,7 @@ def prepare_pair(archive: Path, output: Path, *, version: str = TINKERER_VERSION
  modImplementation "thaumcraft:Thaumcraft-neoforge:$rootProject.thaumcraft_version"
 ''', ''' modImplementation fileTree(dir: providers.gradleProperty('mcmodupDependencyDir').get(), include: ['*.jar'])
 ''')
+            neo, ender_storage_files = ender_storage_overlays(upstream, neo)
             replacements = {root_script: '''// NeoForge-only build. No Fabric or mavenLocal dependency probe.
 plugins { id 'dev.architectury.loom' version '1.11.458' apply false }
 '''.encode(), loader_script: neo.encode(),
@@ -131,9 +214,12 @@ plugins { id 'dev.architectury.loom' version '1.11.458' apply false }
                     "        OreClusterGenerator.generate(populationRandom, chunkX, chunkZ, density,").encode(),
                 imbued_fire: fire_with_native_flammability(upstream.read(imbued_fire).decode()),
                 properties: change(upstream.read(properties).decode(), "mod_version=0.1.0-alpha.7\n", f"mod_version={version}\n").encode(),
+                **ender_storage_files,
             }
             for info in upstream.infolist():
-                scratch.writestr(info, replacements.get(info.filename, upstream.read(info)))
+                scratch.writestr(info, replacements.pop(info.filename) if info.filename in replacements else upstream.read(info))
+            for path, data in sorted(replacements.items()):
+                scratch.writestr(ZipInfo(path), data)
             for path, name in ((client, "BedrockEffects.java"), (worldgen, "LegacyBedrockSeed.java")):
                 scratch.writestr(ZipInfo(path + name), (SOURCE_TEMPLATES / name).read_bytes())
         manifest = json.loads(TC_RECIPE.read_text(encoding="utf-8"))
@@ -151,6 +237,7 @@ plugins { id 'dev.architectury.loom' version '1.11.458' apply false }
             "dependencies": [
                 {"id": "architectury", "range": "[13.0.11,)"},
                 {"id": "thaumcraft", "range": "*"},
+                {"id": "enderstorage", "range": f"[{ENDER_STORAGE_VERSION}]", "type": "optional"},
                 *({"id": key, "range": "*", "type": "optional"} for key in ("emi", "jei", "jade")),
             ],
             "artifact": f"neoforge/build/libs/ThaumicTinkerer-neoforge-{version}.jar",
@@ -173,6 +260,8 @@ plugins { id 'dev.architectury.loom' version '1.11.458' apply false }
                 "Bedrock uses the legacy ore-population seed and full-bright lightmap input, base fog and cloud height. "
                 "Modern tag order, overlapping cluster winners and the final client renderer can differ.",
                 "Known omissions include ComputerCraft, OpenComputers and IC2 integrations; old worlds, client parity and other add-ons are unverified.",
+                f"Optional Ender Storage {ENDER_STORAGE_VERSION} restores Ender Rift links for new worlds. "
+                "Install it and compatible CodeChicken Lib in the target pack to use it; no legacy links or inventories are migrated.",
                 "The add-on is CC BY-NC-SA 3.0. Thaumcraft code and assets have separate terms. Keep these outputs local.",
             ],
         }

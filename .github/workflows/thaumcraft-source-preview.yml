@@ -10,6 +10,9 @@ on:
       with-computercraft:
         type: boolean
         default: false
+      with-ender-storage:
+        type: boolean
+        default: false
   push:
     paths:
       - '.github/workflows/thaumcraft-source-preview.yml'
@@ -53,6 +56,7 @@ jobs:
         env:
           TEST_TINKERER: ${{ inputs.with-tinkerer && 'true' || 'false' }}
           TEST_COMPUTERCRAFT: ${{ inputs.with-computercraft && 'true' || 'false' }}
+          TEST_ENDER_STORAGE: ${{ inputs.with-ender-storage && 'true' || 'false' }}
         run: |
           scratch=$(mktemp -d "$RUNNER_TEMP/tc4-preview.XXXXXX")
           trap 'rm -rf -- "$scratch"' EXIT
@@ -88,6 +92,15 @@ jobs:
               printf '%s  %s\n' "$cc_sha512" "$target/mods/$cc_jar" | sha512sum --check
               build+=(--keep-recipe "$scratch/pair")
               smoke+=(--computercraft-source "$scratch/pair/tinkerer-neoforge-source.zip")
+            fi
+            if [[ "$TEST_ENDER_STORAGE" == true ]]; then
+              python -c 'from mcmodup.tinkerer_port import ENDER_STORAGE_INPUTS; [print(*pin) for pin in ENDER_STORAGE_INPUTS.values()]' > "$scratch/ender-storage-inputs.txt"
+              while read -r project release jar size sha512; do
+                curl "${curl_opts[@]}" --max-filesize "$size" -o "$target/mods/$jar" \
+                  "https://cdn.modrinth.com/data/$project/versions/$release/$jar"
+                printf '%s  %s\n' "$sha512" "$target/mods/$jar" | sha512sum --check
+              done < "$scratch/ender-storage-inputs.txt"
+              smoke+=(--with-ender-storage)
             fi
             smoke+=(--with-tinkerer)
           fi

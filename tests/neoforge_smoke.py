@@ -11,11 +11,11 @@ from mcmodup.audit import ModMetadata
 from mcmodup.port import _build_gradle, _metadata, write_workspace
 
 
-def empty_test_structure() -> bytes:
-    """Minimal, empty 1x1x1 structure in named NBT for registry and gameplay checks."""
+def empty_test_structure(size: int = 1) -> bytes:
+    """Minimal, empty cubic structure in named NBT for registry and gameplay checks."""
     nbt = (b"\x0a\x00\x00"                         # root compound
            b"\x03\x00\x0bDataVersion" + struct.pack(">i", 3955)
-           + b"\x09\x00\x04size\x03" + struct.pack(">4i", 3, 1, 1, 1)
+           + b"\x09\x00\x04size\x03" + struct.pack(">4i", 3, size, size, size)
            + b"\x09\x00\x07palette\x0a\x00\x00\x00\x01\x08\x00\x04Name\x00\x0dminecraft:air\x00"
            + b"\x09\x00\x06blocks\x0a\x00\x00\x00\x00"
            + b"\x09\x00\x08entities\x0a\x00\x00\x00\x00\x00")

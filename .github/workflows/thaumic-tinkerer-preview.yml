@@ -16,7 +16,10 @@ on:
       - 'tests/thaumcraft_pack_smoke.py'
       - 'mcmodup/templates/source-ports/**'
       - 'tests/fixtures/Thaumcraft*Smoke.java'
+      - 'tests/fixtures/ThaumcraftFlatPreset.json'
       - 'tests/fixtures/TinkererPackSmoke.java'
+      - 'tests/fixtures/Ender*PackSmoke.java'
+      - 'tests/neoforge_smoke.py'
 
 permissions:
   contents: read
@@ -27,3 +30,4 @@ jobs:
     with:
       with-tinkerer: true
       with-computercraft: true
+      with-ender-storage: true

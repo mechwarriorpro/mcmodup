@@ -13,7 +13,7 @@ from mcmodup.port import _build_gradle, _metadata, write_workspace
 from mcmodup.source_ports import digest
 from native_pack_smoke import run_gradle
 from neoforge_smoke import empty_test_structure
-from mcmodup.tinkerer_port import TT_ROOT
+from mcmodup.tinkerer_port import CODE_CHICKEN_LIB_VERSION, ENDER_STORAGE_INPUTS, ENDER_STORAGE_VERSION, TT_ROOT
 from mcmodup.tinkerer_computercraft import CC_CASES, CC_SHA512, CC_VERSION
 
 
@@ -36,7 +36,8 @@ def copy_mods(staged: Path, project: Path, expected: dict[str, str]) -> Path:
     return mods
 
 
-def check_client(staged: Path, project: Path, expected: dict[str, str], with_tinkerer: bool, with_cc: bool) -> None:
+def check_client(staged: Path, project: Path, expected: dict[str, str], with_tinkerer: bool, with_cc: bool,
+                 with_ender_storage: bool) -> None:
     write_workspace(project, {
         "settings.gradle": "rootProject.name = 'thaumcraft-client-test'\n",
         "gradle.properties": "org.gradle.jvmargs=-Xmx2G\n",
@@ -46,6 +47,7 @@ neoForge.runs.named('client') {{
     jvmArgument '-Xmx3G'
     systemProperty 'mcmodup.withTinkerer', '{str(with_tinkerer).lower()}'
     systemProperty 'mcmodup.withComputercraft', '{str(with_cc).lower()}'
+    systemProperty 'mcmodup.withEnderStorage', '{str(with_ender_storage).lower()}'
     programArguments.addAll '--width', '1024', '--height', '576'
 }}
 """,
@@ -106,7 +108,7 @@ def staged_flat_preset(staged: Path, built: dict[str, str]) -> str:
 
 
 def check_server(staged: Path, project: Path, expected: dict[str, str], with_tinkerer: bool,
-                 cc_fixtures: dict[str, bytes], flat_preset: str) -> None:
+                 cc_fixtures: dict[str, bytes], flat_preset: str, with_ender_storage: bool = False) -> None:
     java = f"src/main/java/{PACKAGE.replace('.', '/')}"
     gradle = _build_gradle(SERVER_ID, PACKAGE, "1.0.0") + f"""
 neoForge.runs.create('gameTestServer') {{
@@ -114,6 +116,7 @@ neoForge.runs.create('gameTestServer') {{
     gameDirectory = project.file('run')
     systemProperty 'neoforge.enabledGameTestNamespaces', '{SERVER_ID}'
     systemProperty 'mcmodup.withComputercraft', '{str(bool(cc_fixtures)).lower()}'
+    systemProperty 'mcmodup.withEnderStorage', '{str(with_ender_storage).lower()}'
 }}
 """
     files = {
@@ -127,12 +130,16 @@ neoForge.runs.create('gameTestServer') {{
     }
     if with_tinkerer:
         files[f"{java}/TinkererPackSmoke.java"] = (FIXTURES / "TinkererPackSmoke.java").read_bytes()
+        files[f"{java}/EnderRiftPackSmoke.java"] = (FIXTURES / "EnderRiftPackSmoke.java").read_bytes()
+        files[f"src/main/resources/data/{SERVER_ID}/structure/rift_room.nbt"] = empty_test_structure(8)
         gradle += "\ndependencies { compileOnly fileTree(dir: 'run/mods', include: ['*.jar']) }\n"
+    if with_ender_storage:
+        files[f"{java}/EnderStoragePackSmoke.java"] = (FIXTURES / "EnderStoragePackSmoke.java").read_bytes()
     files["build.gradle"] = gradle
     write_workspace(project, files)
     mods = copy_mods(staged, project, expected)
     log = run_gradle(project, "runGameTestServer")
-    tests = 1 + 3 * with_tinkerer + (len(CC_CASES) if cc_fixtures else 0)
+    tests = 1 + 4 * with_tinkerer + (len(CC_CASES) if cc_fixtures else 0) + with_ender_storage
     assert f"All {tests} required tests passed" in log, log[-12000:]
     assert mod_hashes(mods) == expected, "A server runtime input changed"
     print("Staged production Thaumcraft and Architectury passed the native NeoForge crucible smoke test without Connector.")
@@ -144,7 +151,8 @@ neoForge.runs.create('gameTestServer') {{
               "including live Lua calls to the peripherals, golem control, turtle crafting and gas removal.")
 
 
-def check(staged: Path, project: Path, with_tinkerer: bool = False, client: bool = False, cc_source: Path | None = None) -> None:
+def check(staged: Path, project: Path, with_tinkerer: bool = False, client: bool = False,
+          cc_source: Path | None = None, with_ender_storage: bool = False) -> None:
     report = json.loads((staged / REPORT_NAME).read_text(encoding="utf-8"))
     rows = {mod_id: row for row in report["files"] for mod_id in row["ids"]}
     expected = {Path(row["file"]).name: row["sha256"] for row in report["files"]}
@@ -158,6 +166,7 @@ def check(staged: Path, project: Path, with_tinkerer: bool = False, client: bool
     assert base["legacy_assets"]["original_count"] == 1091 and not base["legacy_assets"]["unmapped"], base["legacy_assets"]
     assert rows["architectury"]["action"] == "dependency"
     assert ("computercraft" in rows) == (cc_source is not None), "Supply --computercraft-source for the CC: Tweaked stage"
+    assert all((key in rows) == with_ender_storage for key in ENDER_STORAGE_INPUTS), "Unexpected Ender Storage or CodeChicken Lib stage"
     add_on, cc_fixtures = None, {}
     if with_tinkerer:
         assert set(built) == {"thaumcraft", "thaumictinkerer"}
@@ -178,8 +187,23 @@ def check(staged: Path, project: Path, with_tinkerer: bool = False, client: bool
             assert not any(n.startswith(("dan200/computercraft/", "org/squiddev/cobalt/", "com/jcraft/jzlib/")) for n in names)
             assert "data/thaumictinkerer/computercraft/turtle_upgrade/gas_remover.json" in names
         cc_fixtures = cc_test_sources(cc_source, add_on["source_sha256"])
+    es_files = set()
+    if with_ender_storage:
+        assert add_on is not None, "Ender Storage fixtures need the paired build"
+        for mod, version in (("enderstorage", ENDER_STORAGE_VERSION), ("codechickenlib", CODE_CHICKEN_LIB_VERSION)):
+            _, _, name, size, checksum = ENDER_STORAGE_INPUTS[mod]
+            file = staged / rows[mod]["file"]
+            assert file.name == name and rows[mod]["ids"][mod] == version
+            assert file.stat().st_size == size and digest(file, "sha512") == checksum
+            assert add_on["dependencies_sha256"][name] == expected[name]
+            es_files.add(name)
+        with ZipFile(staged / "mods" / built["thaumictinkerer"]) as jar:
+            assert not any(n.startswith("codechicken/") for n in jar.namelist()), "Ender Storage and CCL must not be bundled"
     flat_preset = staged_flat_preset(staged, built)
-    check_server(staged, project, expected, with_tinkerer, cc_fixtures, flat_preset)
+    check_server(staged, project, expected, with_tinkerer, cc_fixtures, flat_preset, with_ender_storage)
+    if with_ender_storage:
+        print(f"Ender Storage {ENDER_STORAGE_VERSION}: the staged Ender Rift opens the linked owner's remote inventory, "
+              "survives a wand serialization round trip, resets for free on obsidian, and retains the vanilla cast.")
     print(f"Thaumcraft preview: {base['gametests']['passed']} source GameTests; "
           f"{base['original_jar_checks']['passed']} original-JAR checks; "
           f"{len(base.get('converted_locales', []))} restored locale files; "
@@ -191,14 +215,16 @@ def check(staged: Path, project: Path, with_tinkerer: bool = False, client: bool
               f"{add_on['legacy_assets']['unmapped']} unverified of {add_on['legacy_assets']['original_count']} original paths. "
               "The staged Osmotic Enchanter uses crafted obsidian tiles through the staged base mod's API.")
     if client:
-        check_client(staged, project.with_name("client"), expected, with_tinkerer, bool(cc_fixtures))
-    if cc_source is not None:
-        # Remove only CC from separate test instances; do not rebuild or mutate the staged port JARs.
-        without_cc = {name: checksum for name, checksum in expected.items() if name != cc_file.name}
-        check_server(staged, project.with_name("server-no-cc"), without_cc, True, {}, flat_preset)
+        check_client(staged, project.with_name("client"), expected, with_tinkerer, bool(cc_fixtures), with_ender_storage)
+    absent = es_files | ({cc_file.name} if cc_source is not None else set())
+    if absent:
+        # Remove optional inputs in separate instances; do not rebuild or mutate either staged port.
+        plain = {name: checksum for name, checksum in expected.items() if name not in absent}
+        check_server(staged, project.with_name("server-no-optional"), plain, True, {}, flat_preset)
         if client:
-            check_client(staged, project.with_name("client-no-cc"), without_cc, True, False)
-        print("The same built Thaumcraft and Tinkerer JARs also passed with optional CC: Tweaked absent.")
+            check_client(staged, project.with_name("client-no-optional"), plain, True, False, False)
+        names = [name for enabled, name in ((cc_source is not None, "CC: Tweaked"), (with_ender_storage, "Ender Storage and CodeChicken Lib")) if enabled]
+        print(f"The same built Thaumcraft and Tinkerer JARs also passed without {' or '.join(names)}.")
 
 
 if __name__ == "__main__":
@@ -207,8 +233,9 @@ if __name__ == "__main__":
     parser.add_argument("--with-tinkerer", action="store_true")
     parser.add_argument("--client", action="store_true", help="also launch a graphical client (requires a display)")
     parser.add_argument("--computercraft-source", type=Path, help="exact Tinkerer source ZIP saved by build-jars --keep-recipe")
+    parser.add_argument("--with-ender-storage", action="store_true", help="test the exact Ender Storage and CodeChicken Lib in the stage")
     args = parser.parse_args()
-    if args.computercraft_source and not args.with_tinkerer:
-        parser.error("--computercraft-source requires --with-tinkerer")
+    if (args.computercraft_source or args.with_ender_storage) and not args.with_tinkerer:
+        parser.error("The integration checks require --with-tinkerer")
     with tempfile.TemporaryDirectory(prefix="mcmodup-thaumcraft-staged-test-") as directory:
-        check(args.staged, Path(directory) / "project", args.with_tinkerer, args.client, args.computercraft_source)
+        check(args.staged, Path(directory) / "project", args.with_tinkerer, args.client, args.computercraft_source, args.with_ender_storage)

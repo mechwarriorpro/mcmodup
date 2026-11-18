@@ -45,8 +45,11 @@ public final class ThaumcraftPackSmoke {
         helper.assertTrue(!mods.isLoaded("legacyconnector"), "Found the Connector in the native pack");
         helper.assertTrue(mods.isLoaded("computercraft") == Boolean.getBoolean("mcmodup.withComputercraft"),
             "The optional ComputerCraft mod must be present only in its dedicated test run");
+        boolean withEnderStorage = Boolean.getBoolean("mcmodup.withEnderStorage");
+        helper.assertTrue(mods.isLoaded("enderstorage") == withEnderStorage && mods.isLoaded("codechickenlib") == withEnderStorage,
+            "Ender Storage and CodeChicken Lib are loaded only in their integration run");
         var dir = Path.of("mods").toRealPath();
-        for (var id : new String[]{"thaumcraft", "architectury", "thaumictinkerer", "computercraft"}) {
+        for (var id : new String[]{"thaumcraft", "architectury", "thaumictinkerer", "computercraft", "enderstorage", "codechickenlib"}) {
             if (!mods.isLoaded(id)) continue;
             var path = mods.getModFileById(id).getFile().getFilePath().toRealPath();
             helper.assertTrue(Files.isRegularFile(path) && dir.equals(path.getParent()),
