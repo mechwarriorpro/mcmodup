@@ -10,11 +10,11 @@ import sys
 import traceback
 from zipfile import ZipFile
 
-from legacy_recipe_fixture import run_server
 from mixed_legacy_pack_smoke import CCL, MULTIPART, note
 from native_pack_smoke import run_gradle
 from pack_release_smoke import boot
 from updater_sample import fingerprints, run
+from voltz_legacy import FIXTURES, FORGE_SHA256, VOLTZ_SHA256, probe, unpack
 
 from mcmodup.audit import ModMetadata
 from mcmodup.classfiles import read_class
@@ -25,58 +25,18 @@ from mcmodup.port import _build_gradle, _metadata, empty_test_structure, write_w
 from mcmodup.runtime import file_digest
 
 
-VOLTZ_SHA256 = "2eda607746a22edbf45612243adce37a876251e36d46c692a48344fe98eec84e"
-FORGE_SHA256 = "72a0eb2d239a878ba0ef5c0d2a8e78ef162580e3ab285eb79fb995981d1c06c8"
-SERVER_SHA256 = "f132f35de7202137ac86ab5b9829d191caeb286b79111cfc2b09df5789379c9b"
 ICBM = "mods/icbm-1.4.1.344.jar"
-PROVIDERS = ("mods/calclavia-core-development-1.2.0.6-main.jar", "mods/universal-electricity-3.1.0.74-core.jar",
-             "mods/codechickencore 0.9.0.7.jar", "mods/notenoughitems 1.6.1.8.jar",
-             "mods/1.6.4/CodeChickenLib-universal-1.6.4-1.0.0.61.jar", "mods/1.6.4/ForgeMultipart-universal-1.6.4-1.0.0.250.jar")
-FIXTURES = Path(__file__).with_name("fixtures")
+ATOMIC_SCIENCE = "mods/atomicscience.jar"
+ATOMIC_SHA256 = "80cf5bd9d485377ecde3822154a5db47804fab3e8f78c388cfcf529239655938"
 
 
-def unpack(pack: ZipFile, member: str, path: Path) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(pack.read(member))
+def atomic(root: Path) -> None:
+    observed = probe(root, "LegacyAtomicThermometer", {ATOMIC_SCIENCE: ATOMIC_SHA256}, ("AtomicScience",), "MCMODUP_ATOMIC")
+    note("Exact Atomic Science thermometer baseline", observed)
 
 
 def legacy(root: Path) -> None:
-    source = root / "voltz.zip"
-    assert file_digest(source) == VOLTZ_SHA256
-    server = root / "voltz-server"
-    server.mkdir()
-    with ZipFile(source) as pack:
-        for member in ("Voltz.jar", "minecraft_server.1.6.4.jar", ICBM, *PROVIDERS):
-            unpack(pack, member, server / member)
-        for member in pack.namelist():
-            if member.startswith("libraries/") and member.endswith(".jar"):
-                assert not set(member.split("/")) & {"", ".", ".."}, member
-                unpack(pack, member, server / member)
-        config = pack.read("config/modstats.cfg").replace(b"B:AllowUpdates=true", b"B:AllowUpdates=false")
-        assert b"B:AllowUpdates=false" in config
-        for name in ("ICBM", "Calclavia", "UniversalElectricity", "CodeChickenCore", "multipart", "forge"):
-            path = f"config/{name}.cfg"
-            unpack(pack, path, server / path)
-        (server / "config/modstats.cfg").write_bytes(config)
-    assert file_digest(server / ICBM) == LEGACY_SHA256
-    assert file_digest(server / "Voltz.jar") == FORGE_SHA256
-    assert file_digest(server / "minecraft_server.1.6.4.jar") == SERVER_SHA256
-    classes = root / "legacy-probe"
-    classes.mkdir()
-    jdk = Path(os.environ["JAVA_HOME"]) / "bin"
-    version = subprocess.run([jdk / "java", "-version"], text=True, capture_output=True, check=True, timeout=15)
-    assert 'version "1.7.' in (version.stderr + version.stdout), "Use JDK 7 for the original Voltz runtime"
-    built = subprocess.run([jdk / "javac", "-proc:none", "-encoding", "UTF-8", "-classpath", str(server / "Voltz.jar"),
-                            "-d", str(classes), str(FIXTURES / "LegacyIcbmPlateSmoke.java")], capture_output=True, text=True, timeout=60)
-    assert built.returncode == 0, built.stderr[-2400:]
-    with ZipFile(server / "mods/mcmodup-plate-check.jar", "x") as probe:
-        for path in classes.rglob("*.class"):
-            probe.write(path, path.relative_to(classes).as_posix())
-    # The original FML sorts LaunchWrapper's active tweaker list with
-    # Collections.sort; Java 8 invalidates the active iterator. Use Java 7
-    # and the bundled launcher rather than patching any original JAR.
-    observed = run_server(server, [str(jdk / "java"), "-Xmx1G", "-Djava.awt.headless=true", "-jar", "Voltz.jar", "nogui"],
-                          legacy=True, success_marker="MCMODUP_PLATE_PASS", failure_marker="MCMODUP_PLATE_FAIL")
+    observed = probe(root, "LegacyIcbmPlateSmoke", {ICBM: LEGACY_SHA256}, ("ICBM",), "MCMODUP_PLATE")
     note("Exact Voltz glass plate baseline", observed)
 
 
@@ -158,11 +118,11 @@ neoForge.runs.create('gameTestServer') {{
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("root", type=Path)
-    parser.add_argument("side", choices=("legacy", "modern"))
+    parser.add_argument("side", choices=("legacy", "modern", "atomic"))
     args = parser.parse_args()
     try:
-        {"legacy": legacy, "modern": modern}[args.side](args.root.resolve())
+        {"legacy": legacy, "modern": modern, "atomic": atomic}[args.side](args.root.resolve())
     except Exception:
         if os.environ.get("GITHUB_ACTIONS") == "true":
-            note(f"ICBM plate {args.side} probe failed", traceback.format_exc()[-5500:], level="error")
+            note(f"Voltz {args.side} probe failed", traceback.format_exc()[-5500:], level="error")
         raise
