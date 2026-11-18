@@ -10,6 +10,7 @@ from . import MINECRAFT_VERSION, NEOFORGE_VERSION, SOURCE_VERSIONS
 from .api_rules import rules_for, source_symbols
 from .classfiles import Symbol
 from .inputs import InputError, ModInput
+from .versions import declared_version
 
 
 RULES = [
@@ -224,6 +225,8 @@ def audit(source: ModInput, source_version: str | None = None, *,
             for mod in result.mods:
                 if mod.mod_id == mod_id:
                     mod.dependencies.extend(metadata.dependencies)
+                    if not declared_version(mod.version) and declared_version(metadata.version):
+                        mod.version = metadata.version
 
     declared = {e.version for e in result.version_evidence}
     name = filename if filename is not None else source.path.name

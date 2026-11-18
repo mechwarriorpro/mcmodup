@@ -4,9 +4,7 @@ from collections import defaultdict, deque
 from dataclasses import dataclass, field, replace
 from io import BytesIO
 import json
-import os
 from pathlib import Path
-import re
 import shutil
 import tempfile
 import tomllib
@@ -14,150 +12,29 @@ from zipfile import BadZipFile, ZipFile
 import zlib
 
 from . import MINECRAFT_VERSION
-from .api_rules import platform_symbol
-from .audit import FILENAME_VERSION
 from .catalogs import PROFILES
-from .classfiles import CLASS_LIMIT
+from .classfiles import CLASS_LIMIT, class_entries, read_class
 from .inputs import InputError, TEXT_LIMIT, open_input
-from .pack import ARCHIVE_EXTENSIONS, LOADER_IDS, STANDARD_PREFIXES, PackMod, _declared_requests, _load
-from .source_ports import BuildOptions, Dependency, MOD_ID, SourcePort, build, load_ports, require_jdk
+from .legacy_dependencies import LegacyDependencies, legacy_conflicts
+from .native_resolution import Resolution, dependency_report, resolve
+from .pack import PackMod, _load
+from .private_libraries import PRIVATE_ROOT, PrivateLibrary, inspect as inspect_private_libraries
+from .runtime import ARCHIVE_EXTENSIONS, InstanceRuntime, Platform, discover, instance_runtime, local_files
+from .source_ports import BuildOptions, Dependency, MOD_ID, SHA256, SourcePort, build, load_ports, require_jdk
 from .source_ports import digest as _digest, safe_component as _safe_filename
+from .versions import matches, supported_range
 
 
 NATIVE_META = "META-INF/neoforge.mods.toml"
 CONNECTOR_PREFIXES = (b"legacyconnector/", b"org/kylepitcock/legacyconnector/", b"org.kylepitcock.legacyconnector.")
 CONNECTOR_ENTRIES = {"META-INF/legacyconnector/provenance.json", "META-INF/legacyconnector/legacyconnector-runtime.jar",
                      "org/kylepitcock/legacyconnector/loader/LegacyModLocator.class"}
-ORDERED_VERSION = re.compile(r"([0-9]+(?:\.[0-9]+)*)(?:-(alpha|beta|rc)(?:[.-]?([0-9]+))?)?", re.I)
-QUALIFIER = {"alpha": -3, "beta": -2, "rc": -1, "": 0}
-NEOFORGE_JAR = re.compile(r"neoforge-(21\.1\.\d+)(?:-universal)?\.jar", re.I)
-LEGACY_CLIENTS = {  # Official vanilla client fingerprints, also used by upstream's version detection tooling.
-    "465378c9dc2f779ae1d6e8046ebc46fb53a57968": "1.5.2",
-    "1703704407101cf72bd88e68579e3696ce733ecd": "1.6.4",
-    "e80d9b3bf5085002218d4be59e668bac718abbc6": "1.7.10",
-}
 MAX_ARCHIVES = 4096
 REPORT_NAME = "update-report.json"
 
 
-def _ordered(value: str) -> tuple[tuple[int, ...], int, int] | None:
-    base = value.partition("+")[0]
-    if len(base) > 64 or (match := ORDERED_VERSION.fullmatch(base)) is None:
-        return None
-    parts = [int(part) for part in match[1].split(".")]
-    while parts and parts[-1] == 0:
-        parts.pop()
-    return tuple(parts), QUALIFIER[(match[2] or "").lower()], int(match[3] or "0")
-
-
-def matches(version: str, spec: str) -> bool:
-    """Check a literal or a single numeric/alpha/beta/rc Maven interval; don't guess other ranges."""
-    spec = spec.strip()
-    if spec in {"", "*"}:
-        return True
-    if not version or any(char in version for char in "${}@"):
-        return False
-    if spec.startswith("[") and spec.endswith("]") and "," not in spec:
-        spec = spec[1:-1].strip()
-        if not spec or any(c in spec for c in "[]()*"):
-            return False
-    if not spec.startswith(("[", "(")):
-        return version.casefold() == spec.casefold()
-    if not spec.endswith(("]", ")")):
-        return False
-    bounds = [value.strip() for value in spec[1:-1].split(",")]
-    actual = _ordered(version)
-    if len(bounds) != 2 or not any(bounds) or actual is None:
-        return False
-    lo, hi = (_ordered(value) if value else None for value in bounds)
-    if (bounds[0] and lo is None) or (bounds[1] and hi is None):
-        return False
-    return ((lo is None or actual > lo or (actual == lo and spec[0] == "[")) and
-            (hi is None or actual < hi or (actual == hi and spec[-1] == "]")))
-
-
-def _files(root: Path, directory: str) -> list[Path]:
-    base = root / directory
-    if base.is_symlink():
-        raise InputError(f"Use a real {directory}/ folder, not a symbolic link: {root}")
-    if not base.is_dir():
-        return []
-    result = []
-
-    def onerror(exc: OSError) -> None:
-        raise exc
-
-    for current, dirs, files in os.walk(base, onerror=onerror):
-        parent = Path(current)
-        dirs[:] = sorted(name for name in dirs if not name.startswith("."))
-        for name in (*dirs, *files):
-            if (parent / name).is_symlink():
-                raise InputError(f"Symbolic links are not scanned: {parent / name}")
-        result.extend(parent / name for name in sorted(files) if (parent / name).is_file())
-    return sorted(result)
-
-
 def _archive(path: Path) -> bool:
     return path.suffix.lower() in ARCHIVE_EXTENSIONS
-
-
-@dataclass(frozen=True)
-class Platform:
-    minecraft: list[tuple[str, str]]
-    loaders: list[tuple[str, str]]
-    forge: list[str]
-
-    @property
-    def neoforge(self) -> str | None:
-        versions = {version for version, _ in self.loaders}
-        return next(iter(versions)) if len(versions) == 1 else None
-
-    @property
-    def legacy(self) -> str | None:
-        versions = {version for version, _ in self.minecraft if version in LEGACY_CLIENTS.values()}
-        return next(iter(versions)) if len(versions) == 1 else None
-
-    def report(self) -> dict:
-        return {"minecraft": [{"version": v, "file": f} for v, f in self.minecraft],
-                "neoforge": self.neoforge, "neoforge_files": [f for _, f in self.loaders], "forge_files": self.forge}
-
-
-def _platform(root: Path, bins: list[Path]) -> Platform:
-    game, neo, forge = set(), set(), set()
-    for path in filter(_archive, bins):
-        filename = path.name.lower()
-        loader_match = NEOFORGE_JAR.fullmatch(filename)
-        mc_name = filename.startswith(("minecraft", "client-", "server-")) or re.fullmatch(r"1\.\d+(?:\.\d+)?\.jar", filename)
-        forge_name = filename == "modpack.jar" or re.match(r"(?:minecraftforge|forge|fml)(?:[-_.]|$)", filename)
-        if not (loader_match or mc_name or forge_name):
-            continue
-        label = path.relative_to(root).as_posix()
-        try:
-            with open_input(path) as jar:
-                if loader_match and "net/neoforged/neoforge/common/NeoForge.class" in jar.files:
-                    neo.add((loader_match[1], label))
-                if forge_name and ({"net/minecraftforge/common/MinecraftForge.class", "cpw/mods/fml/common/Loader.class"} & jar.files.keys()):
-                    forge.add(label)
-                    game.update((v, label) for v in FILENAME_VERSION.findall(filename))
-                if not mc_name:
-                    continue
-                if "version.json" in jar.files:
-                    v = json.loads(jar.text("version.json"))
-                    if isinstance(v, dict):
-                        version = v.get("id") or v.get("name")
-                        if isinstance(version, str) and re.fullmatch(r"1\.\d+(?:\.\d+)?", version):
-                            game.add((version, label))
-                elif "META-INF/versions.list" in jar.files:
-                    for line in jar.text("META-INF/versions.list").splitlines():
-                        fields = line.split("\t")
-                        if len(fields) == 3 and fields[1] == MINECRAFT_VERSION and f"META-INF/versions/{fields[2]}" in jar.files:
-                            game.add((MINECRAFT_VERSION, label))
-                if version := LEGACY_CLIENTS.get(_digest(path, "sha1")):
-                    game.add((version, label))
-        except (InputError, OSError, ValueError, RecursionError):
-            # Unreadable platform candidates do not constitute evidence of an installed runtime.
-            continue
-    return Platform(sorted(game), sorted(neo), sorted(forge))
 
 
 @dataclass(eq=False)
@@ -172,6 +49,10 @@ class NativeMod:
     partial: bool = False
     recipe: SourcePort | None = None
     original: Path | None = None
+    classes: frozenset[str] = frozenset()
+    private_libraries: tuple[PrivateLibrary, ...] = ()
+    private_references: frozenset[str] = frozenset()
+    embedded: tuple[str, ...] = ()
 
 
 def _main_manifest(text: str) -> dict[str, str]:
@@ -192,6 +73,8 @@ def _native(path: Path, label: str, neoforge: str, installed: bool = False) -> N
         if not any(name.endswith(".class") for name in entries):
             raise InputError("No compiled mod code in this native JAR")
         manifest = (_main_manifest(jar.text("META-INF/MANIFEST.MF")) if "META-INF/MANIFEST.MF" in entries else {})
+        if {"fmlcoreplugin", "fmlat", "tweakclass"} & manifest.keys():
+            raise InputError("Legacy launcher hooks are not native NeoForge code")
         try:
             data = tomllib.loads(jar.text(NATIVE_META))
         except (ValueError, RecursionError) as exc:
@@ -223,14 +106,20 @@ def _native(path: Path, label: str, neoforge: str, installed: bool = False) -> N
                 name, spec = row.get("modId"), row.get("versionRange", "")
                 if not isinstance(name, str) or not MOD_ID.fullmatch(name) or not isinstance(spec, str):
                     raise InputError(f"Invalid dependency in {mod_id}")
-                if name == "legacyconnector":
-                    raise InputError(f"{mod_id} declares a dependency on Legacy Connector")
+                if name in {"legacyconnector", "forge", "fml"}:
+                    runtime = "Legacy Connector" if name == "legacyconnector" else "legacy/non-NeoForge loaders"
+                    raise InputError(f"{mod_id} declares a dependency on {runtime}")
                 kind = row.get("type", "required" if row.get("mandatory", True) else "optional")
+                if isinstance(kind, str):
+                    kind = kind.casefold()
+                spec = spec.replace("${file.jarVersion}", manifest.get("implementation-version", "${file.jarVersion}"))
                 if kind not in ("incompatible", "required", "optional", "discouraged"):
                     raise InputError(f"Unknown NeoForge dependency type in {mod_id}")
                 if name in platform or name in ids:
                     actual = platform[name] if name in platform else ids[name]
                     fits = matches(actual, spec)
+                    if kind != "discouraged" and not supported_range(spec):
+                        raise InputError(f"{mod_id}: unsupported {name} version range {spec!r}")
                     if (kind in {"required", "optional"} and not fits) or (kind == "incompatible" and fits):
                         raise InputError(f"{mod_id}: incompatible {name} {actual} (declared {kind} {spec!r})")
                     if name in platform and kind in {"required", "optional"}:
@@ -238,12 +127,15 @@ def _native(path: Path, label: str, neoforge: str, installed: bool = False) -> N
                 elif kind != "discouraged":
                     requirements.add(Dependency(name, spec, kind))
         # Check actual class constants too, not only dependency declarations. Never load these classes.
-        _check_code(entries, jar.read)
+        refs: set[str] = set()
+        embedded = _check_code(entries, jar.read, private_refs=refs)
+        private = inspect_private_libraries(jar, ids, {dep.mod_id for dep in requirements})
         return NativeMod(path, label, ids, tuple(sorted(requirements, key=lambda d: (d.mod_id, d.version, d.kind))),
-                         installed, evidence, checksum, partial)
+                         installed, evidence, checksum, partial, classes=frozenset(class_entries(entries)),
+                         private_libraries=private, private_references=frozenset(refs), embedded=embedded)
 
 
-def _check_code(entries, read, *, nested: bool = False) -> None:
+def _check_code(entries, read, *, nested: bool = False, private_refs: set[str] | None = None) -> tuple[str, ...]:
     if CONNECTOR_ENTRIES.intersection(entries) or any(name.startswith(("legacyconnector/", "org/kylepitcock/legacyconnector/"))
                                                      for name in entries):
         raise InputError("Legacy Connector and its cached derivatives are not standalone updates")
@@ -256,6 +148,8 @@ def _check_code(entries, read, *, nested: bool = False) -> None:
                 raise InputError(f"{name} refers to Legacy Connector")
             if b"cpw/mods/fml/" in data:
                 raise InputError(f"{name} still uses the legacy FML API")
+            if b"mcmodup_private/" in data and private_refs is not None:
+                private_refs.update(ref.owner for ref in read_class(data).references if ref.owner.startswith(PRIVATE_ROOT))
     # Inspect NeoForge Jar-in-Jar payloads as well. They aren't taken as replacements for
     # standalone mod IDs: version negotiation happens in the target loader, not in this planner.
     embedded = sorted(name for name in entries if name.startswith("META-INF/jarjar/") and name.endswith(".jar"))
@@ -283,9 +177,10 @@ def _check_code(entries, read, *, nested: bool = False) -> None:
                     if any(isinstance(row, dict) and row.get("modId") == "legacyconnector"
                            for row in [*rows, *(d for deps in includes.values() if isinstance(deps, list) for d in deps)]):
                         raise InputError(f"Embedded {name} contains or depends on Legacy Connector")
-                _check_code(names, inner_read, nested=True)
+                _check_code(names, inner_read, nested=True, private_refs=private_refs)
         except (BadZipFile, ValueError, RuntimeError, OSError, zlib.error) as exc:
             raise InputError(f"Could not verify embedded {name}: {exc}") from exc
+    return tuple(embedded)
 
 
 @dataclass
@@ -329,6 +224,9 @@ class UpdateInventory:
     recipes: dict[str, NativeMod] = field(default_factory=dict)
     recipe_issues: dict[str, str] = field(default_factory=dict)
     approved_sources: dict[str, SourcePort] = field(default_factory=dict)
+    legacy_declarations: dict[str, list[dict]] = field(default_factory=dict)
+    legacy_binary: dict[str, dict] = field(default_factory=dict)
+    id_map: Path | None = None
 
     def native_ids(self, item: LegacyEntry) -> set[str]:
         return {self.aliases.get(mod_id, mod_id) for mod_id in item.ids}
@@ -358,6 +256,7 @@ class UpdateInventory:
                 status, reason = "blocked", item.problem or ("No matching local NeoForge build for " + ", ".join(missing) + "." if missing else
                                                             "No recognizable legacy mod IDs; automatic matching is unavailable.")
             rows.append({"id": label, "name": item.name, "minecraft": item.version, "mods": list(item.ids),
+                         "releases": {m.mod_id: m.version for m in item.audit.audit.mods if m.mod_id} if item.audit else {},
                          "native_ids": sorted(ids), "status": status, "reason": reason, "addons": len(self.addons.get(label, {})),
                          **({"source_build": recipe.recipe.describe()} if recipe else {})})
         return {"source": self.source.name, "target": self.target.name, "minecraft": MINECRAFT_VERSION,
@@ -366,53 +265,37 @@ class UpdateInventory:
                 "target_bin": self.target_platform.report(), "rows": rows, "warnings": self.warnings, "target_issues": self.target_issues}
 
 
-def _legacy(path: Path, label: str, legacy_version: str | None) -> LegacyEntry:
+def _legacy(path: Path, label: str, runtime: Platform | None) -> LegacyEntry:
     try:
-        version_folder = next((value for value in Path(label).parts[1:-1] if re.fullmatch(r"1\.\d+(?:\.\d+)?", value)), None)
-        # Exact declarations win over a bin-derived fallback. Never use a modern daughter JAR as a legacy API.
-        audit = _load(label, path, None)
-        declared = {e.version for e in audit.audit.version_evidence if e.kind == "declared"}
-        if len(declared) > 1 or (version_folder and declared and version_folder not in declared):
-            return LegacyEntry(path, label, audit, "Conflicting source Minecraft versions; review the input first.")
-        hints = set(FILENAME_VERSION.findall(path.stem))
-        audit.audit.source_version = audit.audit.source_version or version_folder or (next(iter(hints)) if len(hints) == 1 else legacy_version)
-        return LegacyEntry(path, label, audit, "Unreadable legacy bytecode" if audit.corrupt_classes and not audit.classes else "")
+        audit = _load(label, path, None, runtime)
+        known = {e.version for e in audit.audit.version_evidence if e.kind in {"declared", "versioned folder"}}
+        problem = ("Conflicting source Minecraft versions; review the input first." if len(known) > 1 else
+                   "Unreadable legacy bytecode" if audit.corrupt_classes and not audit.classes else "")
+        return LegacyEntry(path, label, audit, problem)
     except (InputError, OSError) as exc:
         return LegacyEntry(path, label, problem=str(exc))
 
 
-def _addon_edges(entries: dict[str, LegacyEntry]) -> dict[str, dict[str, str]]:
-    by_id, owners = defaultdict(list), defaultdict(list)
-    for item in entries.values():
-        for mod_id in item.ids:
-            by_id[mod_id].append(item)
-        if item.audit:
-            for owner in item.audit.classes:
-                owners[owner].append(item)
-    result = defaultdict(dict)
-
-    def connect(parents, child: LegacyEntry, why: str) -> None:
-        for parent in parents:
-            if parent.label != child.label and not (parent.version and child.version and parent.version != child.version):
-                result[parent.label].setdefault(child.label, why)
-
-    for child in entries.values():
-        if not child.audit:
+def _legacy_graph(entries: dict[str, LegacyEntry], libraries: dict[str, PackMod], runtime_owners: set[str]) -> tuple[dict, dict, dict]:
+    graph = LegacyDependencies({**libraries, **{label: item.audit for label, item in entries.items() if item.audit and not item.problem}})
+    edges, declarations, binary = defaultdict(dict), {}, {}
+    for label, item in entries.items():
+        if label not in graph.mods:
             continue
-        optional = set()
-        for _, dependency, required, _ in _declared_requests(child.audit.audit):
-            dependency = dependency.casefold()
-            if required and dependency not in LOADER_IDS:
-                connect(by_id[dependency], child, f"declares required dependency {dependency}")
-            if not required:
-                optional.add(dependency)
-        refs = {ref.owner for ref in child.audit.references if ref.owner not in child.audit.classes and
-                not platform_symbol(ref) and not ref.owner.startswith(STANDARD_PREFIXES)}
-        for owner in sorted(refs):
-            provider = [p for p in owners[owner] if not optional.intersection(p.ids)]
-            if len(provider) == 1:
-                connect(provider, child, f"references {owner.replace('/', '.')}")
-    return dict(result)
+        declared = graph.declarations(item.audit)
+        declarations[label] = declared
+        by_path, ambiguous = graph.usage(item.audit, declared, platform_owners=runtime_owners)
+        binary[label] = {"providers": [{"archive": path, "classes": sorted(owners)} for path, owners in sorted(by_path.items())],
+                         "ambiguous_classes": sorted(ambiguous)}
+        declared_paths = {candidate["archive"] for row in declared for candidate in row["candidates"]}
+        for row in declared:
+            if row["required"] and row["provider"] and (provider := row["provider"]["archive"]) in entries and provider != label:
+                reason = f"declares required dependency {row['id']}" + (f" {row['range']}" if row["range"] else "")
+                edges[provider][label] = reason
+        for path, owners in sorted(by_path.items()):
+            if path in entries and path not in declared_paths:
+                edges[path][label] = f"references {min(owners).replace('/', '.')}"
+    return dict(edges), declarations, binary
 
 
 def _aliases(path: Path | None) -> dict[str, str]:
@@ -432,24 +315,36 @@ def _aliases(path: Path | None) -> dict[str, str]:
 
 
 def inventory(source: Path, target: Path, build_options: BuildOptions | None = None, *,
-              approved_sources: dict[str, SourcePort] | None = None) -> UpdateInventory:
+              approved_sources: dict[str, SourcePort] | None = None, id_map: Path | None = None) -> UpdateInventory:
     source, target = (path.expanduser().resolve() for path in (source, target))
-    for root in (source, target):
-        if not root.is_dir() or not (root / "mods").is_dir():
-            raise InputError(f"Expected an installed instance with a mods/ folder: {root}")
-    bins = {root: _files(root, "bin") for root in dict.fromkeys((source, target))}
-    src_bin, dst_bin = (_platform(root, bins[root]) for root in (source, target))
-    if not dst_bin.neoforge or MINECRAFT_VERSION not in {version for version, _ in dst_bin.minecraft}:
-        raise InputError(f"Target bin/ must contain an identifiable Minecraft {MINECRAFT_VERSION} JAR and one installed NeoForge 21.1.x universal JAR. An installer alone is not an installation: {target}")
+    if not source.is_dir() or not any((source / name).is_dir() for name in ("mods", "coremods")):
+        raise InputError(f"Expected an installed source instance with mods/ or coremods/: {source}")
+    if not target.is_dir():
+        raise InputError(f"Expected an installed NeoForge target instance: {target}")
+    bins = {root: local_files(root, "bin") for root in dict.fromkeys((source, target))}
+    src_bin = discover(source, bins=bins[source])
+    dst_bin = discover(target, include_server=True, bins=bins[target])
+    if not dst_bin.neoforge or {version for version, _ in dst_bin.minecraft} != {MINECRAFT_VERSION}:
+        raise InputError(f"Target bin/ or standard server libraries/ must identify Minecraft {MINECRAFT_VERSION} and one installed NeoForge 21.1.x release. "
+                         f"An installer alone or mixed runtime versions are not an installation: {target}")
     entries, target_legacy, native, installed, passthrough = {}, {}, [], [], []
-    warnings, issues = [], []
+    warnings, issues = [*src_bin.warnings, *dst_bin.warnings], []
+    libraries = {}
+    runtime_owners = set()
+    if src_bin.legacy:
+        for path in src_bin.legacy_apis(source, src_bin.legacy):
+            try:
+                with open_input(path) as jar:
+                    runtime_owners.update(class_entries(jar.files))
+            except InputError as exc:
+                warnings.append(f"Could not read local platform classes from {path.name}: {exc}")
     scanned = 0
     for root in bins:
         is_source, is_target = root == source, root == target
         runtime = dst_bin if is_target else src_bin
-        platform_labels = {label for _, label in (*runtime.minecraft, *runtime.loaders)} | set(runtime.forge)
-        local = sorted({*bins[root], *(_files(root, "mods")), *(_files(root, "coremods") if is_source else ()),
-                        *_files(root, "lib"), *_files(root, "libraries")})
+        platform_labels = {f.path for f in runtime.files} | ({f.path for f in src_bin.files} if is_source else set())
+        local = sorted({*bins[root], *local_files(root, "mods"), *(local_files(root, "coremods") if is_source else ()),
+                        *local_files(root, "lib"), *local_files(root, "libraries")})
         for path in local:
             label = path.relative_to(root).as_posix()
             top = label.split("/", 1)[0]
@@ -488,22 +383,29 @@ def inventory(source: Path, target: Path, build_options: BuildOptions | None = N
                 elif len(warnings) < 30:
                     warnings.append(f"Skipped local candidate {label!r}: no Minecraft/NeoForge target range in metadata.")
             elif old or active:
-                record = _legacy(path, label, src_bin.legacy if old else None)
+                record = _legacy(path, label, src_bin if old else None)
                 if active:
                     target_legacy[label] = record
                 if old:
                     entries[label] = record
+            elif is_source and top in {"lib", "libraries", "bin"}:
+                record = _legacy(path, label, src_bin)
+                if record.audit and not record.problem and (record.audit.classes or record.ids):
+                    libraries[label] = record.audit
     providers = defaultdict(list)
     for mod in native:
         for mod_id in mod.ids:
             providers[mod_id].append(mod)
-    state = UpdateInventory(source, target, src_bin, dst_bin, entries, _addon_edges(entries), providers, installed,
-                            target_legacy, passthrough, _aliases(source / "mcmodup-updates.json"), warnings, issues)
+    edges, declarations, binary = _legacy_graph(entries, libraries, runtime_owners)
+    map_path = id_map.expanduser().resolve(strict=True) if id_map is not None else source / "mcmodup-updates.json"
+    state = UpdateInventory(source, target, src_bin, dst_bin, entries, edges, providers, installed,
+                            target_legacy, passthrough, _aliases(map_path), warnings, issues,
+                            legacy_declarations=declarations, legacy_binary=binary, id_map=id_map)
     return with_source_ports(state, build_options, approved_sources=approved_sources) if build_options else state
 
 
 def with_source_ports(state: UpdateInventory, options: BuildOptions, *,
-                      approved_sources: dict[str, SourcePort] | None = None) -> UpdateInventory:
+                      approved_sources: dict[str, SourcePort] | None = None, id_map: Path | None = None) -> UpdateInventory:
     """Resolve trusted recipes against an existing inventory without rescanning its bytecode."""
     source_ports = load_ports(options) if approved_sources is None else approved_sources
     providers = defaultdict(list, {key: [mod for mod in mods if not mod.recipe] for key, mods in state.providers.items()})
@@ -550,22 +452,69 @@ class UpdatePlan:
     problems: list[str]
     build_order: list[NativeMod] = field(default_factory=list)
     native_builds: dict[str, dict] = field(default_factory=dict)
+    resolution: Resolution | None = None
+    runtime: InstanceRuntime | None = None
+    output_pack: bool = False
+    provider_pins: dict[str, str] = field(default_factory=dict)
+    legacy_hashes: dict[str, str] = field(default_factory=dict)
+
+    def _legacy_evidence(self) -> tuple[list[dict], dict[str, dict]]:
+        state = self.inventory
+        active = {key: mod for mod in self.mods for key in mod.ids}
+        requirements, binary = [], {}
+        for label in sorted(set(self.selected) | self.addons.keys()):
+            ids = state.native_ids(state.entries[label])
+            consumers = {active[key] for key in ids if key in active}
+            for row in state.legacy_declarations.get(label, ()):
+                key = row["id"].casefold()
+                native_id = state.aliases.get(key, key)
+                binding = {"id": native_id, "status": "integration_not_established"}
+                if row["status"] == "loader":
+                    binding["status"] = "platform_rewrite"
+                elif private := next((lib for mod in consumers for lib in mod.private_libraries
+                                      if lib.id == native_id and lib.consumer in ids), None):
+                    binding |= {"status": "private_native_library", "namespace": private.namespace, "version": private.version}
+                elif candidate := active.get(native_id):
+                    if candidate in consumers or any(dep.mod_id == native_id and dep.kind in {"required", "optional"}
+                                                     for mod in consumers for dep in mod.dependencies):
+                        binding |= {"status": "native_metadata", "archive": candidate.label, "version": candidate.ids[native_id]}
+                provider = row["provider"]
+                requirements.append({**row, "consumer": label, "provider": self._legacy_hash(provider) if provider else None,
+                                     "candidates": [self._legacy_hash(candidate) for candidate in row["candidates"]],
+                                     "native_binding": binding})
+            if label in state.legacy_binary:
+                record = state.legacy_binary[label]
+                binary[label] = {**record, "providers": [self._legacy_hash(p) for p in record["providers"]]}
+        return requirements, binary
+
+    def _legacy_hash(self, provider: dict) -> dict:
+        return provider | {"sha256": self.legacy_hashes.get(provider["archive"])}
 
     @property
     def report(self) -> dict:
+        requirements, binary = self._legacy_evidence()
+        resolution = replace(self.resolution, mods=tuple(self.mods)) if self.resolution else Resolution(tuple(self.mods))
         return {"schema_version": 1, "mode": "native-source-build" if self.inventory.build_options else "native-neoforge",
+                "output_mode": "pack" if self.output_pack else "mods",
+                "instance_runtime": self.runtime.report() if self.runtime else None,
                 "connector_required": False, "native_builds": self.native_builds,
                 "build_order": [mod.label.removeprefix("build/") for mod in self.build_order],
                 "minecraft": MINECRAFT_VERSION, "neoforge": self.inventory.target_platform.neoforge,
                 "source_bin": self.inventory.source_platform.report(), "target_bin": self.inventory.target_platform.report(),
                 "selected": self.selected, "auto_addons": self.addons, "ready": bool(self.selected) and not self.problems,
                 "problems": self.problems, "warnings": self.inventory.warnings, "replaced_target_files": self.removed,
+                "legacy_requirements": requirements, "legacy_class_providers": binary,
+                "legacy_version_conflicts": legacy_conflicts(requirements), "legacy_archive_sha256": self.legacy_hashes,
+                "native_dependencies": dependency_report(resolution, self.inventory.providers), "provider_pins": self.provider_pins,
                 "files": [{"file": f"mods/{mod.path.name}", "from": mod.label, "ids": mod.ids,
-                           "action": "build" if mod.recipe else "keep" if mod.installed else
+                           "sha256": None if mod.recipe and not self.native_builds else mod.sha256,
+                           "action": "build" if mod.recipe else "keep" if mod.installed and not self.output_pack else
                                      "update" if self.roots.intersection(mod.ids) else "dependency",
                            **({"source_build": mod.recipe.describe()} if mod.recipe else {}),
+                           "private_libraries": [lib.report() for lib in mod.private_libraries],
+                           "jar_in_jar": list(mod.embedded),
                            "requires": [{"id": dep.mod_id, "range": dep.version} for dep in mod.dependencies if dep.kind == "required"]}
-                          for mod in self.mods], "gameplay_verified": False}
+                          for mod in self.mods], "gameplay_verified": False, "parity_verified": False}
 
 
 def selected_addons(inventory: UpdateInventory, selected: list[str]) -> dict[str, dict[str, str]]:
@@ -584,11 +533,39 @@ def selected_addons(inventory: UpdateInventory, selected: list[str]) -> dict[str
     return added
 
 
-def plan(inventory: UpdateInventory, selections: list[str]) -> UpdatePlan:
+def _artifact_conflicts(mods: list[NativeMod]) -> list[str]:
+    owners = defaultdict(list)
+    errors = []
+    for mod in mods:
+        for owner in mod.classes:
+            owners[owner].append(mod.label)
+        for ref in sorted(mod.private_references - mod.classes):
+            errors.append(f"{mod.label!r} uses private class {ref!r} outside its own JAR.")
+    for owner, archives in sorted(owners.items()):
+        if len(archives) > 1:
+            errors.append(f"Duplicate native class {owner!r}: " + ", ".join(sorted(archives)) + ". Use one shared provider or relocate the port's private copy.")
+            if len(errors) >= 30:
+                break
+    return errors
+
+
+def parse_pins(rows: list[str]) -> dict[str, str]:
+    pins = {}
+    for row in rows:
+        key, _, sha = row.partition("=")
+        if not MOD_ID.fullmatch(key) or not SHA256.fullmatch(sha) or key in pins:
+            raise InputError("Use --provider ID=SHA256 once per native mod ID with its lowercase 64-digit JAR fingerprint.")
+        pins[key] = sha
+    return pins
+
+
+def plan(inventory: UpdateInventory, selections: list[str], *, output_pack: bool = False,
+         pins: dict[str, str] | None = None) -> UpdatePlan:
     selected = sorted(set(selections))
     added = selected_addons(inventory, selected)
     closure = set(selected) | added.keys()
-    problems = list(inventory.target_issues)
+    problems = [] if output_pack else list(inventory.target_issues)
+    pins = pins or {}
     roots = set()
     forced = {}
     for label in sorted(closure):
@@ -601,81 +578,26 @@ def plan(inventory: UpdateInventory, selections: list[str]) -> UpdatePlan:
             recipe = inventory.recipes.get(label)
             if recipe is None:
                 problems.append(f"{label!r}: {inventory.recipe_issues[label]}")
+                continue
             for key in ids:
                 if key in forced and forced[key] is not recipe:
                     problems.append(f"Multiple selected legacy archives would build native mod ID {key!r}.")
                 forced[key] = recipe
-    mods = list(inventory.installed)
-    removed = {}
-    changed = set()
-    while True:
-        active = defaultdict(list)
-        wants = defaultdict(set, {key: {""} for key in roots})
-        for mod in mods:
-            for key in mod.ids:
-                active[key].append(mod)
-            for dep in mod.dependencies:
-                if dep.kind == "required":
-                    wants[dep.mod_id].add(dep.version)
-        for mod in mods:
-            for dep in mod.dependencies:
-                if dep.kind == "optional" and (dep.mod_id in active or dep.mod_id in wants):
-                    wants[dep.mod_id].add(dep.version)
-        unresolved = []
-        for key, specs in sorted(wants.items()):
-            current = active[key]
-            if forced.get(key, False) is None:
-                continue  # Detailed exact-recipe blocker already recorded for this legacy archive.
-            if (len(current) == 1 and not current[0].partial and
-                    (key not in forced or current[0] is forced[key]) and
-                    all(matches(current[0].ids[key], spec) for spec in specs)):
-                continue
-            versions = ", ".join(repr(spec) for spec in sorted(specs) if spec)
-            wanted = f"{key!r}" + (f" (requires {versions})" if versions else "")
-            if len(current) > 1:
-                unresolved.append(f"Target has multiple installed providers for {wanted}.")
-                continue
-            previous = current[0] if current else None
-            accepted = {}
-            for choice in inventory.providers.get(key, []):
-                if (choice.installed or choice in changed or not choice.target_evidence or
-                        any(mod_id in forced and forced[mod_id] is not choice for mod_id in choice.ids) or
-                        not all(matches(choice.ids[key], spec) for spec in specs)):
-                    continue
-                if previous and not previous.ids.keys() <= choice.ids.keys():
-                    continue
-                if any(other is not previous for mod_id in choice.ids for other in active[mod_id]):
-                    continue
-                if any(not all(matches(version, spec) for spec in wants.get(mod_id, ())) for mod_id, version in choice.ids.items()):
-                    continue
-                accepted.setdefault(choice.sha256, choice)
-            if key not in forced and (local := {sha: mod for sha, mod in accepted.items() if mod.recipe is None}):
-                accepted = local  # A dependency need not be rebuilt if an unambiguous native JAR is in the packs.
-            if len(accepted) != 1:
-                if accepted:
-                    unresolved.append(f"Multiple compatible local JARs for {wanted}: " + ", ".join(x.label for x in accepted.values()) + ".")
-                else:
-                    files = [x.label for x in inventory.providers.get(key, [])]
-                    unresolved.append(f"No compatible standalone NeoForge JAR for {wanted}." + (" Found: " + ", ".join(files) + "." if files else ""))
-                continue
-            candidate = next(iter(accepted.values()))
-            changed.add(candidate)
-            if previous is not None:
-                mods.remove(previous)
-                if previous.installed:
-                    removed[previous.label.removeprefix("target/")] = candidate.label
-            mods.append(candidate)
-            break  # Recompute all constraints, including transitive dependencies.
-        else:
-            problems.extend(unresolved)
-            break
+    resolution = resolve(roots, inventory.installed, inventory.providers, forced, pins, keep_target=not output_pack)
+    if resolution.problem:
+        problems.append(resolution.problem)
+    mods = list(resolution.mods)
+    problems.extend(_artifact_conflicts(mods))
+    active = defaultdict(list)
     for mod in mods:
-        for dep in mod.dependencies:
-            if dep.kind == "incompatible" and any(matches(other.ids[dep.mod_id], dep.version) for other in active.get(dep.mod_id, ())):
-                problems.append(f"{mod.label!r} declares an incompatibility with {dep.mod_id} {dep.version!r}.")
-    for key, providers in sorted(active.items()):
-        if len(providers) > 1:
-            problems.append(f"Duplicate target mod ID {key!r}: " + ", ".join(x.label for x in providers))
+        for key in mod.ids:
+            active[key].append(mod)
+    removed = {}
+    if not output_pack and resolution.status == "ready":
+        for old in inventory.installed:
+            new = {mod for key in old.ids for mod in active[key]}
+            if old not in new:
+                removed[old.label.removeprefix("target/")] = ", ".join(sorted(mod.label for mod in new))
     # Include native required dependencies of selected mods when replacing a mixed
     # target's old JARs. Unrelated old entries are never removed implicitly.
     replaced_ids = set(roots)
@@ -688,7 +610,7 @@ def plan(inventory: UpdateInventory, selections: list[str]) -> UpdatePlan:
         required = {dep.mod_id for dep in candidate.dependencies if dep.kind == "required"}
         queue.extend(sorted(required - replaced_ids))
         replaced_ids.update(required)
-    for label, item in inventory.target_legacy.items():
+    for label, item in (inventory.target_legacy.items() if not output_pack else ()):
         ids = inventory.native_ids(item)
         if (item.problem or not ids or not ids <= replaced_ids or
                 not all(len(active[key]) == 1 and not active[key][0].partial for key in ids)):
@@ -696,8 +618,9 @@ def plan(inventory: UpdateInventory, selections: list[str]) -> UpdatePlan:
         else:
             removed[label] = ", ".join(sorted({active[key][0].label for key in ids}))
     destinations = set()
-    for path in [*(mod.path for mod in mods), *inventory.passthrough]:
-        relative = path.relative_to(inventory.target / "mods").as_posix() if path in inventory.passthrough else path.name
+    passthrough = set() if output_pack else set(inventory.passthrough)
+    for path in [*(mod.path for mod in mods), *sorted(passthrough)]:
+        relative = path.relative_to(inventory.target / "mods").as_posix() if path in passthrough else path.name
         if not all(_safe_filename(part) for part in relative.split("/")):
             problems.append(f"Unsafe output path: {relative!r}.")
         if relative.casefold() in destinations:
@@ -712,7 +635,27 @@ def plan(inventory: UpdateInventory, selections: list[str]) -> UpdatePlan:
             order = _build_order(mods)
         except InputError as exc:
             problems.append(str(exc))
-    return UpdatePlan(inventory, selected, added, mods, roots, removed, list(dict.fromkeys(problems)), order)
+    runtime = None
+    if output_pack and selected:
+        try:
+            runtime = instance_runtime(inventory.target, inventory.target_platform)
+        except (InputError, OSError) as exc:
+            problems.append(f"Target instance runtime: {exc}")
+    originals = set(closure)
+    for label in closure:
+        originals.update(provider["archive"] for row in inventory.legacy_declarations.get(label, ()) for provider in row["candidates"])
+        originals.update(p["archive"] for p in inventory.legacy_binary.get(label, {}).get("providers", ()))
+    legacy_hashes = {}
+    for label in sorted(originals):
+        path = inventory.source / label
+        try:
+            if path.resolve() != path:
+                raise InputError("source archives must not be symbolic links")
+            legacy_hashes[label] = _digest(path)
+        except (InputError, OSError) as exc:
+            problems.append(f"Could not fingerprint legacy input {label!r}: {exc}")
+    return UpdatePlan(inventory, selected, added, mods, roots, removed, list(dict.fromkeys(problems)), order,
+                      resolution=resolution, runtime=runtime, output_pack=output_pack, provider_pins=pins, legacy_hashes=legacy_hashes)
 
 
 def _dependencies(mod: NativeMod, providers: dict[str, NativeMod]) -> set[NativeMod]:
@@ -764,7 +707,10 @@ def _materialize(update: UpdatePlan, scratch: Path) -> UpdatePlan:
             evidence[verified.path.name] = {**checked, "jar_sha256": verified.sha256}
         except (InputError, OSError) as exc:
             raise InputError(f"{expected.label.removeprefix('build/')!r}: {exc}") from exc
-    return replace(update, mods=[actual.get(mod, mod) for mod in update.mods], native_builds=evidence)
+    mods = [actual.get(mod, mod) for mod in update.mods]
+    if conflicts := _artifact_conflicts(mods):
+        raise InputError("Built artifacts cannot share the pack: " + " ".join(conflicts))
+    return replace(update, mods=mods, native_builds=evidence)
 
 
 def _parents(path: str) -> list[str]:
@@ -786,6 +732,10 @@ def stage(update: UpdatePlan, output: Path) -> Path:
     if not update.selected or update.problems:
         raise InputError("Choose at least one mod and resolve all update blockers first.")
     output = stage_destination(update.inventory, output)
+    for label, checksum in update.legacy_hashes.items():
+        path = update.inventory.source / label
+        if path.resolve() != path or _digest(path) != checksum:
+            raise InputError(f"Legacy input {label!r} changed during staging. Scan the pack and retry.")
     if update.build_order:
         # Keep dependency copies and all intermediate JARs outside the packs and the final output.
         with tempfile.TemporaryDirectory(prefix="mcmodup-source-build-") as directory:
@@ -805,23 +755,38 @@ def _write_stage(update: UpdatePlan, output: Path) -> None:
             shutil.copyfile(mod.path, dest)
             if _digest(dest) != mod.sha256:
                 raise InputError(f"{mod.label!r} changed during staging. Scan the pack and retry.")
-        for path in update.inventory.passthrough:
+        for path in (() if update.output_pack else update.inventory.passthrough):
             dest = mods / path.relative_to(update.inventory.target / "mods")
             dest.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(path, dest)
-        report = update.report
-        sha256 = {mod.path.name: mod.sha256 for mod in update.mods}
-        for file in report["files"]:
-            file["sha256"] = sha256[Path(file["file"]).name]
+        if update.runtime:
+            for relative, checksum in update.runtime.files.items():
+                source = update.inventory.target / relative
+                if source.resolve() != source:
+                    raise InputError(f"Target runtime file {relative!r} became a symbolic link. Scan and retry.")
+                dest = output / relative
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(source, dest)
+                if _digest(dest) != checksum:
+                    raise InputError(f"Target runtime file {relative!r} changed during staging. Scan and retry.")
+        report = update.report | {"staged": True}
         (output / REPORT_NAME).write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
         preview_note = ("This output contains preview builds with known parity gaps. See update-report.json.\n"
                         if any(row["status"] == "preview" for row in update.native_builds.values()) else "")
+        if update.runtime and update.runtime.launch:
+            how = ("From this new directory, use Java 21 to start the copied NeoForge server runtime.\n"
+                   "Review Minecraft's EULA yourself; eula.txt and server settings are not copied.\n" +
+                   "\n".join(f"{os_name}: {command}" for os_name, command in update.runtime.launch.items()) + "\n")
+        elif update.output_pack:
+            how = ("In a launcher with the stated Minecraft / NeoForge version installed, create a new profile pointing its game directory here.\n"
+                   "This is a game directory, not a launcher install or a self-contained server. The launcher supplies its own classpath and assets.\n")
+        else:
+            how = "Close the target game, back up its mods/ directory, and replace that directory with this mods/ directory (do not merge).\n"
         (output / "INSTALL.txt").write_text(
             f"Standalone mods for Minecraft {MINECRAFT_VERSION} / NeoForge {update.inventory.target_platform.neoforge}.\n"
-            "Close the target game, back up its mods/ directory, and replace that directory with this mods/ directory (do not merge).\n"
-            "The target bin/, launcher, configs and saves were not changed. Use a new world to test first.\n"
-            "See update-report.json for asset checks and server GameTests for any mods built from source.\n"
-            "These checks do not certify full-pack gameplay, client rendering, or old save compatibility.\n"
+            f"{how}Neither input was changed. No saves, configs, credentials, or EULA acceptance were copied. Use a new world first.\n"
+            "See update-report.json for dependency evidence and any source build tests.\n"
+            "Staging does not prove boot, full-pack gameplay, client rendering, or old save compatibility.\n"
             f"{preview_note}Keep this local unless you have redistribution rights for every file.\n", encoding="utf-8")
     except BaseException:
         shutil.rmtree(output, ignore_errors=True)

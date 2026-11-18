@@ -13,10 +13,10 @@ from .pack import ModPack, PackMod
 
 def exact_minecraft(pack: ModPack, mod: PackMod) -> str:
     version = mod.audit.source_version
-    declared = {e.version for e in mod.audit.version_evidence if e.kind == "declared"}
-    if len(declared) > 1 or (pack.context.profile and declared - {pack.context.profile}):
+    declared = {e.version for e in mod.audit.version_evidence if e.kind in {"declared", "versioned folder"}}
+    if len(declared) > 1 or (pack.supplied_profile and declared - {pack.supplied_profile}):
         raise InputError(f"Conflicting Minecraft version evidence for {mod.archive!r}: declared "
-                         f"{', '.join(sorted(declared))}; requested {pack.context.profile or 'none'}. Verify the original first.")
+                         f"{', '.join(sorted(declared))}; requested {pack.supplied_profile or 'none'}. Verify the original first.")
     if version is None:
         raise InputError(f"No exact Minecraft version for {mod.archive!r}; verify the original and supply --source-version. "
                          "A filename, mod version, or Connector result is not enough.")

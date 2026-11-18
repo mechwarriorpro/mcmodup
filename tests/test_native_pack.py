@@ -28,13 +28,13 @@ def setup_platform(root, version="1.21.1", neoforge="21.1.267"):
         })
 
 
-def legacy(root, file, modid, *, name=None, requirements=(), refs=(), minecraft="", owner=None):
+def legacy(root, file, modid, *, name=None, requirements=(), refs=(), minecraft="", owner=None, version="1.0"):
     owner = owner or f"legacy/demo/{modid.title().replace('|', 'Sub')}"
     return jar(root / file, **{
         f"{owner}.class": fixture_class(owner, refs=refs, annotation={
-            "modid": modid, "name": name or modid, "version": "1.0", "dependencies": ";".join(requirements),
+            "modid": modid, "name": name or modid, "version": version, "dependencies": ";".join(requirements),
         }),
-        "mcmod.info": json.dumps([{"modid": modid, "name": name or modid, "version": "1.0", "mcversion": minecraft}]),
+        "mcmod.info": json.dumps([{"modid": modid, "name": name or modid, "version": version, "mcversion": minecraft}]),
     })
 
 

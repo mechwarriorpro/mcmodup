@@ -124,9 +124,15 @@ def _parser() -> argparse.ArgumentParser:
     updater = commands.add_parser("update-pack", help="plan, build or stage standalone 1.21.1 updates")
     ui = commands.add_parser("pack-ui", help="open the native modpack updater with checkboxes")
     for command in (updater, ui):
-        command.add_argument("input", type=Path, help="installed pack with the legacy mods under mods/")
-        command.add_argument("--target", type=Path, help="installed NeoForge 1.21.1 pack (defaults to input); platform files under bin/")
-        command.add_argument("--output", "-o", type=Path, help="new directory outside both packs for the staged mods/ folder")
+        command.add_argument("input", type=Path, help="installed pack with the legacy archives under mods/ or coremods/")
+        command.add_argument("--target", type=Path, help="installed NeoForge 1.21.1 instance that supplies the runtime and local updates (defaults to input)")
+        output = command.add_mutually_exclusive_group()
+        output.add_argument("--output", "-o", type=Path, help="new directory for the target's complete replacement mods/ folder")
+        output.add_argument("--output-pack", type=Path, metavar="NEW_DIR",
+                            help="new instance with only the selected updates, required dependencies, and target runtime files")
+        command.add_argument("--id-map", type=Path, metavar="JSON", help="reviewed legacy-to-native mod ID map, instead of the input's mcmodup-updates.json")
+        command.add_argument("--provider", action="append", default=[], metavar="ID=SHA256",
+                             help="pin a reviewed local native provider by its JAR fingerprint (repeatable)")
         command.add_argument("--source-ports", type=Path, metavar="TRUSTED_JSON",
                              help="build selected exact legacy releases and add-ons using this trusted source recipe manifest")
         command.add_argument("--allow-preview-ports", action="store_true",
@@ -186,13 +192,16 @@ def main(argv: list[str] | None = None) -> int:
             if args.allow_preview_ports and not args.source_ports:
                 raise InputError("--allow-preview-ports requires --source-ports.")
             options = BuildOptions(args.source_ports, args.allow_preview_ports, args.build_timeout) if args.source_ports else None
-            state = native_pack.inventory(args.input, args.target or args.input, options)
+            state = native_pack.inventory(args.input, args.target or args.input, options, id_map=args.id_map)
+            pins = native_pack.parse_pins(args.provider)
+            new_pack = args.output_pack is not None
+            destination = args.output_pack or args.output
             if args.command == "pack-ui":
                 from .pack_ui import serve
 
-                serve(state, args.output, args.host, args.port)
+                serve(state, destination, args.host, args.port, output_pack=new_pack, pins=pins)
             elif not args.mod:
-                if args.output:
+                if destination:
                     raise InputError("Select at least one archive with --mod before staging updates.")
                 catalog = state.catalog()
                 if args.json:
@@ -205,10 +214,10 @@ def main(argv: list[str] | None = None) -> int:
                         print(f"Target issue: {issue}")
                     print("Use pack-ui for checkboxes, or --mod ARCHIVE to plan a selection.")
             else:
-                update = native_pack.plan(state, args.mod)
+                update = native_pack.plan(state, args.mod, output_pack=new_pack, pins=pins)
                 report = update.report
-                if report["ready"] and args.output:
-                    output = native_pack.stage(update, args.output)
+                if report["ready"] and destination:
+                    output = native_pack.stage(update, destination)
                     report = json.loads((output / native_pack.REPORT_NAME).read_text(encoding="utf-8"))
                     report["output"] = str(output)
                 if args.json:
@@ -216,6 +225,12 @@ def main(argv: list[str] | None = None) -> int:
                 else:
                     for path, related in report["auto_addons"].items():
                         print(f"Add-on {path!r}: {related['reason']}")
+                    for conflict in report["legacy_version_conflicts"]:
+                        print(f"Legacy version split for {conflict['id']!r}: " + "; ".join(
+                            f"{row['consumer']} {row['range']}" for row in conflict["requirements"]) + ". Modern requirements are checked separately.")
+                    for dep in report["native_dependencies"]:
+                        if dep["status"] == "shared_native_provider":
+                            print(f"Shared dependency {dep['id']!r}: {dep['provider']['version']} from {dep['provider']['archive']!r}")
                     if report["build_order"]:
                         print("Build order: " + " → ".join(report["build_order"]))
                     for item in report["files"]:
@@ -226,10 +241,11 @@ def main(argv: list[str] | None = None) -> int:
                         print(f"Built {name!r}: {build['gametests']['passed']} source-project server GameTests passed; "
                               f"{build['legacy_assets']['unmapped']} legacy asset paths unverified ({build['status']}).")
                     if "output" in report:
-                        print(f"Staged standalone mods: {report['output']}. See INSTALL.txt. Neither input pack was modified.")
+                        label = "Created new pack folder" if new_pack else "Staged standalone mods"
+                        print(f"{label}: {report['output']}. See INSTALL.txt. Neither input pack was modified.")
                     elif report["ready"]:
                         action = "build, test and stage" if update.build_order else "stage"
-                        print(f"Plan ready. Give -o NEW_DIR to {action}. Test the staged pack in a fresh world.")
+                        print(f"Plan ready. Give -o NEW_DIR to {action}, or --output-pack NEW_DIR for a fresh instance. Test in a fresh world.")
                 return int(not report["ready"])
         elif args.command == "convert-jar":
             if not args.allow_partial:
@@ -260,7 +276,9 @@ def main(argv: list[str] | None = None) -> int:
                 port_map = PortMap.load(args.port_map) if args.port_map else None
                 if port_map and port_map.source_version != version:
                     raise InputError(f"--port-map describes Minecraft {port_map.source_version}, not selected Minecraft {version}.")
-                pack.context = ApiContext(legacy=ApiIndex.load(args.legacy_api), target=ApiIndex.load(args.target_api),
+                legacy = (ApiIndex.load(args.legacy_api) if args.legacy_api else
+                          pack.context.legacy if pack.context.profile == version else ApiIndex())
+                pack.context = ApiContext(legacy=legacy, target=ApiIndex.load(args.target_api),
                                           names=mcp.names if mcp else LegacyNames(), profile=version, port_map=port_map)
                 report = plan_port(pack, mod, version, mcp, args.connector_report, args.connector_gameplay)
                 if args.command == "decompile-mod":

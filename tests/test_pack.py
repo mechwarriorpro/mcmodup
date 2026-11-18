@@ -76,7 +76,7 @@ class PackTests(unittest.TestCase):
             "provider/Widget.class": fixture_class("provider/Widget", methods=(("open", "()V", 1),)),
             "provider/Widget$Nested.class": fixture_class("provider/Widget$Nested"),
             "provider/Unreferenced.class": fixture_class("provider/Unreferenced"),
-            "mcmod.info": '[{"modid":"Widgets","mcversion":"1.7.10"}]',
+            "mcmod.info": '[{"modid":"Widgets","version":"1.0","mcversion":"1.7.10"}]',
         })
 
     def consumer(self, *, refs=(), version="1.7.10", dependency="required-after:widgets@[1.0,);required-before:Absent;after:forge"):
@@ -238,7 +238,7 @@ class PackTests(unittest.TestCase):
         jar(self.mods / "Duplicates.jar", **{
             "provider/Widget.class": fixture_class("provider/Widget"),
             "broken/Problem.class": fixture_class("actual/Problem"),
-            "mcmod.info": '[{"modid":"widgets"}]',
+            "mcmod.info": '[{"modid":"widgets","version":"1.2"}]',
         })
         report = self.scan("--mod", "Consumer.jar")
         result = report["archives"][0]

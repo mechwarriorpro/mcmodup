@@ -3,28 +3,25 @@
 from collections import Counter, defaultdict
 from collections.abc import Iterator
 from contextlib import contextmanager
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 import hashlib
 import json
 import os
 from pathlib import Path, PurePosixPath
-import re
 import tempfile
 import zipfile
 import zlib
 
 from . import MINECRAFT_VERSION, NEOFORGE_VERSION
-from .api import ApiContext, ClassLocation
+from .api import ApiContext, ApiIndex, ClassLocation
 from .api_rules import platform_symbol
 from .audit import Audit, VersionEvidence, audit
 from .classfiles import CLASS_LIMIT, Symbol, class_entries, read_class
 from .inputs import IGNORED_DIRS, MOD_ARCHIVE_LIMIT, InputError, open_input
+from .legacy_dependencies import LegacyDependencies, STANDARD_PREFIXES
+from .runtime import ARCHIVE_EXTENSIONS, MINECRAFT_RELEASE, Platform, discover
 
 
-ARCHIVE_EXTENSIONS = {".jar", ".zip"}
-LOADER_IDS = {"minecraft", "mcp", "forge", "fml"}
-STANDARD_PREFIXES = ("java/", "javax/", "jdk/", "sun/", "com/sun/", "org/w3c/dom/", "org/xml/sax/")
-DECLARED_ID = re.compile(r"[A-Za-z0-9_.-]+(?:\|[A-Za-z0-9_.-]+)*")
 PACK_ARCHIVE_LIMIT = 2 * 1024 * 1024 * 1024
 LOADER_FOLDERS = ("mods", "coremods")
 
@@ -58,7 +55,7 @@ def _archives(root: Path) -> list[Path]:
     return sorted(files)
 
 
-def _load(label: str, path: Path, profile: str | None) -> PackMod:
+def _load(label: str, path: Path, profile: str | None, runtime: Platform | None = None) -> PackMod:
     classes = {}
     parents = {}
     refs: dict[Symbol, str] = {}
@@ -88,38 +85,32 @@ def _load(label: str, path: Path, profile: str | None) -> PackMod:
         result.warnings.append(f"Skipped {invalid} invalid classes: {'; '.join(invalid_examples)}")
     if not classes:
         result.warnings.append("No indexable JVM bytecode; static dependency detection cannot check this archive.")
-    if profile and result.source_version is None and not any(e.kind == "declared" for e in result.version_evidence):
-        result.source_version = profile
-        result.version_evidence.append(VersionEvidence(profile, "--source-version", "pack assumption"))
-        result.warnings = [note for note in result.warnings if not note.startswith("No exact Minecraft version declared.")]
-        result.warnings.append(f"No exact Minecraft version in this archive; assumed pack profile {profile}.")
-    elif profile and result.source_version != profile:
+    parts = PurePosixPath(label).parts
+    folders = {part for index, part in enumerate(parts[:-1]) if MINECRAFT_RELEASE.fullmatch(part) and
+               any(p in LOADER_FOLDERS for p in parts[:index])}
+    for release in sorted(folders):
+        result.version_evidence.append(VersionEvidence(release, label, "versioned folder"))
+    declared = {e.version for e in result.version_evidence if e.kind == "declared"}
+    if len(folders | declared) > 1:
+        result.source_version = None
+        result.warnings.append("Conflicting exact Minecraft declarations or versioned folders.")
+    elif folders and not declared:
+        result.source_version = next(iter(folders))
+    elif not declared and result.source_version is None:
+        if profile:
+            result.source_version = profile
+            result.version_evidence.append(VersionEvidence(profile, "--source-version", "pack assumption"))
+        elif runtime and (release := runtime.legacy):
+            result.source_version = release
+            for version, origin in runtime.minecraft:
+                if version == release:
+                    result.version_evidence.append(VersionEvidence(release, origin, "local runtime"))
+        if result.source_version:
+            result.warnings = [note for note in result.warnings if not note.startswith("No exact Minecraft version declared.")]
+            result.warnings.append(f"No exact Minecraft version in this archive; using pack profile {result.source_version}.")
+    if profile and result.source_version != profile:
         result.warnings.append(f"Archive version does not establish {profile}; that legacy index/mapping profile was not applied.")
     return PackMod(label, path, result, classes, refs, invalid, parents)
-
-
-def _declared_requests(info: Audit) -> list[tuple[str, str, bool, str]]:
-    result = set()
-    for mod in info.mods:
-        for declaration in mod.dependencies:
-            origin, _, tail = declaration.partition(": ")
-            data = tail if origin == "@Mod dependencies" else json.loads(tail)
-            values = data if isinstance(data, list) else [data]
-            for node in values:
-                if isinstance(node, dict):
-                    node = next((node[k] for k in ("modId", "modid", "label") if isinstance(node.get(k), str)), "")
-                if not isinstance(node, str):
-                    continue
-                for clause in map(str.strip, node.split(";")):
-                    prefix, sep, tail = clause.partition(":")
-                    # FML annotations use after:/before:/required-after:/required-before: before a mod ID.
-                    mod_and_version = tail if sep else prefix
-                    wanted = mod_and_version.partition("@")[0].strip()
-                    if not DECLARED_ID.fullmatch(wanted):
-                        continue
-                    required = origin == "requiredMods" or prefix.startswith("required-")
-                    result.add((mod.mod_id, wanted, required, clause))
-    return sorted(result)
 
 
 @dataclass
@@ -134,10 +125,19 @@ class ModPack:
     selected_archive: str | None = None
     embedded_paths: dict[Path, str] = field(default_factory=dict)
     archive_warnings: list[str] = field(default_factory=list)
+    runtime: Platform | None = None
+    supplied_profile: str | None = None
+
+    @property
+    def dependencies(self) -> LegacyDependencies:
+        # open_pack finishes adding archives before any dependency queries.
+        if not hasattr(self, "_dependencies"):
+            self._dependencies = LegacyDependencies(self.mods)
+        return self._dependencies
 
     def add(self, label: str, path: Path, *, required: bool = False) -> None:
         try:
-            mod = _load(label, path, self.context.profile)
+            mod = _load(label, path, self.supplied_profile, self.runtime)
         except (InputError, OSError) as exc:
             if required:
                 raise InputError(f"Could not index selected mod {label!r}: {exc}") from exc
@@ -162,18 +162,19 @@ class ModPack:
             return matches[0]
         raise InputError(f"Select an unambiguous relative archive path from scan-pack (got {selection!r}).")
 
-    def _pack_providers(self, owner: str, version: str | None) -> tuple[str, ...]:
-        # Coremods sometimes ship patched copies of Minecraft classes. Those do not
-        # establish which version/signature the game or Forge actually declares.
-        if any(platform_symbol(symbol) for symbol in self.context.spellings(Symbol(owner), version)):
+    def _pack_providers(self, mod: PackMod, owner: str, declarations: list[dict]) -> tuple[str, ...]:
+        # Patched classes inside a mod cannot establish a platform declaration.
+        if (self.context.legacy_locations(owner, mod.audit.source_version) or
+                any(platform_symbol(symbol) for symbol in self.context.spellings(Symbol(owner), mod.audit.source_version))):
             return ()
-        return tuple(self.owners.get(owner, ()))
+        return self.dependencies.class_providers(mod, owner, declarations)
 
     def dependency_locations(self, mod: PackMod, owner: str) -> set[ClassLocation]:
         if owner in mod.classes:
             return set()
+        declared = self.dependencies.declarations(mod)
         return {ClassLocation(self.mods[path].path, self.mods[path].classes[owner], owner)
-                for path in self._pack_providers(owner, mod.audit.source_version)} | self.context.legacy_locations(owner, mod.audit.source_version)
+                for path in self._pack_providers(mod, owner, declared)} | self.context.legacy_locations(owner, mod.audit.source_version)
 
     def _report_mod(self, mod: PackMod) -> dict:
         version = mod.audit.source_version
@@ -181,10 +182,14 @@ class ModPack:
         ambiguity = set()
         unknown = set()
         changes = []
+        declared = self.dependencies.declarations(mod)
+        providers_by_owner = {}
         for ref in sorted(mod.references):
             if ref.owner in mod.classes:
                 continue
-            providers = self._pack_providers(ref.owner, version)
+            if ref.owner not in providers_by_owner:
+                providers_by_owner[ref.owner] = self._pack_providers(mod, ref.owner, declared)
+            providers = providers_by_owner[ref.owner]
             if len(providers) == 1:
                 dependencies[providers[0]].add(ref.owner)
             elif providers:
@@ -193,14 +198,6 @@ class ModPack:
                 changes.append(self.context.analyze(ref, version, mod.references[ref]))
             elif not providers and not ref.owner.startswith(STANDARD_PREFIXES):
                 unknown.add(ref.owner)
-
-        declared = []
-        for requester, dependency, required, declaration in _declared_requests(mod.audit):
-            key = dependency.casefold()
-            providers = sorted(self.ids.get(key, ()))
-            status = "loader" if key in LOADER_IDS else "ambiguous" if len(providers) > 1 else "present" if providers else "not_found"
-            declared.append({"mod": requester, "id": dependency, "required": required,
-                             "declaration": declaration, "status": status, "archives": providers})
         return {"archive": mod.archive, "source_version": version,
                 "version_evidence": [asdict(e) for e in mod.audit.version_evidence],
                 "mods": [asdict(metadata) for metadata in mod.audit.mods],
@@ -219,6 +216,7 @@ class ModPack:
         selected = [self.select(focus)] if focus else self.mods.values()
         return {"schema_version": 1, "root": str(self.root), "legacy_profile": self.context.profile,
                 "target": f"Minecraft {MINECRAFT_VERSION} / NeoForge {NEOFORGE_VERSION}",
+                "local_runtime": self.runtime.report() if self.runtime else None,
                 "legacy_api_inputs": self.context.legacy.paths, "target_api_inputs": self.context.target.paths,
                 "warnings": [*self.archive_warnings, *self.context.legacy.warnings, *self.context.target.warnings],
                 "duplicate_mod_ids": {modid: sorted(paths) for modid, paths in sorted(self.ids.items()) if len(paths) > 1},
@@ -277,8 +275,9 @@ def _digest(path: Path) -> bytes:
 
 
 def _index_pack(root: Path, sources: list[tuple[str, Path]], context: ApiContext,
-                selected_mod: Path | None) -> ModPack:
-    pack = ModPack(root, {}, context, [])
+                selected_mod: Path | None, runtime: Platform | None = None,
+                supplied_profile: str | None = None) -> ModPack:
+    pack = ModPack(root, {}, context, [], runtime=runtime, supplied_profile=supplied_profile)
     if selected_mod is not None:
         selected_mod = selected_mod.expanduser().resolve()
         if not selected_mod.is_file() or selected_mod.suffix.lower() not in ARCHIVE_EXTENSIONS:
@@ -322,13 +321,33 @@ def open_pack(path: Path, context: ApiContext, selected_mod: Path | None = None)
     root = path.expanduser().resolve()
     if root.is_dir():
         sources = [(jar.relative_to(root).as_posix(), jar) for jar in _archives(root)]
-        yield _index_pack(root, sources, context, selected_mod)
+        runtime = discover(root)
+        profile = context.profile or runtime.legacy
+        warnings = list(runtime.warnings)
+        if profile and not context.legacy.paths:
+            legacy = ApiIndex()
+            for path in runtime.legacy_apis(root, profile):
+                try:
+                    index = ApiIndex.load([path])
+                except (InputError, OSError) as exc:
+                    warnings.append(f"Could not index {path.relative_to(root).as_posix()} as a local API: {exc}")
+                    continue
+                legacy.paths.extend(index.paths)
+                legacy.warnings.extend(index.warnings)
+                for owner, entries in index.classes.items():
+                    legacy.classes[owner].extend(entries)
+            discovered_context = replace(context, legacy=legacy, profile=profile)
+        else:
+            discovered_context = context
+        pack = _index_pack(root, sources, discovered_context, selected_mod, runtime, context.profile)
+        pack.archive_warnings = warnings
+        yield pack
         return
     if not root.is_file() or root.suffix.lower() not in ARCHIVE_EXTENSIONS:
         raise InputError(f"Expected an installed modpack folder or a .jar/.zip pack archive: {root}")
     with tempfile.TemporaryDirectory(prefix="mcmodup-pack-") as scratch:
         sources, warnings = _embedded_mods(root, Path(scratch))
-        pack = _index_pack(root, sources, context, selected_mod)
+        pack = _index_pack(root, sources, context, selected_mod, supplied_profile=context.profile)
         pack.embedded_paths = {jar: label for label, jar in sources if jar != root}
         pack.archive_warnings = warnings
         yield pack
@@ -348,7 +367,7 @@ def render_pack(report: dict) -> str:
         for dep in mod["binary_dependencies"]:
             lines.append(f"  Uses {len(dep['classes'])} class(es) in {dep['archive']!r}")
         for dep in mod["declared_dependencies"]:
-            if dep["status"] in {"not_found", "ambiguous"}:
+            if dep["status"] not in {"present", "loader"}:
                 lines.append(f"  Declared {'required' if dep['required'] else 'optional'} dependency {dep['id']!r}: {dep['status']}")
         if mod["api_summary"]:
             lines.append("  API checks: " + ", ".join(f"{status}: {n}" for status, n in mod["api_summary"].items()))

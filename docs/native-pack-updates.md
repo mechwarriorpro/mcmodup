@@ -1,64 +1,95 @@
-# Update an installed modpack to native NeoForge mods
+# Move selected mods into a new NeoForge pack
 
-`pack-ui` provides a checklist. `update-pack` is the equivalent scriptable command. By default they select **native Minecraft 1.21.1 / NeoForge JARs** from local pack files. To produce new native JARs, use the [reviewed source build mode](source-port-builds.md) instead. The output does not install, run, or require Legacy Connector, its shims, or its translated cache. Connector is [a separate reference for legacy behavior and mappings](legacy-connector.md), not this updater's translation engine.
+Use `pack-ui` for a checklist or `update-pack` for a scriptable plan. The updater looks in your installed packs for **native Minecraft 1.21.1 / NeoForge** builds. It copies compatible local JARs or [builds reviewed native source ports](source-port-builds.md); it does not translate arbitrary old Forge bytecode or use Legacy Connector at runtime.
 
-## Folder layout
-
-Use installed directories, not launcher export ZIPs or download manifests:
+## Inputs
 
 ```text
 LegacyPack/
-  mods/                    Original .jar and .zip mods and add-ons
-  coremods/                Optional additional legacy archives
-  bin/                     Original Minecraft and Forge files, if available
-  lib/ or libraries/       Additional local candidates
-  mcmodup-updates.json     Optional reviewed mapping for renamed mod IDs
-UpdatedPack/
-  mods/                    The target's already installed native mods
-  bin/                     Installed 1.21.1 Minecraft JAR and NeoForge 21.1.x JAR
-  lib/ or libraries/       Native update and dependency candidates, not yet active
+  mods/                    Original .jar / .zip files, including nested and versioned folders
+  coremods/                Also scanned recursively; a pack can have only coremods/
+  bin/minecraft.jar        Original game API (when installed in this launcher layout)
+  bin/modpack.jar          Original Forge/FML API in older launcher packs
+  lib/ or libraries/       Local dependency evidence and/or inactive native candidates
+  mcmodup-updates.json     Optional reviewed legacy-to-native ID map
+NeoForgePack/
+  mods/                    Already installed native candidates; may be empty or absent
+  lib/ or libraries/       Other local native candidates, not yet active
+  libraries/net/neoforged/neoforge/21.1.x/   Stock server installer layout, or:
+  bin/                     Installed Minecraft 1.21.1 and NeoForge 21.1.x universal JARs
 ```
 
-The updater reads the Minecraft release from the game JAR's `version.json`, a supported vanilla client fingerprint, or the modern server bundle's version list. It identifies the target loader using the installed `neoforge-21.1.x-universal.jar` (or `neoforge-21.1.x.jar`) and its NeoForge classes. An installer alone is not the installed loader. The original `bin/` also provides legacy version evidence for JARs without an exact declaration. Neither `bin/` is modified, and the old platform's JARs are never treated as modern mods or dependencies.
+Use actual installed folders, not launcher export manifests. `scan-pack`, `plan-port`, and `decompile-mod` can use the local Minecraft and Forge JARs as signature inputs when the pack establishes the exact supported legacy release and no explicit `--legacy-api` was supplied. Minecraft `version.json`, supported vanilla client fingerprints, and Forge's `fmlversion.properties` are evidence; a filename alone is not. Bare libraries outside the loader folders can be reported as local provider evidence by the updater, but are not assumed to be enabled or installed as mods. The updater never copies the source runtime or legacy Forge/coremod code into `mods/`.
 
-Put inactive native builds in `lib/`, `libraries/`, or `bin/` in either pack. To use one mixed folder containing a 1.21.1 installation and legacy JARs, omit `--target`. Legacy files already in the target must have replacements before a complete mods folder can be staged; unrelated active files are not silently dropped.
+A NeoForge installer JAR alone is not an installed target. Source and target may be the same folder only if it already has an identifiable 1.21.1 runtime. Use `--target` for separate installations. Supply renamed mod IDs in `LegacyPack/mcmodup-updates.json` (e.g. `{"appliedenergistics2": "ae2"}`), or use `--id-map /path/to/ids.json` to leave both inputs untouched. These mappings are your review decisions, not evidence of feature equivalence.
 
-## Choose mods and stage the update
-
-From the checkout, with Python 3.11+:
+## Create an instance or stage a mods-folder swap
 
 ```sh
-python3 -m mcmodup pack-ui /path/to/LegacyPack --target /path/to/UpdatedPack \
-  -o .mcmodup/staged-1.21.1
+# Inspect the source selection and its version-resolved add-ons and dependencies
+python3 -m mcmodup update-pack LegacyPack --target NeoForgePack \
+  --mod mods/1.7.10/OldMod.jar --json
+
+# Write a fresh instance with the selected mods, their add-ons/dependencies, and target runtime files
+python3 -m mcmodup update-pack LegacyPack --target NeoForgePack \
+  --mod mods/1.7.10/OldMod.jar --mod coremods/Other.jar \
+  --output-pack .mcmodup/NewPack
+
+# Alternatively, keep the target's other active mods and stage a replacement mods/ folder only
+python3 -m mcmodup update-pack LegacyPack --target NeoForgePack \
+  --mod mods/1.7.10/OldMod.jar -o .mcmodup/staged-mods
+
+# Same new-instance workflow with a checklist
+python3 -m mcmodup pack-ui LegacyPack --target NeoForgePack --output-pack .mcmodup/NewPack
 ```
 
-Open the local URL printed by the command (normally `http://127.0.0.1:8765/`). Select a mod, then review the add-ons, dependencies and replacement files before clicking **Stage updated mods**. Omit `-o` for a read-only workbench. Keep a writable workbench local; it is not a public upload service.
+Both output modes require a new directory outside the input packs. Neither modifies either input. Open the local workbench URL (default `http://127.0.0.1:8765/`) to review the plan before writing; omit the destination for read-only use. Omit `--mod` in the CLI to list available selections.
 
-The CLI also supports catalog, preview and stage without a browser:
+- **`--output-pack`** does not inherit unrelated target mods, disabled files, or configs. It copies a stock NeoForge server install's relative launch-argument files and the local libraries they reference. Start from the new folder with Java 21 using the command in `INSTALL.txt`. For a `bin/` target, it writes a new **game directory** with the identified modern JARs; point an existing 1.21.1 NeoForge launcher profile at it. It is not a standalone launcher or an installed server in this layout.
+- **`-o` / `--output`** keeps the existing mods-swap behavior. It stages the target's complete `mods/` folder and does not copy the runtime. A leftover non-native target mod is a blocker unless the plan replaces all of its IDs. Close the game, back up `mods/`, then **replace** that folder; do not merge it with stale JARs.
 
-```sh
-# List candidates and blockers, with no changes
-python3 -m mcmodup update-pack LegacyPack --target UpdatedPack --json
+`update-report.json` records file origins and SHA-256s, legacy declarations and class owners, native constraints and provider choices, and any runtime files copied. No saves, credentials, configs or license/EULA acceptance are copied. Start in a fresh world. A ready or staged plan is not a boot check, proof of saved-world migration, or proof of gameplay or resource parity.
 
-# Plan the selection, auto-including qualifying add-ons and dependencies
-python3 -m mcmodup update-pack LegacyPack --target UpdatedPack --mod mods/OldMod.jar
+## Different versions of the same dependency
 
-# Write a complete replacement mods/ folder plus the report and instructions
-python3 -m mcmodup update-pack LegacyPack --target UpdatedPack \
-  --mod mods/OldMod.jar --mod mods/AnotherMod.jar -o .mcmodup/staged-1.21.1
+The planner resolves required old declarations per consumer. For example, an add-on demanding an exact Forge Multipart release is not automatically added when you select a *different* Multipart release. The report records each compatible local original provider and its digest, or records why it could not identify one. Old ranges are **not** applied to modern JARs. The native add-ons' declarations define which modern versions can run together.
+
+- If one local native provider satisfies all required consumers (and present optional constraints), stage a single provider. `shared_native_provider` shows the selected JAR and every constraint. An already installed compatible version is preferred. If several otherwise equivalent solutions work, use `--provider MOD_ID=SHA256` to pin a reviewed local artifact. This cannot force an incompatible release. The resolver checks transitive dependencies too.
+- If modern ranges are disjoint, staging stops; do not install two top-level JARs with the same mod ID or duplicate classes. Forge Multipart/Forge Microblocks can be mapped to a **single** modern CB Multipart JAR if the native consumers were ported to that API. Shared parts, registries, packets, mixins, and transformers need a native port or adapter. Changing a filename or shading two copies of an old coremod does not isolate them.
+- Numeric Maven-style intervals and exact versions are supported, including alpha, beta and RC qualifiers and historical AE2 `rv3-beta-6`-style releases. Unrecognized ranges are not guessed. Jar-in-Jar payloads are inspected for legacy/Connector code, but version negotiation is left to NeoForge. Supply standalone local providers for required mod IDs the planner cannot resolve. Static metadata cannot establish optional side-specific integrations or actual class linkage across the full pack.
+
+### Retain two private native library versions
+
+For **pure Java implementation libraries**, build each consumer against a *relocated* copy of the version it needs. Use a source-level namespace change or configure your build's shading tool to relocate the definitions and references together. Put any library-private resources under that same namespace and update resource lookups. Keep notices/licenses and check the consumer's behavior. No pack update step rewrites a binary on your behalf.
+
+A prepared consumer JAR can include `META-INF/mcmodup/private-libraries.json`:
+
+```json
+{
+  "schema_version": 1,
+  "libraries": [{
+    "consumer": "alpha",
+    "id": "bitcodec",
+    "version": "1.0",
+    "original_package": "old/codec",
+    "source_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+  }]
+}
 ```
 
-Once the plan is ready, stop the target game, back up its `mods/`, and **replace** that folder with the staged `mods/`. Do not merge stale and replacement JARs. `update-report.json` records where the staged files came from, their SHA-256 hashes, and the old target files being replaced. Test a fresh world first. The updater does not change either pack or move saves and configs.
+Replace the example SHA-256 with the reviewed library input's actual digest. In this example, the port must relocate `old/codec/...` to `mcmodup_private/alpha/bitcodec/v1_0/...` and use that package from its code. The namespace includes the native consumer ID, library ID and release (nonalphanumeric version characters become `_`). Another port `beta` can carry `v2_0` under `mcmodup_private/beta/bitcodec/`. Neither declares the private copy as a loader-wide mod dependency. The planner checks that relocated code exists, is referenced by its consumer, is not shared across JARs, has no remaining old-package class references, and does not link to Minecraft/loader classes or register Java services. It records the author-declared source hash; that is not proof of the library's release or functionality. Reflection, resource behavior and integration tests still need review. Content/registry mods, transformers, service providers and native libraries are not candidates for this treatment.
 
-## How matches are checked
+## Example: Thaumic Energistics with Applied Energistics 2
 
-- A native candidate must contain compiled code and `META-INF/neoforge.mods.toml`. New candidates need a declared Minecraft or NeoForge range that includes the installed target. A filename alone does not make a JAR compatible. Local native builds of a renamed legacy mod can be matched using `LegacyPack/mcmodup-updates.json`, for example `{"oldmod": "new_mod_id"}`. Use this only for a reviewed successor, not an unrelated mod with similar features.
-- Selecting a base mod includes old add-ons identified by required FML declarations or unambiguous class references. Explicitly optional FML integrations are not auto-selected. Every included mod ID needs a native counterpart. The selected native JARs' **modern** dependency declarations drive installation, including dependencies of dependencies. The planner does not install old Forge libraries that the native builds no longer use.
-- The updater keeps target native mods where their versions satisfy the plan, selects an unambiguous compatible local replacement when needed, and checks the declared requirements of retained target mods as well. Literal versions and single numeric Maven intervals such as `[2.1,3)` are supported, including `alpha`, `beta`, and `rc` qualifiers such as `[21.0.110-beta,)`. Missing or ambiguous matches, incompatible requirements, and output filename collisions block staging. A plan does not verify reflection, optional integrations, loader-side behavior, or gameplay. The updater does not resolve Jar-in-Jar version negotiation; required dependencies not resolved via the top-level inventory may need a standalone local JAR.
-- Known Connector derivatives, declared Connector dependencies, legacy FML references in modern output, and recognizable Connector code references are rejected. Existing partial mcmodup profiles are not sold as full replacements.
+Use an actual 1.7.10 Thaumic Energistics JAR, e.g. [`1.1.3.0` for AE2 RV3](https://www.curseforge.com/minecraft/mc-mods/thaumic-energistics/files/2563527), and keep the original AE2 and Thaumcraft JARs available in the source for baseline evidence. Put these local **native** JARs under the target's `lib/`:
 
-**When no native build exists:** Use [source-build mode](source-port-builds.md) to compile reviewed native ports for the exact original and its add-ons. Where no matching native project exists, the updater reports a blocker; it cannot recreate arbitrary gameplay from an old Forge binary. The [`convert-jar` profiles](usage-examples.md) are explicitly partial Minechem and Thaumcraft adaptations, not drop-in replacements. For a mod still needing a port, [recover MCP-named references and build a parity checklist](mapped-decompilation.md) separately; that output cannot be staged as an update.
+- [Thaumic Energistics: Reforged 1.1 (1.21.1)](https://github.com/Incoderr/thaumic-energistics-reforged/releases/tag/1.21.1) and [Thaumcraft 4: Reforged 1.1.3 (1.21.1)](https://github.com/Incoderr/thaumcraft-4-reforged/releases/tag/1.21.1). Use this matching Thaumcraft family, not a different port merely because it declares `thaumcraft`.
+- [AE2 19.2.18 for NeoForge](https://github.com/AppliedEnergistics/Applied-Energistics-2/releases/tag/neoforge/v19.2.18), [GuideME 21.1.22](https://github.com/AppliedEnergistics/GuideME/releases/tag/v21.1.22), Curios `9.5.1+1.21.1` and TerraBlender `4.1.0.8`.
 
-## What was tested
+Write `{"appliedenergistics2":"ae2"}` to a separate `ids.json`, review the native JARs, and select only the original Thaumic Energistics with `--mod`. Its native required dependencies bring in AE2 and the matching Thaumcraft port. This is a real inter-mod API port, not old Thaumic Energistics pointed directly at a new AE2 JAR. For CB Multipart, review the three IDs together: `ForgeMultipart` → `cb_multipart`, `ForgeMicroblock` → `cb_microblock`, `McMultipart` → `cb_multipart_minecraft`. That still does not port other old add-ons using Multipart APIs.
 
-The [native updater CI smoke test](https://github.com/mechwarriorpro/mcmodup/actions/runs/44291482139) staged compiled NeoForge builds of the Retro Ruby sample, a sample add-on, and its auto-selected library. A NeoForge `21.1.267` server loaded all three without Connector, and the add-on's GameTest found the base mod's registered item. That tests the update path, not gameplay compatibility for the original third-party mods.
+## Verification and remaining limits
+
+The pack tests cover nested `mods/` and `coremods/`, launcher-era Forge/Minecraft API evidence, two legacy versions bound to their exact consumers, shared and disjoint native constraints, local SHA-256 pins, private relocated versions with separate resources, and a fresh output that leaves both inputs unchanged. The [release smoke workflow](../.github/workflows/pack-compatibility.yml) exercises a pinned Thaumic Energistics/AE2 and CB Multipart stack without publishing either input or output JARs. Check the run result for measured boot and gameplay tests. Neither dependency resolution nor those focused tests certify every feature, asset, client behavior, or integration.
+
+If no native target exists, use a [reviewed source build](source-port-builds.md) or [recover MCP-named references and plan the port](mapped-decompilation.md). The partial `convert-jar` profiles are not drop-in replacements.

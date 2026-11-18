@@ -1,6 +1,6 @@
 # Build native 1.21.1 JARs
 
-Use `build-jars` for built-in ports, or supply `--source-ports TRUSTED.json` to `update-pack` or `pack-ui` for other reviewed source projects. These commands **compile new JARs**, rather than choose prebuilt replacements. They use the same [installed folder layout](native-pack-updates.md#folder-layout) and `mods/` swap as the updater. Install Python 3.11+ and **JDK 21**; the paired build also requires Git on `PATH`. First-run Gradle builds need network access to the pinned projects' repositories.
+Use `build-jars` for built-in ports, or supply `--source-ports TRUSTED.json` to `update-pack` or `pack-ui` for other reviewed source projects. These commands **compile new JARs**, rather than choose prebuilt replacements. They use the same [installed folder layout](native-pack-updates.md#folder-layout) and `mods/` swap (`-o`) or fresh instance (`--output-pack`) as the updater. Install Python 3.11+ and **JDK 21**; the paired build also requires Git on `PATH`. First-run Gradle builds need network access to the pinned projects' repositories.
 
 No built-in recipe has full parity yet. `build-jars` requires `--allow-preview-ports`, leaves both input packs unchanged, and writes the new `mods/`, `update-report.json`, and `INSTALL.txt` outside them.
 

@@ -6,10 +6,10 @@ Prepare standalone **Minecraft 1.21.1 / NeoForge** modpack updates from installe
 
 ```sh
 python3 -m mcmodup pack-ui /path/to/LegacyPack --target /path/to/NeoForgePack \
-  -o .mcmodup/staged-1.21.1
+  --output-pack .mcmodup/NewPack
 ```
 
-Open the local URL to select legacy mods under `mods/`. mcmodup reads platform evidence from `bin/`, looks for compatible local native JARs, includes related add-ons, and pulls required dependencies from the pack folders. It stages a new `mods/` folder without changing either input. **No Legacy Connector in the output or required at launch.** Missing native builds and dependencies are reported as blockers, never replaced by relabeled legacy code. See the [folder layout, CLI commands and limitations](docs/native-pack-updates.md).
+Open the local URL to select legacy mods under `mods/` and `coremods/`. mcmodup reads the legacy platform evidence, finds native builds and their dependencies in the local packs, and creates a new instance without changing either input. Use `-o` instead to stage a replacement `mods/` folder for an existing target. **No Legacy Connector in the output or required at launch.** Missing native builds and dependencies are reported as blockers, never replaced by relabeled legacy code. See the [folder layout, CLI commands and limitations](docs/native-pack-updates.md).
 
 ## Build native mods and add-ons from reviewed source
 
@@ -64,7 +64,7 @@ You can also install the tool into a Python environment with `python -m pip inst
 
 See the [Minechem, Thaumcraft, Atomic Science, and ICBM examples](docs/usage-examples.md) for the original JAR + selected pack workflow and what still needs a manual port.
 
-Point `scan-pack` at an installed instance, its `mods` folder, or a `.jar`/`.zip` with embedded mod archives. It scans `mods/` and `coremods/` recursively (including versioned subfolders such as `mods/1.7.10/`) and accepts legacy `.zip` mods. It does not run the pack or change your inputs. A launcher export with only a download manifest is not a dependency source; use the installed instance.
+Point `scan-pack` at an installed instance, its `mods` folder, or a `.jar`/`.zip` with embedded mod archives. It scans `mods/` and `coremods/` recursively (including versioned subfolders such as `mods/1.7.10/`) and accepts legacy `.zip` mods. In launcher-era instances it can also read the exact local Minecraft and Forge APIs from `bin/minecraft.jar` and `bin/modpack.jar`. It does not run the pack or change your inputs. A launcher export with only a download manifest is not a dependency source; use the installed instance.
 
 ```sh
 python3 -m mcmodup scan-pack /path/to/instance --source-version 1.7.10

@@ -6,7 +6,8 @@ const statusLabels = {
   available: 'Available', installed: 'In target', buildable: 'Source build', preview: 'Preview build',
   partial: 'Partial only', blocked: 'Blocked', auto: 'Auto add-on',
 };
-const selectable = row => ['available', 'buildable'].includes(row.status);
+const selectable = row => ['available', 'buildable'].includes(row.status) ||
+  (catalog?.output_pack && row.status === 'installed');
 function element(tag, className, text) {
   const node = document.createElement(tag);
   if (className) node.className = className;
@@ -104,6 +105,9 @@ function showPlan(loading = false) {
     content.append(element('p', 'plan-empty', 'Select a mod to see what will be added or replaced.'));
     return;
   }
+  details(content, 'Legacy version splits', (preview?.legacy_version_conflicts || []).map(row => ({ name: row.id,
+    detail: row.requirements.map(req => `${req.consumer} needs ${req.range}; ${req.provider?.archive ?? req.status}`).join(' · '),
+  })));
   details(content, 'Related add-ons', addons.map(([name, info]) => ({ name, detail: `${info.reason} · ${info.required_by}` })));
   const files = preview?.files || [];
   const buildFiles = (preview?.build_order || []).map(id => files.find(row => row.from === `build/${id}`)).filter(Boolean);
@@ -121,6 +125,16 @@ function showPlan(loading = false) {
     name: Object.keys(row.ids).join(', '), detail: row.from, action: row.action,
   })));
   details(content, 'Target files to replace', Object.entries(preview?.replaced_target_files || {}).map(([name, detail]) => ({ name, detail })));
+  details(content, 'Shared native dependencies', (preview?.native_dependencies || [])
+    .filter(row => row.status === 'shared_native_provider').map(row => ({ name: `${row.id} ${row.provider.version}`,
+      detail: `${row.provider.archive} · ${row.requirements.filter(req => req.type === 'required').length} required declarations`,
+    })));
+  details(content, 'Isolated native libraries', files.flatMap(row => row.private_libraries.map(lib => ({
+    name: `${lib.id} ${lib.version}`, detail: `${lib.consumer} · ${lib.namespace}`,
+  }))));
+  if (preview?.instance_runtime) content.append(element('p', 'plan-empty', preview.instance_runtime.layout === 'neoforge-server'
+    ? 'The new pack includes the local NeoForge server runtime. Boot and gameplay still need verification.'
+    : 'Point an installed 1.21.1 NeoForge launcher profile at the new game directory.'));
   const retained = preview?.files.filter(row => row.action === 'keep').length;
   if (retained) content.append(element('p', 'plan-empty', `${retained} existing native ${retained === 1 ? 'JAR stays' : 'JARs stay'} in the target mods folder.`));
   if (preview?.ready) content.append(element('p', 'plan-empty', buildFiles.length
@@ -160,12 +174,14 @@ $('stage').addEventListener('click', async () => {
   showPlan();
   $('stage-hint').textContent = catalog.source_build_mode
     ? 'Compiling source and running NeoForge GameTests. Keep this tab open; builds can take several minutes.'
-    : 'Rechecking local files and writing the new mods folder…';
+    : catalog.output_pack ? 'Rechecking local files and writing the new pack…' : 'Rechecking local files and writing the new mods folder…';
   try {
     const result = await request('/api/stage', selected);
     preview = result.plan;
     completed = true;
-    notice(`Updated mods staged at ${result.output}. See INSTALL.txt for the safe folder swap. Both input packs are unchanged.`);
+    notice(catalog.output_pack
+      ? `New pack created at ${result.output}. See INSTALL.txt for launch instructions. Both input packs are unchanged.`
+      : `Updated mods staged at ${result.output}. See INSTALL.txt for the safe folder swap. Both input packs are unchanged.`);
     $('stage-hint').textContent = 'Staging complete. Start a new workbench with a new output folder to stage again.';
   } catch (error) {
     if (error.plan) preview = error.plan;
@@ -188,15 +204,19 @@ $('stage').addEventListener('click', async () => {
       $('select-available').textContent = 'Select buildable';
       $('footer-copy').textContent = 'Pinned sources and local mod dependencies · No Legacy Connector';
     }
+    if (catalog.output_pack) {
+      $('stage-title').textContent = catalog.source_build_mode ? 'Build new pack' : 'Create new pack';
+      $('stage-hint').textContent = 'Only the selected updates, required dependencies and target runtime files are copied.';
+    }
     const sourceVersions = [...new Set(catalog.source_bin.minecraft.map(row => row.version))];
-    $('source-detail').textContent = (sourceVersions.length ? `MC ${sourceVersions.join(', ')} · ` : '') + 'mods/';
-    $('target-detail').textContent = `MC ${catalog.minecraft} · NeoForge ${catalog.neoforge} · bin/`;
+    $('source-detail').textContent = (sourceVersions.length ? `MC ${sourceVersions.join(', ')} · ` : '') + 'mods/ & coremods/';
+    $('target-detail').textContent = `MC ${catalog.minecraft} · NeoForge ${catalog.neoforge}`;
     if (catalog.warnings.length) {
       $('scan-notes').hidden = false;
       $('scan-summary').textContent = `Scan notes (${catalog.warnings.length})`;
       for (const warning of catalog.warnings) $('scan-items').append(element('li', '', warning));
     }
-    if (!catalog.can_stage) $('stage-hint').textContent = 'Preview only. Run with -o NEW_DIR to write the plan.';
+    if (!catalog.can_stage) $('stage-hint').textContent = 'Preview only. Run with --output-pack NEW_DIR or -o NEW_DIR to write files.';
     refresh();
   } catch (error) {
     notice(error.message, true);

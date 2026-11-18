@@ -17,7 +17,8 @@ STATIC = {"/": ("index.html", "text/html"), "/app.js": ("app.js", "text/javascri
           "/style.css": ("style.css", "text/css")}
 
 
-def handler(state: UpdateInventory, output: Path | None) -> type[BaseHTTPRequestHandler]:
+def handler(state: UpdateInventory, output: Path | None, *, output_pack: bool = False,
+            pins: dict[str, str] | None = None) -> type[BaseHTTPRequestHandler]:
     token = secrets.token_urlsafe(32)
     build_lock = Lock()
 
@@ -52,7 +53,7 @@ def handler(state: UpdateInventory, output: Path | None) -> type[BaseHTTPRequest
                 name, media = STATIC[route]
                 self._send(HTTPStatus.OK, media, (ASSETS / name).read_bytes())
             elif route == "/api/catalog":
-                self._json(HTTPStatus.OK, {**state.catalog(), "token": token,
+                self._json(HTTPStatus.OK, {**state.catalog(), "token": token, "output_pack": output_pack,
                                           "can_stage": output is not None and not (output.exists() or output.is_symlink())})
             else:
                 self._json(HTTPStatus.NOT_FOUND, {"error": "Not found"})
@@ -75,14 +76,15 @@ def handler(state: UpdateInventory, output: Path | None) -> type[BaseHTTPRequest
                 if not isinstance(selections, list) or len(selections) > len(state.entries) or not all(isinstance(s, str) for s in selections):
                     raise InputError("Supply a list of archive IDs from the checkbox catalog.")
                 if route == "/api/plan":
-                    self._json(HTTPStatus.OK, plan(state, selections).report)
+                    self._json(HTTPStatus.OK, plan(state, selections, output_pack=output_pack, pins=pins).report)
                     return
                 if output is None:
                     raise InputError("This workbench is read-only. Restart with -o NEW_DIR to stage an update.")
                 with build_lock:
                     # Re-read local files before writing, so a stale browser plan cannot stage changed inputs.
-                    refreshed = inventory(state.source, state.target, state.build_options, approved_sources=state.approved_sources)
-                    update = plan(refreshed, selections)
+                    refreshed = inventory(state.source, state.target, state.build_options, approved_sources=state.approved_sources,
+                                          id_map=state.id_map)
+                    update = plan(refreshed, selections, output_pack=output_pack, pins=pins)
                     if update.problems:
                         self._json(HTTPStatus.CONFLICT, {"error": "The refreshed plan has blockers.", "plan": update.report})
                         return
@@ -95,7 +97,8 @@ def handler(state: UpdateInventory, output: Path | None) -> type[BaseHTTPRequest
     return Handler
 
 
-def serve(state: UpdateInventory, output: Path | None, host: str, port: int) -> None:
+def serve(state: UpdateInventory, output: Path | None, host: str, port: int, *, output_pack: bool = False,
+          pins: dict[str, str] | None = None) -> None:
     if not 1 <= port <= 65535:
         raise InputError("Use an HTTP port between 1 and 65535.")
     if output is not None:
@@ -105,7 +108,7 @@ def serve(state: UpdateInventory, output: Path | None, host: str, port: int) -> 
         if output.exists() or output.is_symlink() or any(output.resolve().is_relative_to(root) for root in (state.source, state.target)):
             raise InputError("Choose a new output directory outside both modpacks.")
         output = output.resolve()
-    with ThreadingHTTPServer((host, port), handler(state, output)) as server:
+    with ThreadingHTTPServer((host, port), handler(state, output, output_pack=output_pack, pins=pins)) as server:
         print(f"Native modpack updater: http://{host}:{port}/ — {'read-only' if output is None else f'stage to {output}'}", flush=True)
         try:
             server.serve_forever()
