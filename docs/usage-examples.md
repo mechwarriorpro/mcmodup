@@ -1,6 +1,6 @@
 # Porting examples: Minechem, Thaumcraft, Atomic Science, and ICBM
 
-**Current capability:** `convert-jar` builds partial NeoForge 1.21.1 JARs for Minechem and Thaumcraft. Atomic Science and ICBM have legacy input and dependency examples only. The [source-build mode](source-port-builds.md#first-real-mod-recipe-thaumcraft-4-reload-preview) also builds a separate, broader Thaumcraft 4 preview. None of these is a verified full port with all assets and add-ons.
+**Current capability:** `convert-jar` builds partial NeoForge 1.21.1 JARs for Minechem and Thaumcraft. Atomic Science and ICBM have legacy input and dependency examples only. The [source-build mode](source-port-builds.md#thaumcraft-4-reload-preview) also builds a separate, broader Thaumcraft 4 preview. None of these is a verified full port with all assets and add-ons.
 
 Run the examples from the mcmodup checkout with Python 3.11+. Put your local inputs under `.mcmodup/` (ignored by Git). You can substitute an installed pack folder for either pack archive. A `.jar` or `.zip` pack must contain the actual mod files under `mods/` or `coremods/` (an enclosing instance folder is fine), or at the archive root. If a launcher export has only a download manifest, point to the installed instance instead.
 
@@ -20,7 +20,7 @@ python3 -m mcmodup convert-jar .mcmodup/Thaumcraft-1.7.10-4.2.3.5.jar \
   -o ports/thaumcraft-aspects-1.21.1.jar
 ```
 
-- **Minechem Chemistry:** Recovers 113 elements and 147 molecule formulas from the verified release. The new Chemical Synthesizer and Chemical Decomposer process those formulas in both directions. The latter also accepts water buckets, iron ingots, and gold ingots; the synthesizer can make the two ingots from their elements. These are a subset of the old recipes, plus new machine crafting recipes. The input bucket is consumed. See the survival walkthrough below.
+- **Minechem Chemistry:** Recovers 113 elements and 147 molecule formulas from the verified release. The new Chemical Synthesizer and Chemical Decomposer process those formulas in both directions. The latter also accepts water buckets, iron ingots, and gold ingots; the synthesizer can make the two ingots from their elements. A Microscope and Chemist's Journal let you inspect, record, and select recovered recipes. These are a subset of the old recipes, plus new machine crafting recipes. Decomposing a water bucket consumes it; inspecting it doesn't.
 - **Thaumcraft Aspects:** Imports the 48 built-in aspect tags, colors, and component relationships and registers icon items. Combine `aspect_aer` and `aspect_ignis` to craft `aspect_lux`. There is no survival source for primal aspects. The recipes do not port Thaumcraft research, essentia, or magic, and they do not support old add-ons.
 - Both JARs have new IDs and a **Partial Port** creative tab. Test them in a **new** NeoForge 1.21.1 world. Minechem's powered recipes and Thaumcraft's crafting recipe status are recorded in `data/<namespace>/mcmodup/catalog.json`. For Thaumcraft, duplicate ingredient combinations are skipped instead of silently overriding each other. No original JVM code or legacy dependency JAR is included.
 - Only use sources and assets you are allowed to modify. A generated Thaumcraft adaptation is for private use unless the author has given permission to distribute it. `convert-jar` does not upload an artifact or publish a release.
@@ -31,7 +31,15 @@ python3 -m mcmodup convert-jar .mcmodup/Thaumcraft-1.7.10-4.2.3.5.jar \
 2. Put a water bucket into the Decomposer's first input and redstone dust into its isolated fuel slot. Click **Process** to produce 16 water vials. Decompose one vial to get two hydrogen vials and one oxygen vial. An external NeoForge FE source can replace the dust; extract output from the bottom.
 3. In the Synthesizer, use **<** / **>** to select Water (hold Shift to skip ten; hover over the result name for inputs). Add two hydrogen and one oxygen vial, supply FE or a redstone dust, and click **Process**. For hopper/cable automation, switch **Manual** to **Auto**. Processing retries when ingredients, power, or output space become available. The machine saves its inventory, stored FE, selection, processing mode, and an in-flight job in **new** worlds.
 
-These are adapted machines: new menus, manual or repeating operation, no journal/ghost pattern, and a redstone fallback (+500 FE). FE is not a conversion of Universal Electricity voltage or power units. Most material, ore dictionary/tag, chance, and fluid recipes are not implemented, nor are integrations, radiation, reactors, the rest of Minechem's machines, and legacy-world migration. Only recovered formulas and the listed starter materials can be processed.
+### Research a recipe and use the journal
+
+1. Craft a Chemist's Journal from a book and a glass block. Craft a Microscope with the pattern `_LI / _PI / III`: `_` is empty, `I` iron ingot, `L` a spyglass, and `P` a glass pane.
+2. Open the Microscope and put one sample (such as a water vial) in the left slot and the journal in the right slot. Switch between **Synthesis** and **Decomposition** to inspect the ingredients or products. Inspection costs no power, doesn't consume either item, and records each supported sample once. The preview icons aren't items you can take.
+3. Retrieve the book and right-click in the air. Use **<** / **>** to select a discovery. Insert the journal in the slot at the upper right of an idle Synthesizer to load that recipe. It still needs the actual ingredients and FE. A discovery with only a decomposition recipe won't change the Synthesizer's selection.
+
+The [NeoForge GameTests](https://github.com/mechwarriorpro/mcmodup/actions/runs/44328458928) exercised both synthetic inputs and the JAR built from Minechem 5.0.5 FINAL: discoveries were deduplicated, both microscope slots survived save/reload, and a saved journal selected a synthesis job that used the normal ingredients and FE. These are dedicated server and menu checks, not a comparison of the original screens or a full survival playthrough.
+
+These are adapted machines: new menus and models, a spyglass instead of the original lens chain, manual or repeating processing, and a redstone fallback (+500 FE). The original journal cloning and GUI art are not ported. FE is not a conversion of Universal Electricity voltage or power units. Most material, ore dictionary/tag, chance, and fluid recipes are not implemented, nor are integrations, radiation, reactors, the rest of Minechem's machines, and legacy-world migration. Only recovered formulas and the listed starter materials can be processed.
 
 ## Thaumcraft 4.2.3.5: Forge 1.7.10 → NeoForge 1.21.1
 
