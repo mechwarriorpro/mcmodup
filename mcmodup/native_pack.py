@@ -474,8 +474,9 @@ class UpdatePlan:
                 elif private := next((lib for mod in consumers for lib in mod.private_libraries
                                       if lib.id == native_id and lib.consumer in ids), None):
                     binding |= {"status": "private_native_library", "namespace": private.namespace, "version": private.version}
-                elif candidate := active.get(native_id):
-                    if candidate in consumers or any(dep.mod_id == native_id and dep.kind in {"required", "optional"}
+                elif (candidate := active.get(native_id)) and not candidate.partial:
+                    if candidate in consumers or any(dep.mod_id == native_id and dep.kind in {"required", "optional"} and
+                                                     matches(candidate.ids[native_id], dep.version)
                                                      for mod in consumers for dep in mod.dependencies):
                         binding |= {"status": "native_metadata", "archive": candidate.label, "version": candidate.ids[native_id]}
                 provider = row["provider"]
@@ -533,7 +534,7 @@ def selected_addons(inventory: UpdateInventory, selected: list[str]) -> dict[str
     return added
 
 
-def _artifact_conflicts(mods: list[NativeMod]) -> list[str]:
+def _artifact_conflicts(mods: list[NativeMod] | tuple[NativeMod, ...]) -> list[str]:
     owners = defaultdict(list)
     errors = []
     for mod in mods:
@@ -583,7 +584,8 @@ def plan(inventory: UpdateInventory, selections: list[str], *, output_pack: bool
                 if key in forced and forced[key] is not recipe:
                     problems.append(f"Multiple selected legacy archives would build native mod ID {key!r}.")
                 forced[key] = recipe
-    resolution = resolve(roots, inventory.installed, inventory.providers, forced, pins, keep_target=not output_pack)
+    resolution = resolve(roots, inventory.installed, inventory.providers, forced, pins, keep_target=not output_pack,
+                         artifact_errors=_artifact_conflicts)
     if resolution.problem:
         problems.append(resolution.problem)
     mods = list(resolution.mods)
@@ -751,6 +753,8 @@ def _write_stage(update: UpdatePlan, output: Path) -> None:
         mods = output / "mods"
         mods.mkdir()
         for mod in update.mods:
+            if mod.path.resolve() != mod.path:
+                raise InputError(f"{mod.label!r} became a symbolic link during staging. Scan and retry.")
             dest = mods / mod.path.name
             shutil.copyfile(mod.path, dest)
             if _digest(dest) != mod.sha256:

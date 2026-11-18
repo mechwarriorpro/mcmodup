@@ -90,6 +90,10 @@ Write `{"appliedenergistics2":"ae2"}` to a separate `ids.json`, review the nativ
 
 ## Verification and remaining limits
 
-The pack tests cover nested `mods/` and `coremods/`, launcher-era Forge/Minecraft API evidence, two legacy versions bound to their exact consumers, shared and disjoint native constraints, local SHA-256 pins, private relocated versions with separate resources, and a fresh output that leaves both inputs unchanged. The [release smoke workflow](../.github/workflows/pack-compatibility.yml) exercises a pinned Thaumic Energistics/AE2 and CB Multipart stack without publishing either input or output JARs. Check the run result for measured boot and gameplay tests. Neither dependency resolution nor those focused tests certify every feature, asset, client behavior, or integration.
+The pack tests cover nested `mods/` and `coremods/`, launcher-era Forge/Minecraft API evidence, two legacy versions bound to their exact consumers, shared and disjoint native constraints, local SHA-256 pins, and a fresh output that leaves both inputs unchanged. The [release smoke workflow](../.github/workflows/pack-compatibility.yml) also executes two relocated Java library versions and checks that each consumer reads its own resource.
+
+In [the passing release smoke](https://github.com/mechwarriorpro/mcmodup/actions/runs/44342366654), the 1.7.10 inputs included Thaumic Energistics `1.1.3.0`, AE2 `rv3-beta-6`, Thaumcraft `4.2.3.5`, and Forge Multipart `1.2.0.345`. The updater staged the matching Reforged stack listed above, CB Multipart `3.5.0.155`, and CodeChickenLib `4.6.1.526` with a clean NeoForge `21.1.267` server runtime. The copied server reached its ready state and shut down cleanly. Separate GameTests using the same mod JARs verified that an AE2-backed cell preserved 37 units of fire essentia through serialization and reload, and that CB Microblock's item and diamond saw recipe registered.
+
+No input or staged JARs were published. These checks do not establish compatibility with Thaumcraft Reload or other forks, full gameplay or asset parity, graphical client behavior, or migration of an existing world.
 
 If no native target exists, use a [reviewed source build](source-port-builds.md) or [recover MCP-named references and plan the port](mapped-decompilation.md). The partial `convert-jar` profiles are not drop-in replacements.

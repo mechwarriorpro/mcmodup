@@ -1,6 +1,7 @@
 """Resolve one coherent set of native archives, including transitive version constraints."""
 
 from collections import defaultdict
+from collections.abc import Callable
 from dataclasses import dataclass
 from itertools import groupby
 from typing import TYPE_CHECKING
@@ -39,7 +40,8 @@ class Resolution:
 
 
 def resolve(roots: set[str], installed: list["NativeMod"], providers: dict[str, list["NativeMod"]],
-            forced: dict[str, "NativeMod"], pins: dict[str, str], *, keep_target: bool) -> Resolution:
+            forced: dict[str, "NativeMod"], pins: dict[str, str], *, keep_target: bool,
+            artifact_errors: Callable[[tuple["NativeMod", ...]], list[str]]) -> Resolution:
     retained = defaultdict(list)
     if keep_target:
         for mod in installed:
@@ -115,6 +117,8 @@ def resolve(roots: set[str], installed: list["NativeMod"], providers: dict[str, 
                 mods += tuple(unique)
                 continue
             if not options:
+                if errors := artifact_errors(mods):
+                    return Resolution(mods, "blocked", errors[0])
                 return Resolution(mods)
 
             key, choices = min(options, key=lambda pair: (len(pair[1]), pair[0]))

@@ -150,6 +150,16 @@ class PackCompatibilityTests(unittest.TestCase):
         self.assertTrue(update.report["ready"], update.problems)
         self.assertEqual(update.removed, {"mods/Aux-old.jar": "target/lib/Aux-new.jar"})
 
+    def test_picks_the_candidate_with_no_duplicate_linkage_when_ranges_alone_tie(self):
+        legacy(self.src, "mods/Root.jar", "root_mod")
+        collision = {"shared/impl/Codec.class": fixture_class("shared/impl/Codec")}
+        native(self.target, "lib/Root.jar", "root_mod", requirements=(("linked_lib", "[2,3)"),), more=collision)
+        native(self.target, "lib/Duplicate.jar", "linked_lib", version="2.0", more=collision)
+        candidate = native(self.target, "lib/Unique.jar", "linked_lib", version="2.1")
+        update = plan(inventory(self.src, self.target), ["mods/Root.jar"])
+        self.assertTrue(update.report["ready"], update.problems)
+        self.assertIn(candidate, {mod.path for mod in update.mods})
+
     def test_separate_output_pack_copies_only_selected_native_files_and_modern_runtime(self):
         self.launcher_source()
         selected = legacy(self.src, "mods/deep/Old.zip", "oldmod")

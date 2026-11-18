@@ -230,6 +230,32 @@ class NativePackTests(unittest.TestCase):
         self.assertTrue((self.out / "mods/Energy.jar").is_file())
         self.assertTrue((self.target / "mods/Quality.jar").is_file())
 
+    def test_ui_fresh_mode_stages_runtime_but_not_unrelated_mods(self):
+        self.working_stack()
+        bound = ThreadingHTTPServer(("127.0.0.1", 0), handler(inventory(self.src, self.target), self.out, output_pack=True))
+        Thread(target=bound.serve_forever, daemon=True).start()
+        self.addCleanup(bound.server_close)
+        self.addCleanup(bound.shutdown)
+        url = f"http://127.0.0.1:{bound.server_port}"
+        with urllib.request.urlopen(url + "/api/catalog", timeout=5) as response:
+            listing = json.load(response)
+        self.assertTrue(listing["output_pack"] and listing["can_stage"])
+        headers = {"Content-Type": "application/json", "X-Mcmodup-Token": listing["token"]}
+        body = json.dumps({"selected": ["mods/Tech.jar"]}).encode()
+        with urllib.request.urlopen(urllib.request.Request(url + "/api/plan", body, headers), timeout=5) as response:
+            report = json.load(response)
+        self.assertTrue(report["ready"], report["problems"])
+        self.assertEqual(report["instance_runtime"]["layout"], "launcher-game-directory")
+        self.assertFalse(self.out.exists())
+        with urllib.request.urlopen(urllib.request.Request(url + "/api/stage", body, headers), timeout=5) as response:
+            result = json.load(response)
+        self.assertTrue(result["plan"]["staged"])
+        self.assertEqual({path.name for path in (self.out / "mods").iterdir()}, {
+            "Tech-1.21.1.jar", "Tools-1.21.1.jar", "Energy.jar", "Common.jar",
+        })
+        self.assertTrue((self.out / "bin/neoforge-21.1.267-universal.jar").is_file())
+        self.assertTrue((self.target / "mods/Quality.jar").is_file())
+
     def test_ranges(self):
         self.assertTrue(matches("21.1.267", "[21.1,21.2)"))
         self.assertTrue(matches("2.1.4+1.21.1", "[2.0,3)"))

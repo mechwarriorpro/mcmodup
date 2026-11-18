@@ -4,6 +4,7 @@ from collections import Counter, defaultdict
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field, replace
+from functools import cached_property
 import hashlib
 import json
 import os
@@ -128,12 +129,9 @@ class ModPack:
     runtime: Platform | None = None
     supplied_profile: str | None = None
 
-    @property
+    @cached_property
     def dependencies(self) -> LegacyDependencies:
-        # open_pack finishes adding archives before any dependency queries.
-        if not hasattr(self, "_dependencies"):
-            self._dependencies = LegacyDependencies(self.mods)
-        return self._dependencies
+        return LegacyDependencies(self.mods)
 
     def add(self, label: str, path: Path, *, required: bool = False) -> None:
         try:
@@ -144,6 +142,7 @@ class ModPack:
             self.errors.append({"archive": label, "error": str(exc)})
             return
         self.mods[label] = mod
+        self.__dict__.pop("dependencies", None)
         for owner in mod.classes:
             self.owners[owner].append(label)
         for info in mod.audit.mods:

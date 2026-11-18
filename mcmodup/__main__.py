@@ -235,6 +235,8 @@ def main(argv: list[str] | None = None) -> int:
                         print("Build order: " + " → ".join(report["build_order"]))
                     for item in report["files"]:
                         print(f"{item['action']:>10}  {item['file']!r} ← {item['from']!r}")
+                        for lib in item["private_libraries"]:
+                            print(f"            private {lib['id']} {lib['version']} → {lib['namespace']}")
                     for issue in report["problems"]:
                         print(f"Blocked: {issue}")
                     for name, build in report["native_builds"].items():

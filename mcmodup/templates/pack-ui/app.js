@@ -80,7 +80,7 @@ function details(parent, title, items) {
 function showPlan(loading = false) {
   const deps = preview?.files.filter((row) => row.action === 'dependency') || [];
   const addons = Object.entries(preview?.auto_addons || {});
-  const targetIssues = preview?.problems || catalog?.target_issues || [];
+  const targetIssues = preview?.problems ?? (catalog?.output_pack ? [] : catalog?.target_issues) ?? [];
   $('stat-selected').textContent = selected.size;
   $('stat-addons').textContent = addons.length;
   $('stat-deps').textContent = deps.length;
@@ -205,8 +205,9 @@ $('stage').addEventListener('click', async () => {
       $('footer-copy').textContent = 'Pinned sources and local mod dependencies · No Legacy Connector';
     }
     if (catalog.output_pack) {
+      if (!catalog.source_build_mode) $('intro-copy').textContent = 'Choose the legacy mods you want to update. Matching native builds, their dependencies and the target runtime go into a new pack folder.';
       $('stage-title').textContent = catalog.source_build_mode ? 'Build new pack' : 'Create new pack';
-      $('stage-hint').textContent = 'Only the selected updates, required dependencies and target runtime files are copied.';
+      $('stage-hint').textContent = 'Only the selected updates, related add-ons, required dependencies and target runtime files are copied.';
     }
     const sourceVersions = [...new Set(catalog.source_bin.minecraft.map(row => row.version))];
     $('source-detail').textContent = (sourceVersions.length ? `MC ${sourceVersions.join(', ')} · ` : '') + 'mods/ & coremods/';

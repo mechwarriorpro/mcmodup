@@ -42,7 +42,8 @@ def inspect(jar: ModInput, ids: dict[str, str], shared_ids: set[str]) -> tuple[P
     except (ValueError, RecursionError) as exc:
         raise InputError(f"Invalid private library manifest: {exc}") from exc
     rows = metadata.get("libraries") if isinstance(metadata, dict) else None
-    if (not isinstance(rows, list) or not 1 <= len(rows) <= 32 or metadata.get("schema_version") != 1 or
+    if (not isinstance(rows, list) or not 1 <= len(rows) <= 32 or type(metadata.get("schema_version")) is not int or
+            metadata["schema_version"] != 1 or
             metadata.keys() != {"schema_version", "libraries"}):
         raise InputError("Expected a version 1 private library manifest")
     libs = []
