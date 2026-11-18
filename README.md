@@ -62,7 +62,7 @@ You can also install the tool into a Python environment with `python -m pip inst
 
 ## Scan a modpack for dependencies and API changes
 
-See the [Minechem, Thaumcraft, Atomic Science, and ICBM examples](docs/usage-examples.md) for the original JAR + selected pack workflow and what still needs a manual port.
+See the [Minechem, Thaumcraft, Atomic Science, and ICBM examples](docs/usage-examples.md) for what the tool can recover from an original JAR and where automatic conversion is not yet supported.
 
 Point `scan-pack` at an installed instance, its `mods` folder, or a `.jar`/`.zip` with embedded mod archives. It scans `mods/` and `coremods/` recursively (including versioned subfolders such as `mods/1.7.10/`) and accepts legacy `.zip` mods. In launcher-era instances it can also read the exact local Minecraft and Forge APIs from `bin/minecraft.jar` and `bin/modpack.jar`. It does not run the pack or change your inputs. A launcher export with only a download manifest is not a dependency source; use the installed instance.
 
@@ -113,7 +113,7 @@ The command stages only unambiguously referenced classes from other scanned mods
 
 Use [`decompile-mod`](docs/mapped-decompilation.md) to read the selected mod with **same-version MCP names** for Minecraft 1.5.2, 1.6.4, or 1.7.10. Supply a local MCP config, SpecialSource and Vineflower; the mod and the mapping inputs are not modified. This writes Java references and a native port checklist, not an updated JAR. `plan-port` generates the checklist without Java and can use a local Legacy Connector `CheckJar` JSON report and same-release gameplay notes. A Connector `links` result is not proof of gameplay or native parity.
 
-## Port your own mod
+## Generate an optional development workspace
 
 ```sh
 # Audit a source directory or a source ZIP. Add --json for tools/scripts.
@@ -135,11 +135,11 @@ python3 -m mcmodup inspect /path/to/legacy-mod.jar
 - **Translations**: Converts simple UTF-8 `key=value` `.lang` files to lowercase-locale JSON. It recognizes `assets/<modid>/lang`, `mods/<modid>/lang`, and common bare `lang` folders for single-mod inputs. Old keys are kept for review; conflicting keys and unsupported lines (such as Java properties escapes) are reported rather than guessed.
 - **`--plain-item ITEM_ID`** is repeatable. Use it only when you want a plain replacement with that registry name. It generates a `DeferredRegister` entry, a 1.21.1 item model, and a modern translation key. A unique matching standalone PNG under `textures/items` or `textures/item` is reused; otherwise it uses a clearly reported paper placeholder. The tool does not reproduce custom item behavior, properties, or atlas/animated textures.
 
-## What still needs a manual port
+## Current automatic-update coverage
 
-The generated project does **not** compile legacy source, repack class files, or enable old dependencies. Use the audit as a checklist while rewriting against the [NeoForge 1.21.1 docs](https://docs.neoforged.net/docs/1.21.1/gettingstarted/). Check that each dependency has a 1.21.1 NeoForge version. Recreate recipes and loot, packets, screens and renderers, entities and world generation as needed. Mods with coremods or bytecode patches need special review. Use disposable worlds and a dedicated test server before release; **legacy saves are not migrated**.
+The goal is a runnable NeoForge JAR from the original mod without a manual rewrite. Today `update-pack` can stage an existing native build or run a matching reviewed build recipe; it cannot automatically rewrite an arbitrary legacy JAR. Registries, world generation, packets, client rendering and coremods can require behavioral changes that version metadata and name mappings alone do not provide. A blocked update is a gap in the tool, not a successful conversion. The optional `port` workspace is a development scaffold, not an update result. **Legacy saves are not migrated.**
 
-If you only have a compiled JAR, check for an existing 1.21.1 port or obtain authorized source before trying to generate a workspace.
+The [sampled updater workflow](.github/workflows/legacy-update-sample.yml) measures original-only updates on all three legacy releases. Runs with pre-existing native JARs are controls and do not count as automatic conversions.
 
 ## Build reviewed changes with GitHub Actions
 

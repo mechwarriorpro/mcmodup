@@ -1,0 +1,68 @@
+name: Measure random legacy updates
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/legacy-update-sample.yml'
+      - 'tests/updater_sample.py'
+
+permissions:
+  contents: read
+
+jobs:
+  sample:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.11'
+      - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Fetch the sampled originals, native controls and stock server
+        shell: bash
+        run: |
+          root="$RUNNER_TEMP/legacy-update-sample"
+          mkdir -p "$root/target/mods" "$root/controls"
+          cd "$root"
+          for version in 1.7.10 1.6.4 1.5.2; do mkdir -p "legacy/$version"/{mods,bin}; done
+          download() {
+            curl --proto '=https' --proto-redir '=https' --fail --location --silent --show-error \
+              --retry 2 --max-time 100 --max-filesize 32000000 --output "$1" "$2"
+            printf '%s  %s\n' "$4" "$1" | "$3" --check
+          }
+          download legacy/1.7.10/bin/minecraft.jar https://piston-data.mojang.com/v1/objects/e80d9b3bf5085002218d4be59e668bac718abbc6/client.jar sha1sum e80d9b3bf5085002218d4be59e668bac718abbc6
+          download legacy/1.6.4/bin/minecraft.jar https://piston-data.mojang.com/v1/objects/1703704407101cf72bd88e68579e3696ce733ecd/client.jar sha1sum 1703704407101cf72bd88e68579e3696ce733ecd
+          download legacy/1.5.2/bin/minecraft.jar https://piston-data.mojang.com/v1/objects/465378c9dc2f779ae1d6e8046ebc46fb53a57968/client.jar sha1sum 465378c9dc2f779ae1d6e8046ebc46fb53a57968
+          download legacy/1.7.10/bin/modpack.jar https://maven.minecraftforge.net/net/minecraftforge/forge/1.7.10-10.13.4.1614-1.7.10/forge-1.7.10-10.13.4.1614-1.7.10-universal.jar sha1sum 25fd97f72beca728112256938e03e8105b1b78cc
+          download legacy/1.6.4/bin/modpack.jar https://maven.minecraftforge.net/net/minecraftforge/forge/1.6.4-9.11.1.964/forge-1.6.4-9.11.1.964-universal.jar sha1sum 2d26a79d0e053abb7d060a3cefab3a1d0b489c64
+          download legacy/1.5.2/bin/modpack.jar https://maven.minecraftforge.net/net/minecraftforge/forge/1.5.2-7.8.1.738/forge-1.5.2-7.8.1.738-universal.zip sha1sum 76223709288287a6a8d22ab16b43a6ab2a284a0d
+          download legacy/1.7.10/mods/Xaeros_Minimap_21.10.44_Forge_1.7.10.jar https://edge.forgecdn.net/files/6012/805/Xaeros_Minimap_21.10.44_Forge_1.7.10.jar sha1sum 8be058c70fc161077fd84a6e72ba2bf951aa89c4
+          download legacy/1.6.4/mods/bdlib-mc164-1.2.3.48.jar https://edge.forgecdn.net/files/2204/130/bdlib-mc164-1.2.3.48.jar sha1sum 12c99569ae2d00c5ddc3a67d0ed2b7e2309af074
+          download 'legacy/1.5.2/mods/Twilight Forest - MC 1.5.2 - 1.18.2.jar' https://edge.forgecdn.net/files/2998/575/Twilight%20Forest%20-%20MC%201.5.2%20-%201.18.2.jar sha1sum 7a26ee2a51d1351dbe756d9c70840fc4bfb057bc
+          # Out of both packs for the unassisted runs. No mod-specific recipes or aliases are passed.
+          download controls/xaerominimap-neoforge-1.21.1-26.6.0.jar https://cdn.modrinth.com/data/1bokaNcj/versions/irjR7dHk/xaerominimap-neoforge-1.21.1-26.6.0.jar sha512sum d56b93ddb921285624b491d6a85aba23748bec9974867399c881c257eb25a746df92a735473adf3a6875e0928a56ff78245d5238eb9207b0e45c3fec20c896dc
+          download controls/twilightforest-1.21.1-4.8.3345-universal.jar https://edge.forgecdn.net/files/7797/302/twilightforest-1.21.1-4.8.3345-universal.jar sha1sum 9cfd4154928433e2f1f6cfc3deb48c284debb580
+          download installer.jar https://maven.neoforged.net/releases/net/neoforged/neoforge/21.1.267/neoforge-21.1.267-installer.jar sha256sum 25bbe66e82205abeccdfd23bdac61e6a8e9ff1333885f3c9f31d392a5ec97e60
+          java -jar installer.jar --installServer target > install.log 2>&1 || { tail -75 install.log; exit 1; }
+      - name: Run update-pack and distinguish conversion from replacement
+        shell: bash
+        run: |
+          log="$RUNNER_TEMP/legacy-update-sample/results.log"
+          if ! PYTHONPATH=.:tests python -m updater_sample "$RUNNER_TEMP/legacy-update-sample" > "$log" 2>&1; then
+            python - "$log" <<'PY'
+          import pathlib
+          import sys
+          detail = pathlib.Path(sys.argv[1]).read_text(errors="replace")[-5000:]
+          print("::error title=Sample test did not finish::" + detail.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A"))
+          PY
+            cat "$log"
+            exit 1
+          fi
+          cat "$log"
