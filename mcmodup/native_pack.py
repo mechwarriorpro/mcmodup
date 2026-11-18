@@ -1,14 +1,14 @@
 """Plan and stage standalone NeoForge updates from two installed modpacks."""
 
 from collections import defaultdict, deque
-from dataclasses import dataclass, field
-import hashlib
+from dataclasses import dataclass, field, replace
 from io import BytesIO
 import json
 import os
 from pathlib import Path
 import re
 import shutil
+import tempfile
 import tomllib
 from zipfile import BadZipFile, ZipFile
 import zlib
@@ -20,13 +20,14 @@ from .catalogs import PROFILES
 from .classfiles import CLASS_LIMIT
 from .inputs import InputError, TEXT_LIMIT, open_input
 from .pack import ARCHIVE_EXTENSIONS, LOADER_IDS, STANDARD_PREFIXES, PackMod, _declared_requests, _load
+from .source_ports import BuildOptions, Dependency, MOD_ID, SourcePort, build, load_ports, require_jdk
+from .source_ports import digest as _digest, safe_component as _safe_filename
 
 
 NATIVE_META = "META-INF/neoforge.mods.toml"
 CONNECTOR_PREFIXES = (b"legacyconnector/", b"org/kylepitcock/legacyconnector/", b"org.kylepitcock.legacyconnector.")
 CONNECTOR_ENTRIES = {"META-INF/legacyconnector/provenance.json", "META-INF/legacyconnector/legacyconnector-runtime.jar",
                      "org/kylepitcock/legacyconnector/loader/LegacyModLocator.class"}
-MOD_ID = re.compile(r"[a-z][a-z0-9_]{1,63}")
 NUMERIC = re.compile(r"[0-9]+(?:\.[0-9]+)*")
 NEOFORGE_JAR = re.compile(r"neoforge-(21\.1\.\d+)(?:-universal)?\.jar", re.I)
 LEGACY_CLIENTS = {  # Official vanilla client fingerprints, also used by upstream's version detection tooling.
@@ -36,11 +37,6 @@ LEGACY_CLIENTS = {  # Official vanilla client fingerprints, also used by upstrea
 }
 MAX_ARCHIVES = 4096
 REPORT_NAME = "update-report.json"
-
-
-def _digest(path: Path, algorithm: str = "sha256") -> str:
-    with path.open("rb") as stream:
-        return hashlib.file_digest(stream, algorithm).hexdigest()
 
 
 def _numeric(value: str) -> tuple[int, ...] | None:
@@ -104,13 +100,6 @@ def _archive(path: Path) -> bool:
     return path.suffix.lower() in ARCHIVE_EXTENSIONS
 
 
-def _safe_filename(name: str) -> bool:
-    return not (name in {"", ".", ".."} or name.endswith((" ", ".")) or
-                re.fullmatch(r"(?i)CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9]", name.partition(".")[0]) or
-                any(c in name for c in '<>:"/\\|?*') or
-                any(ord(c) < 32 or 0xD800 <= ord(c) <= 0xDFFF for c in name))
-
-
 @dataclass(frozen=True)
 class Platform:
     minecraft: list[tuple[str, str]]
@@ -170,13 +159,6 @@ def _platform(root: Path, bins: list[Path]) -> Platform:
     return Platform(sorted(game), sorted(neo), sorted(forge))
 
 
-@dataclass(frozen=True)
-class Dependency:
-    mod_id: str
-    version: str
-    kind: str = "required"
-
-
 @dataclass(eq=False)
 class NativeMod:
     path: Path
@@ -187,6 +169,8 @@ class NativeMod:
     target_evidence: bool
     sha256: str
     partial: bool = False
+    recipe: SourcePort | None = None
+    original: Path | None = None
 
 
 def _main_manifest(text: str) -> dict[str, str]:
@@ -340,6 +324,9 @@ class UpdateInventory:
     aliases: dict[str, str]
     warnings: list[str] = field(default_factory=list)
     target_issues: list[str] = field(default_factory=list)
+    build_options: BuildOptions | None = None
+    recipes: dict[str, NativeMod] = field(default_factory=dict)
+    recipe_issues: dict[str, str] = field(default_factory=dict)
 
     def native_ids(self, item: LegacyEntry) -> set[str]:
         return {self.aliases.get(mod_id, mod_id) for mod_id in item.ids}
@@ -350,7 +337,12 @@ class UpdateInventory:
         for label, item in self.entries.items():
             ids = self.native_ids(item)
             supported = [p.name for p in PROFILES.values() if p.mod_id in item.ids and p.version == item.version]
-            if not item.problem and ids and ids <= present:
+            recipe = self.recipes.get(label)
+            if self.build_options is not None:
+                status, reason = (("preview", "Builds from reviewed source, with documented gaps.") if recipe.recipe.preview else
+                                  ("buildable", "Exact source recipe found. Builds and runs NeoForge GameTests.")) if recipe else (
+                                  "blocked", self.recipe_issues[label])
+            elif not item.problem and ids and ids <= present:
                 status, reason = "installed", "Native builds are already in the target mods folder."
             elif not item.problem and ids and all(self.providers.get(key) for key in ids):
                 status, reason = "available", "Matching local NeoForge builds found. Select to check dependencies and add-ons."
@@ -361,9 +353,11 @@ class UpdateInventory:
                 status, reason = "blocked", item.problem or ("No matching local NeoForge build for " + ", ".join(missing) + "." if missing else
                                                             "No recognizable legacy mod IDs; automatic matching is unavailable.")
             rows.append({"id": label, "name": item.name, "minecraft": item.version, "mods": list(item.ids),
-                         "native_ids": sorted(ids), "status": status, "reason": reason, "addons": len(self.addons.get(label, {}))})
+                         "native_ids": sorted(ids), "status": status, "reason": reason, "addons": len(self.addons.get(label, {})),
+                         **({"source_build": recipe.recipe.describe()} if recipe else {})})
         return {"source": self.source.name, "target": self.target.name, "minecraft": MINECRAFT_VERSION,
-                "neoforge": self.target_platform.neoforge, "source_bin": self.source_platform.report(),
+                "neoforge": self.target_platform.neoforge, "source_build_mode": self.build_options is not None,
+                "source_bin": self.source_platform.report(),
                 "target_bin": self.target_platform.report(), "rows": rows, "warnings": self.warnings, "target_issues": self.target_issues}
 
 
@@ -432,8 +426,9 @@ def _aliases(path: Path | None) -> dict[str, str]:
     return {key.casefold(): value for key, value in data.items()}
 
 
-def inventory(source: Path, target: Path) -> UpdateInventory:
+def inventory(source: Path, target: Path, build_options: BuildOptions | None = None) -> UpdateInventory:
     source, target = (path.expanduser().resolve() for path in (source, target))
+    source_ports = load_ports(build_options) if build_options is not None else {}
     for root in (source, target):
         if not root.is_dir() or not (root / "mods").is_dir():
             raise InputError(f"Expected an installed instance with a mods/ folder: {root}")
@@ -497,8 +492,39 @@ def inventory(source: Path, target: Path) -> UpdateInventory:
     for mod in native:
         for mod_id in mod.ids:
             providers[mod_id].append(mod)
-    return UpdateInventory(source, target, src_bin, dst_bin, entries, _addon_edges(entries), dict(providers), installed,
-                           target_legacy, passthrough, _aliases(source / "mcmodup-updates.json"), warnings, issues)
+    state = UpdateInventory(source, target, src_bin, dst_bin, entries, _addon_edges(entries), providers, installed,
+                            target_legacy, passthrough, _aliases(source / "mcmodup-updates.json"), warnings, issues,
+                            build_options)
+    if build_options is not None:
+        for label, item in entries.items():
+            ids = state.native_ids(item)
+            if item.problem or not ids:
+                state.recipe_issues[label] = item.problem or "No recognizable legacy mod IDs."
+                continue
+            try:
+                recipe = source_ports.get(_digest(item.path)) if source_ports else None
+            except OSError as exc:
+                state.recipe_issues[label] = f"Cannot fingerprint the original archive: {exc}"
+                continue
+            if recipe is None:
+                issue = "No source recipe for this exact legacy archive (SHA-256)."
+            elif recipe.ids.keys() != ids:
+                issue = "The source recipe's native IDs do not match. Review mcmodup-updates.json for renamed IDs."
+            elif recipe.preview and not build_options.allow_preview:
+                issue = "Only a preview source recipe exists. It does not meet full parity; requires --allow-preview-ports."
+            elif not matches(dst_bin.neoforge, recipe.neoforge):
+                issue = f"The source recipe needs NeoForge {recipe.neoforge}; target has {dst_bin.neoforge}."
+            elif isinstance(recipe.archive, Path) and not recipe.archive.is_file():
+                issue = f"Local source ZIP not found: {recipe.archive.name!r}."
+            else:
+                predicted = NativeMod(Path(Path(recipe.artifact).name), f"build/{label}", recipe.ids, recipe.dependencies,
+                                      False, True, f"source:{recipe.legacy_sha256}", recipe=recipe, original=item.path)
+                state.recipes[label] = predicted
+                for mod_id in ids:
+                    providers[mod_id].append(predicted)
+                continue
+            state.recipe_issues[label] = issue
+    return state
 
 
 @dataclass
@@ -510,16 +536,22 @@ class UpdatePlan:
     roots: set[str]
     removed: dict[str, str]
     problems: list[str]
+    build_order: list[NativeMod] = field(default_factory=list)
+    native_builds: dict[str, dict] = field(default_factory=dict)
 
     @property
     def report(self) -> dict:
-        return {"schema_version": 1, "mode": "native-neoforge", "connector_required": False,
+        return {"schema_version": 1, "mode": "native-source-build" if self.inventory.build_options else "native-neoforge",
+                "connector_required": False, "native_builds": self.native_builds,
+                "build_order": [mod.label.removeprefix("build/") for mod in self.build_order],
                 "minecraft": MINECRAFT_VERSION, "neoforge": self.inventory.target_platform.neoforge,
                 "source_bin": self.inventory.source_platform.report(), "target_bin": self.inventory.target_platform.report(),
                 "selected": self.selected, "auto_addons": self.addons, "ready": bool(self.selected) and not self.problems,
                 "problems": self.problems, "warnings": self.inventory.warnings, "replaced_target_files": self.removed,
                 "files": [{"file": f"mods/{mod.path.name}", "from": mod.label, "ids": mod.ids,
-                           "action": "keep" if mod.installed else "update" if self.roots.intersection(mod.ids) else "dependency",
+                           "action": "build" if mod.recipe else "keep" if mod.installed else
+                                     "update" if self.roots.intersection(mod.ids) else "dependency",
+                           **({"source_build": mod.recipe.describe()} if mod.recipe else {}),
                            "requires": [{"id": dep.mod_id, "range": dep.version} for dep in mod.dependencies if dep.kind == "required"]}
                           for mod in self.mods], "gameplay_verified": False}
 
@@ -540,12 +572,21 @@ def plan(inventory: UpdateInventory, selections: list[str]) -> UpdatePlan:
                 added[addon] = {"required_by": label, "reason": why}
     problems = list(inventory.target_issues)
     roots = set()
+    forced = {}
     for label in sorted(closure):
         item = inventory.entries[label]
         ids = inventory.native_ids(item)
         if item.problem or not ids:
             problems.append(f"{label!r}: {item.problem or 'no recognizable legacy mod ID to match'}")
         roots.update(ids)
+        if inventory.build_options is not None:
+            recipe = inventory.recipes.get(label)
+            if recipe is None:
+                problems.append(f"{label!r}: {inventory.recipe_issues[label]}")
+            for key in ids:
+                if key in forced and forced[key] is not recipe:
+                    problems.append(f"Multiple selected legacy archives would build native mod ID {key!r}.")
+                forced[key] = recipe
     mods = list(inventory.installed)
     removed = {}
     changed = set()
@@ -565,7 +606,10 @@ def plan(inventory: UpdateInventory, selections: list[str]) -> UpdatePlan:
         unresolved = []
         for key, specs in sorted(wants.items()):
             current = active[key]
+            if forced.get(key, False) is None:
+                continue  # Detailed exact-recipe blocker already recorded for this legacy archive.
             if (len(current) == 1 and not (key in roots and current[0].partial) and
+                    (key not in forced or current[0] is forced[key]) and
                     all(matches(current[0].ids[key], spec) for spec in specs)):
                 continue
             versions = ", ".join(repr(spec) for spec in sorted(specs) if spec)
@@ -577,6 +621,7 @@ def plan(inventory: UpdateInventory, selections: list[str]) -> UpdatePlan:
             accepted = {}
             for choice in inventory.providers.get(key, []):
                 if (choice.installed or choice in changed or not choice.target_evidence or
+                        any(mod_id in forced and forced[mod_id] is not choice for mod_id in choice.ids) or
                         not all(matches(choice.ids[key], spec) for spec in specs)):
                     continue
                 if previous and not previous.ids.keys() <= choice.ids.keys():
@@ -586,6 +631,8 @@ def plan(inventory: UpdateInventory, selections: list[str]) -> UpdatePlan:
                 if any(not all(matches(version, spec) for spec in wants.get(mod_id, ())) for mod_id, version in choice.ids.items()):
                     continue
                 accepted.setdefault(choice.sha256, choice)
+            if key not in forced and (local := {sha: mod for sha, mod in accepted.items() if mod.recipe is None}):
+                accepted = local  # A dependency need not be rebuilt if an unambiguous native JAR is in the packs.
             if len(accepted) != 1:
                 if accepted:
                     unresolved.append(f"Multiple compatible local JARs for {wanted}: " + ", ".join(x.label for x in accepted.values()) + ".")
@@ -640,7 +687,66 @@ def plan(inventory: UpdateInventory, selections: list[str]) -> UpdatePlan:
         destinations.add(relative.casefold())
     if any(prefix.casefold() in destinations for path in destinations for prefix in _parents(path)):
         problems.append("A target file conflicts with a directory name in mods/.")
-    return UpdatePlan(inventory, selected, added, sorted(mods, key=lambda a: a.path.name.casefold()), roots, removed, list(dict.fromkeys(problems)))
+    mods.sort(key=lambda a: a.path.name.casefold())
+    order = []
+    if not problems and inventory.build_options is not None:
+        try:
+            order = _build_order(mods)
+        except InputError as exc:
+            problems.append(str(exc))
+    return UpdatePlan(inventory, selected, added, mods, roots, removed, list(dict.fromkeys(problems)), order)
+
+
+def _dependencies(mod: NativeMod, providers: dict[str, NativeMod]) -> set[NativeMod]:
+    """The local compile/test input for a source project (required, and present optional, transitively)."""
+    seen = {mod}
+    pending = [mod]
+    while pending:
+        for dep in pending.pop().dependencies:
+            other = providers.get(dep.mod_id)
+            if dep.kind in {"required", "optional"} and other is not None and other not in seen:
+                seen.add(other)
+                pending.append(other)
+    return seen - {mod}
+
+
+def _build_order(mods: list[NativeMod]) -> list[NativeMod]:
+    providers = {mod_id: mod for mod in mods for mod_id in mod.ids}
+    needs = {mod: {other for other in _dependencies(mod, providers) if other.recipe} for mod in mods if mod.recipe}
+    order = []
+    while needs:
+        ready = sorted((mod for mod, deps in needs.items() if not deps), key=lambda mod: mod.label)
+        if not ready:
+            cycle = ", ".join(mod.label for mod in needs)
+            raise InputError(f"Source ports form a build-time dependency cycle: {cycle}. Split their shared API into a native library.")
+        order.extend(ready)
+        for mod in ready:
+            del needs[mod]
+        for deps in needs.values():
+            deps.difference_update(ready)
+    return order
+
+
+def _materialize(update: UpdatePlan, scratch: Path) -> UpdatePlan:
+    providers = {mod_id: mod for mod in update.mods for mod_id in mod.ids}
+    actual, evidence = {}, {}
+    java = require_jdk()
+    timeout = update.inventory.build_options.timeout
+    neoforge = update.inventory.target_platform.neoforge
+    for index, expected in enumerate(update.build_order):
+        try:
+            deps = [actual.get(mod, mod) for mod in sorted(_dependencies(expected, providers), key=lambda mod: mod.label)]
+            used = [(mod.path, mod.sha256) for mod in deps]
+            jar, checked = build(expected.recipe, expected.original, scratch / f"port-{index + 1}", used, neoforge, java, timeout)
+            verified = _native(jar, expected.label, neoforge)
+            if (verified is None or verified.partial or not verified.target_evidence or verified.ids != expected.ids or
+                    set(verified.dependencies) != set(expected.dependencies)):
+                raise InputError("Compiled JAR did not match the recipe's exact native IDs, versions, and dependencies")
+            actual[expected] = replace(verified, recipe=expected.recipe)
+            evidence[verified.path.name] = {**checked, "jar_sha256": verified.sha256}
+        except (InputError, OSError) as exc:
+            raise InputError(f"{expected.label.removeprefix('build/')!r}: {exc}") from exc
+    return replace(update, mods=[actual.get(mod, mod) for mod in update.mods], native_builds=evidence)
 
 
 def _parents(path: str) -> list[str]:
@@ -657,6 +763,16 @@ def stage(update: UpdatePlan, output: Path) -> Path:
     output = output.resolve()
     if any(output.is_relative_to(root) for root in (update.inventory.source, update.inventory.target)):
         raise InputError("Write the update outside the source and target instances.")
+    if update.build_order:
+        # Keep dependency copies and all intermediate JARs outside the packs and the final output.
+        with tempfile.TemporaryDirectory(prefix="mcmodup-source-build-") as directory:
+            _write_stage(_materialize(update, Path(directory).resolve()), output)
+    else:
+        _write_stage(update, output)
+    return output
+
+
+def _write_stage(update: UpdatePlan, output: Path) -> None:
     output.mkdir(parents=True, exist_ok=False)
     try:
         mods = output / "mods"
@@ -679,9 +795,9 @@ def stage(update: UpdatePlan, output: Path) -> Path:
             f"Standalone mods for Minecraft {MINECRAFT_VERSION} / NeoForge {update.inventory.target_platform.neoforge}.\n"
             "Close the target game, back up its mods/ directory, and replace that directory with this mods/ directory (do not merge).\n"
             "The target bin/, launcher, configs and saves were not changed. Use a new world to test first.\n"
-            "The report verifies local metadata and file identity, not gameplay or save compatibility.\n"
+            "See update-report.json for asset checks and server GameTests for any mods built from source.\n"
+            "These checks do not certify full-pack gameplay, client rendering, or old save compatibility.\n"
             "Keep this local unless you have redistribution rights for every file.\n", encoding="utf-8")
     except BaseException:
         shutil.rmtree(output, ignore_errors=True)
         raise
-    return output

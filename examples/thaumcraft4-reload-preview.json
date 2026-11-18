@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "ports": [
+    {
+      "legacy_sha256": "3dba9786966974701578a658d1bb369bf35bdf5f363079f5ac9c4910a39113be",
+      "source_url": "https://codeload.github.com/acak1221/Thaumcraft-1.21.1/zip/1417e30fa04ce349a8d811d8f1b3d7515cc58643",
+      "source_sha256": "729c1ed1fcb6d22f04744c9cf68105b279699128e1f4bb587027944a970173bf",
+      "source_root": "Thaumcraft-1.21.1-1417e30fa04ce349a8d811d8f1b3d7515cc58643",
+      "ids": {"thaumcraft": "0.1.0-alpha.24"},
+      "neoforge": "[21.1.259,21.2)",
+      "target_property": "neoforge_version",
+      "dependencies": [
+        {"id": "architectury", "range": "[13.0.11,)"},
+        {"id": "emi", "range": "*", "type": "optional"},
+        {"id": "jade", "range": "*", "type": "optional"},
+        {"id": "jei", "range": "*", "type": "optional"}
+      ],
+      "artifact": "neoforge/build/libs/Thaumcraft-neoforge-0.1.0-alpha.24.jar",
+      "tasks": [":common:test", ":neoforge:build", ":neoforge:runGameTest"],
+      "game_report": "neoforge/build/gametest-results.xml",
+      "minimum_tests": 539,
+      "features": {
+        "Crucible crafting": "crucibledissolvesandcraftswithoriginalcosts",
+        "Research table": "researchtableeditssolveandpreserveresources",
+        "Infusion altar": "infusionaltarformsandexecutesallinstabilityoutcomes",
+        "Golem essentia transport": "alchemygolemscollectanddelivermixedreservoirs",
+        "Eldritch ritualist spawning": "eldritch_altar_spawns_cultists_on_solid_floor",
+        "Outer Lands": "outerlandsgeneratesthelabyrinthoftheeldritchring",
+        "Taint spread": "taintblockspreserveoriginalspreadlootandfallingcustody"
+      },
+      "status": "preview",
+      "limitations": [
+        "Thaumcraft 4 Reload alpha.24 is an unofficial source port. Keep this a personal local build; the port license does not relicense Azanor's original code or assets.",
+        "Asset differences are reported, not considered verified. Client visuals, survival progression, and NeoForge multiplayer parity are not established.",
+        "Original Thaumcraft add-on binaries and worlds do not work as-is. Each detected add-on needs its own exact source recipe. The native port has integrated accessory slots."
+      ]
+    }
+  ]
+}

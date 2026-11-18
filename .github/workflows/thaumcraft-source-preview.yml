@@ -1,0 +1,54 @@
+name: Build exact Thaumcraft 4 native preview
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/thaumcraft-source-preview.yml'
+      - 'examples/thaumcraft4-reload-preview.json'
+      - 'tests/thaumcraft_pack_smoke.py'
+      - 'tests/fixtures/ThaumcraftPackSmoke.java'
+
+permissions:
+  contents: read
+
+jobs:
+  local-preview:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.11'
+      - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Build and exercise exact Thaumcraft from source without publishing inputs or outputs
+        shell: bash
+        run: |
+          scratch=$(mktemp -d "$RUNNER_TEMP/tc4-preview.XXXXXX")
+          trap 'rm -rf -- "$scratch"' EXIT
+          cd "$GITHUB_WORKSPACE"
+          old="$scratch/old"
+          target="$scratch/target"
+          mkdir -p "$old/mods" "$target/mods" "$target/bin" "$target/lib"
+          curl_opts=(--proto '=https' --proto-redir '=https' --fail --silent --show-error --location --retry 2 --max-time 120)
+          old_jar="$old/mods/Thaumcraft-1.7.10-4.2.3.5.jar"
+          curl "${curl_opts[@]}" --max-filesize 12565807 -o "$old_jar" https://edge.forgecdn.net/files/2227/552/Thaumcraft-1.7.10-4.2.3.5.jar
+          printf '%s  %s\n' 3dba9786966974701578a658d1bb369bf35bdf5f363079f5ac9c4910a39113be "$old_jar" | sha256sum --check
+          version=$(curl "${curl_opts[@]}" https://piston-meta.mojang.com/mc/game/version_manifest_v2.json | jq -er '.versions[] | select(.id == "1.21.1") | .url')
+          metadata=$(curl "${curl_opts[@]}" "$version")
+          curl "${curl_opts[@]}" -o "$target/bin/server-1.21.1.jar" "$(jq -er .downloads.server.url <<< "$metadata")"
+          printf '%s  %s\n' "$(jq -er .downloads.server.sha1 <<< "$metadata")" "$target/bin/server-1.21.1.jar" | sha1sum --check
+          curl "${curl_opts[@]}" -o "$target/bin/neoforge-21.1.267-universal.jar" \
+            https://maven.neoforged.net/releases/net/neoforged/neoforge/21.1.267/neoforge-21.1.267-universal.jar
+          curl "${curl_opts[@]}" -o "$target/lib/architectury-neoforge-13.0.11.jar" \
+            https://maven.architectury.dev/dev/architectury/architectury-neoforge/13.0.11/architectury-neoforge-13.0.11.jar
+          python -m mcmodup update-pack "$old" --target "$target" --mod "mods/$(basename "$old_jar")" \
+            --source-ports examples/thaumcraft4-reload-preview.json --allow-preview-ports -o "$scratch/staged"
+          PYTHONPATH=.:tests python -m thaumcraft_pack_smoke "$scratch/staged"
+          echo '::notice title=Native Thaumcraft preview verified::Source GameTests and staged-JAR server smoke passed. This is a preview, not full parity or add-on compatibility.'

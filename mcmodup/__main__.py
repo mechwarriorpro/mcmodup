@@ -83,12 +83,18 @@ def _parser() -> argparse.ArgumentParser:
     convert.add_argument("--timeout", type=int, default=600, help="Gradle build timeout in seconds (default: 600)")
     _pack_arguments(convert, positional=False)
 
-    updater = commands.add_parser("update-pack", help="list, plan or stage standalone 1.21.1 mod updates using local pack files")
+    updater = commands.add_parser("update-pack", help="plan, build or stage standalone 1.21.1 updates")
     ui = commands.add_parser("pack-ui", help="open the native modpack updater with checkboxes")
     for command in (updater, ui):
         command.add_argument("input", type=Path, help="installed pack with the legacy mods under mods/")
         command.add_argument("--target", type=Path, help="installed NeoForge 1.21.1 pack (defaults to input); platform files under bin/")
         command.add_argument("--output", "-o", type=Path, help="new directory outside both packs for the staged mods/ folder")
+        command.add_argument("--source-ports", type=Path, metavar="TRUSTED_JSON",
+                             help="build selected exact legacy releases and add-ons using this trusted source recipe manifest")
+        command.add_argument("--allow-preview-ports", action="store_true",
+                             help="allow marked preview recipes with documented parity gaps (still requires GameTests)")
+        command.add_argument("--build-timeout", type=int, default=1200, metavar="SECONDS",
+                             help="Gradle timeout per source port (default: 1200)")
     updater.add_argument("--mod", action="append", default=[], metavar="ARCHIVE",
                          help="select a legacy archive by its relative path (repeatable); omit to list")
     updater.add_argument("--json", action="store_true", help="show the catalog or plan as JSON")
@@ -112,8 +118,12 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.command in {"update-pack", "pack-ui"}:
             from . import native_pack
+            from .source_ports import BuildOptions
 
-            state = native_pack.inventory(args.input, args.target or args.input)
+            if args.allow_preview_ports and not args.source_ports:
+                raise InputError("--allow-preview-ports requires --source-ports.")
+            options = BuildOptions(args.source_ports, args.allow_preview_ports, args.build_timeout) if args.source_ports else None
+            state = native_pack.inventory(args.input, args.target or args.input, options)
             if args.command == "pack-ui":
                 from .pack_ui import serve
 
@@ -135,7 +145,9 @@ def main(argv: list[str] | None = None) -> int:
                 update = native_pack.plan(state, args.mod)
                 report = update.report
                 if report["ready"] and args.output:
-                    report["output"] = str(native_pack.stage(update, args.output))
+                    output = native_pack.stage(update, args.output)
+                    report = json.loads((output / native_pack.REPORT_NAME).read_text(encoding="utf-8"))
+                    report["output"] = str(output)
                 if args.json:
                     print(json.dumps(report, indent=2))
                 else:
@@ -145,10 +157,14 @@ def main(argv: list[str] | None = None) -> int:
                         print(f"{item['action']:>10}  {item['file']!r} ← {item['from']!r}")
                     for issue in report["problems"]:
                         print(f"Blocked: {issue}")
+                    for name, build in report["native_builds"].items():
+                        print(f"Built {name!r}: {build['gametests']['passed']} source-project server GameTests passed; "
+                              f"{build['legacy_assets']['unmapped']} legacy asset paths unverified ({build['status']}).")
                     if "output" in report:
                         print(f"Staged standalone mods: {report['output']}. See INSTALL.txt. Neither input pack was modified.")
                     elif report["ready"]:
-                        print("Plan ready. Give -o NEW_DIR to stage it. Launch and test gameplay in a fresh world.")
+                        action = "build, test and stage" if update.build_order else "stage"
+                        print(f"Plan ready. Give -o NEW_DIR to {action}. Test the staged pack in a fresh world.")
                 return int(not report["ready"])
         elif args.command == "convert-jar":
             if not args.allow_partial:
