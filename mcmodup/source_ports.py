@@ -29,6 +29,7 @@ SOURCE_URL = re.compile(r"https://codeload\.github\.com/[\w.-]+/[\w.-]+/zip/[a-f
 TASK = re.compile(r":?(?:[A-Za-z0-9_-]+:)*[A-Za-z0-9_][A-Za-z0-9_-]*", re.ASCII)
 MAX_PROJECT_BYTES = 512 * 1024 * 1024
 MAX_PROJECT_FILES = 30_000
+TEST_REPORT_LIMIT = 8 * 1024 * 1024
 LEGACY_ASSET_EXTENSIONS = frozenset({
     ".png", ".jpeg", ".jpg", ".gif", ".bmp", ".tga", ".ogg", ".wav", ".ttf", ".otf", ".lang",
     ".obj", ".mtl", ".fsh", ".vsh", ".glsl", ".frag", ".vert",
@@ -359,14 +360,39 @@ def _project_output(workspace: Path, member: str, limit: int) -> Path:
     return output
 
 
-def _report_cases(report: Path, kind: str) -> tuple[Counter[str], str]:
+def _report_xml(report: Path) -> tuple[ET.Element, bytes]:
     raw = report.read_bytes()
+    if b"<!DOCTYPE" in raw.upper().replace(b"\x00", b""):
+        raise ValueError("DOCTYPE is not allowed")
+    root = ET.fromstring(raw)
+    if root.tag not in {"testsuites", "testsuite"}:
+        raise ValueError("expected a JUnit XML testsuite or testsuites root")
+    return root, raw
+
+
+def _report_failures(workspace: Path, member: str) -> str:
+    """Surface the assertion even if shutdown logging has displaced it from the Gradle tail."""
     try:
-        if b"<!DOCTYPE" in raw.upper().replace(b"\x00", b""):
-            raise ValueError("DOCTYPE is not allowed")
-        root = ET.fromstring(raw)
-        if root.tag not in {"testsuites", "testsuite"}:
-            raise ValueError("expected a JUnit XML testsuite or testsuites root")
+        root, _ = _report_xml(_project_output(workspace, member, TEST_REPORT_LIMIT))
+    except (InputError, OSError, ET.ParseError, ValueError, LookupError):
+        return ""
+    failures = []
+    for case in root.iter("testcase"):
+        for node in case:
+            if node.tag not in {"failure", "error"}:
+                continue
+            name = " ".join(case.get("name", "(unnamed)").split())[:180]
+            reason = " ".join((node.get("message") or node.text or node.tag).split())[:600]
+            failures.append(f"{name}: {reason}\n")
+            break
+        if len(failures) == 4:
+            break
+    return "".join(failures)[:1600]
+
+
+def _report_cases(report: Path, kind: str) -> tuple[Counter[str], str]:
+    try:
+        root, raw = _report_xml(report)
         cases = list(root.iter("testcase"))
         for node in root.iter():
             if node.tag in {"failure", "error", "skipped", "disabled"}:
@@ -378,7 +404,7 @@ def _report_cases(report: Path, kind: str) -> tuple[Counter[str], str]:
         names = Counter(c.get("name", "") for c in cases)
         if "" in names or len({(c.get("classname", ""), c.get("name", "")) for c in cases}) != len(cases):
             raise ValueError("has unnamed or repeated test identities")
-    except (ET.ParseError, ValueError) as exc:
+    except (ET.ParseError, ValueError, LookupError) as exc:
         raise InputError(f"Invalid {kind} report: {exc}") from exc
     return names, hashlib.sha256(raw).hexdigest()
 
@@ -398,7 +424,7 @@ def _original_jar_evidence(workspace: Path, check: OriginalJarChecks, checksum: 
     copy = _project_output(workspace, check.jar_name, MOD_ARCHIVE_LIMIT)
     if digest(copy) != checksum:
         raise InputError("Build changed the exact original JAR supplied for unit tests")
-    report = _project_output(workspace, check.report, 8 * 1024 * 1024)
+    report = _project_output(workspace, check.report, TEST_REPORT_LIMIT)
     names, report_hash = _report_cases(report, "original JAR check")
     if missing := sorted(name for name in check.cases if names[name] != 1):
         raise InputError("Required original JAR checks are missing or ambiguous: " + ", ".join(missing))
@@ -552,10 +578,14 @@ def _gradle(port: SourcePort, workspace: Path, java: str, deps: Path, neoforge: 
                 raise InputError(f"Gradle source build exceeded {timeout} seconds") from exc
             raise
     if code:
+        failures = _report_failures(workspace, port.game_report)
+        if not failures and port.original_jar_checks:
+            failures = _report_failures(workspace, port.original_jar_checks.report)
         with log.open("rb") as stream:
-            stream.seek(max(0, log.stat().st_size - 9000))
+            stream.seek(max(0, log.stat().st_size - (9000 - len(failures))))
             tail = stream.read().decode("utf-8", errors="replace").strip()
-        raise InputError(f"Gradle source build failed (exit {code}):\n{tail}")
+        details = f"Failed test cases:\n{failures}\n" if failures else ""
+        raise InputError(f"Gradle source build failed (exit {code}):\n{details}{tail}")
 
 
 def build(port: SourcePort, original: Path, task_dir: Path, dependencies: list[tuple[Path, str]],
@@ -596,7 +626,7 @@ def build(port: SourcePort, original: Path, task_dir: Path, dependencies: list[t
     output = _project_output(workspace, port.artifact, MOD_ARCHIVE_LIMIT)
     evidence = {**port.describe(), "archive": str(port.archive) if isinstance(port.archive, str) else port.archive.name,
                 "dependencies_sha256": copied, "imports": len(port.imports), "converted_locales": locales,
-                "gametests": _test_evidence(_project_output(workspace, port.game_report, 8 * 1024 * 1024), port),
+                "gametests": _test_evidence(_project_output(workspace, port.game_report, TEST_REPORT_LIMIT), port),
                 "legacy_assets": _asset_evidence(orig, output, port, converted)}
     if original_checks:
         evidence["original_jar_checks"] = _original_jar_evidence(workspace, original_checks, port.legacy_sha256)

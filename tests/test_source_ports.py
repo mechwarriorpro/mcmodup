@@ -9,7 +9,7 @@ import zipfile
 
 from mcmodup.inputs import InputError
 from mcmodup.native_pack import REPORT_NAME, inventory, plan, stage
-from mcmodup.source_ports import BuildOptions, digest, load_ports
+from mcmodup.source_ports import BuildOptions, _gradle, digest, load_ports
 from test_cli import run_cli
 from test_native_pack import legacy, native, setup_platform
 from test_pack import jar
@@ -149,6 +149,32 @@ class SourcePortTests(unittest.TestCase):
                     with self.assertRaisesRegex(InputError, error):
                         stage(plan(self._list(), ["mods/OldBase.jar"]), self.output)
                 self.assertFalse(self.output.exists())
+
+    def test_gradle_failure_preserves_gametest_assertion_beyond_log_tail(self):
+        write_manifest(self.manifest, self.base)
+        port = load_ports(BuildOptions(self.manifest))[digest(self.old_base)]
+        workspace = self.root / "gradle-project"
+        wrapper = workspace / "gradle/wrapper/gradle-wrapper.jar"
+        wrapper.parent.mkdir(parents=True)
+        wrapper.touch()
+        wrapper.with_suffix(".properties").write_text("distributionSha256Sum=" + "a" * 64 + "\n", encoding="utf-8")
+        report = workspace / port.game_report
+        report.parent.mkdir()
+
+        def run_stub(*args, **kwargs):
+            report.write_text('<testsuite><testcase name="nativecase"><failure message="The turtle did not clear gas"/>'
+                              '</testcase></testsuite>', encoding="utf-8")
+            kwargs["stdout"].write(b"first failure was in the GameTest report\n" + b"shutdown\n" * 2000 + b"BUILD FAILED\n")
+            process = runner.return_value.__enter__.return_value
+            process.wait.return_value = 1
+            return runner.return_value
+
+        with patch("mcmodup.source_ports.subprocess.Popen") as runner:
+            runner.side_effect = run_stub
+            with self.assertRaisesRegex(InputError, "nativecase: The turtle did not clear gas") as error:
+                _gradle(port, workspace, "java", self.root, "21.1.267", 60)
+        self.assertIn("BUILD FAILED", str(error.exception))
+        self.assertNotIn("first failure was", str(error.exception))
 
     def test_converts_missing_locales_without_overwriting_authored_files(self):
         asset_root = "assets/techbase/lang"
