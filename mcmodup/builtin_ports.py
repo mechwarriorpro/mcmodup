@@ -6,7 +6,7 @@ from pathlib import Path
 import shutil
 import tempfile
 
-from . import native_pack
+from . import native_pack, thaumcraft_parity
 from .inputs import InputError
 from .source_ports import BuildOptions, SourcePort, _source_zip, digest, load_ports, require_jdk
 from .tinkerer_port import TC_RECIPE, TT_LEGACY_HASH
@@ -16,16 +16,25 @@ def _stage_stock_recipe(port: SourcePort, directory: Path, inputs: Path | None) 
     directory.mkdir(parents=True, exist_ok=False)
     recipe = directory / TC_RECIPE.name
     try:
-        if inputs is None:
-            shutil.copyfile(TC_RECIPE, recipe)
-        else:
-            archive = port.source_root + ".zip"
-            _source_zip(replace(port, archive=inputs / archive), directory / archive)
-            manifest = json.loads(TC_RECIPE.read_text(encoding="utf-8"))
-            row = manifest["ports"][0]
-            del row["source_url"]
-            row["source_zip"] = archive
-            recipe.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+        upstream = port.source_root + ".zip"
+        if inputs is not None:
+            port = replace(port, archive=inputs / upstream)
+        with tempfile.TemporaryDirectory(prefix="mcmodup-reload-source-") as temp:
+            source = Path(temp) / upstream
+            _source_zip(port, source)
+            if (port.legacy_sha256, port.source_sha256, port.source_root) != (
+                    thaumcraft_parity.ORIGINAL_SHA256, thaumcraft_parity.SOURCE_SHA256, thaumcraft_parity.SOURCE_ROOT):
+                raise InputError("The Thaumcraft parity changes require the exact original and pinned Reload source.")
+            archive = directory / "thaumcraft-reload-patched.zip"
+            thaumcraft_parity.prepare_source(source, archive)
+        manifest = json.loads(TC_RECIPE.read_text(encoding="utf-8"))
+        [row] = manifest["ports"]
+        row.pop("source_url", None)
+        row.update(source_zip=archive.name, source_sha256=digest(archive), ids={"thaumcraft": thaumcraft_parity.VERSION})
+        row["artifact"] = f"neoforge/build/libs/Thaumcraft-neoforge-{thaumcraft_parity.VERSION}.jar"
+        row["limitations"].append("Standalone build restores TC4's enchanted golden apple aspect base and new aura node identities "
+                                  "in vanilla dimensions and the Outer Lands. Other parity gaps remain.")
+        recipe.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     except BaseException:
         shutil.rmtree(directory, ignore_errors=True)
         raise
@@ -81,10 +90,8 @@ def build_jars(source: Path, target: Path, selections: list[str], output: Path, 
             from .tinkerer_computercraft import prepare
 
             manifest = prepare(prepared, source_zips)
-        elif keep_recipe is not None or source_zips is not None:
-            manifest = _stage_stock_recipe(base, prepared, source_zips)
         else:
-            manifest = TC_RECIPE
+            manifest = _stage_stock_recipe(base, prepared, source_zips)
         update = native_pack.plan(native_pack.with_source_ports(state, replace(base_options, manifest=manifest)), selections)
         if update.problems:
             raise InputError("Cannot build the selected mods:\n- " + "\n- ".join(update.problems))

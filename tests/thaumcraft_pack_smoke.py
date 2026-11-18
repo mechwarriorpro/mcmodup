@@ -11,6 +11,7 @@ from mcmodup.audit import ModMetadata
 from mcmodup.native_pack import REPORT_NAME
 from mcmodup.port import _build_gradle, _metadata, write_workspace
 from mcmodup.source_ports import digest
+from mcmodup.thaumcraft_parity import VERSION as TC_RESTORED_VERSION
 from native_pack_smoke import run_gradle
 from neoforge_smoke import empty_test_structure
 from mcmodup.tinkerer_port import CODE_CHICKEN_LIB_VERSION, ENDER_STORAGE_INPUTS, ENDER_STORAGE_VERSION, TT_ROOT
@@ -113,7 +114,8 @@ def staged_flat_preset(staged: Path, built: dict[str, str]) -> str:
 
 
 def check_server(staged: Path, project: Path, expected: dict[str, str], with_tinkerer: bool,
-                 cc_fixtures: dict[str, bytes], flat_preset: str, with_ender_storage: bool = False) -> None:
+                 cc_fixtures: dict[str, bytes], flat_preset: str, with_ender_storage: bool = False, *,
+                 restored: bool = False) -> None:
     java = f"src/main/java/{PACKAGE.replace('.', '/')}"
     gradle = _build_gradle(SERVER_ID, PACKAGE, "1.0.0") + f"""
 neoForge.runs.create('gameTestServer') {{
@@ -137,6 +139,9 @@ neoForge.runs.create('gameTestServer') {{
         files[f"{java}/TinkererPackSmoke.java"] = (FIXTURES / "TinkererPackSmoke.java").read_bytes()
         files[f"{java}/EnderRiftPackSmoke.java"] = (FIXTURES / "EnderRiftPackSmoke.java").read_bytes()
         files[f"src/main/resources/data/{SERVER_ID}/structure/test_room.nbt"] = empty_test_structure(8)
+    if restored:
+        files[f"{java}/ThaumcraftRestoredChecks.java"] = (FIXTURES / "ThaumcraftRestoredChecks.java").read_bytes()
+    if restored or with_tinkerer:
         gradle += "\ndependencies { compileOnly fileTree(dir: 'run/mods', include: ['*.jar']) }\n"
     if with_ender_storage:
         files[f"{java}/EnderStoragePackSmoke.java"] = (FIXTURES / "EnderStoragePackSmoke.java").read_bytes()
@@ -144,10 +149,13 @@ neoForge.runs.create('gameTestServer') {{
     write_workspace(project, files)
     mods = copy_mods(staged, project, expected)
     log = run_gradle(project, "runGameTestServer")
-    tests = 1 + 4 * with_tinkerer + (len(CC_CASES) if cc_fixtures else 0) + with_ender_storage
+    tests = 1 + 4 * with_tinkerer + (len(CC_CASES) if cc_fixtures else 0) + with_ender_storage + 2 * restored
     assert f"All {tests} required tests passed" in log, log[-12000:]
     assert mod_hashes(mods) == expected, "A server runtime input changed"
     print("Staged production Thaumcraft and Architectury passed the native NeoForge crucible smoke test without Connector.")
+    if restored:
+        print("The staged JAR matched exact TC4 enchanted golden apple aspects and coordinate-derived overworld node identity, "
+              "including identity preservation through block-entity save/load and recreation at the same position.")
     if with_tinkerer:
         print("The staged Bedrock generator matched the legacy population seed for two complete chunks (using modern ore tags). "
               "Imbued Fire used the side-sensitive flammability of another mod's block.")
@@ -205,7 +213,10 @@ def check(staged: Path, project: Path, with_tinkerer: bool = False, client: bool
         with ZipFile(staged / "mods" / built["thaumictinkerer"]) as jar:
             assert not any(n.startswith("codechicken/") for n in jar.namelist()), "Ender Storage and CCL must not be bundled"
     flat_preset = staged_flat_preset(staged, built)
-    check_server(staged, project, expected, with_tinkerer, cc_fixtures, flat_preset, with_ender_storage)
+    restored = rows["thaumcraft"]["ids"]["thaumcraft"] == TC_RESTORED_VERSION
+    if not with_tinkerer:
+        assert restored, "Standalone build did not stage the pinned Thaumcraft parity fixes"
+    check_server(staged, project, expected, with_tinkerer, cc_fixtures, flat_preset, with_ender_storage, restored=restored)
     if with_ender_storage:
         print(f"Ender Storage {ENDER_STORAGE_VERSION}: the staged Ender Rift opens the linked owner's remote inventory, "
               "survives a wand serialization round trip, resets for free on obsidian, and retains the vanilla cast.")

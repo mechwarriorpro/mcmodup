@@ -19,11 +19,13 @@ on:
       - 'mcmodup/templates/source-ports/thaumcraft4-reload-preview.json'
       - 'mcmodup/__main__.py'
       - 'mcmodup/builtin_ports.py'
+      - 'mcmodup/thaumcraft_parity.py'
       - 'mcmodup/source_ports.py'
       - 'pyproject.toml'
       - 'mcmodup/native_pack.py'
       - 'tests/thaumcraft_pack_smoke.py'
       - 'tests/fixtures/ThaumcraftPackSmoke.java'
+      - 'tests/fixtures/ThaumcraftRestoredChecks.java'
       - 'tests/fixtures/ThaumcraftClientSmoke.java'
       - 'tests/fixtures/ThaumcraftFlatPreset.json'
 
