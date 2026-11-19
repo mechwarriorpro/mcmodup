@@ -22,6 +22,10 @@ def trace_name(release_394: bool) -> str:
     return f"{'release394' if release_394 else 'final'}-polytool.txt"
 
 
+def mining_trace_name(release_394: bool) -> str:
+    return f"{'release394' if release_394 else 'final'}-polytool-mining.txt"
+
+
 def asset_paths(namespace: str) -> dict[str, str]:
     return {f"assets/minechem/textures/{old}/polytool.png": f"assets/{namespace}/textures/{new}/polytool.png"
             for old, new in (("items", "item"), ("gui", "gui"))}

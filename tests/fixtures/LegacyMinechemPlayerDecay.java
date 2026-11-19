@@ -20,11 +20,9 @@ final class LegacyMinechemPlayerDecay {
     private final int uranium;
     private final long life;
     private final Class<?> stack = mc("item.ItemStack"), item = mc("item.Item"), inv = mc("inventory.IInventory");
-    private final Class<?> player = mc("entity.player.EntityPlayer"), mp = mc("entity.player.EntityPlayerMP");
-    private final Class<?> w = mc("world.World"), server = mc("server.MinecraftServer");
+    private final Class<?> player = mc("entity.player.EntityPlayer");
     private final Class<?> playerInv = mc("entity.player.InventoryPlayer");
     private final Method get = inv.getMethod("func_70301_a", int.class), set = inv.getMethod("func_70299_a", int.class, stack);
-    private final Method health = player.getMethod("func_110143_aJ");
     private final Field opened = player.getField("field_71070_bA");
     private final Class<?> radiation = Class.forName("minechem.radiation.RadiationHandler");
     private final Object handler = radiation.getMethod("getInstance").invoke(null);
@@ -46,12 +44,12 @@ final class LegacyMinechemPlayerDecay {
         for (Object value : items) if (shield.isInstance(value)) registered++;
         rows.put("registered_item_shields", String.valueOf(registered));
 
-        Actor actor = new Actor();
+        Actor actor = new Actor(world, old);
         set.invoke(actor.inventory, 0, sample());
         rows.put("hotbar", scan(actor, actor.inventory, 0));
         rows.put("repeat", scan(actor, actor.inventory, 0));
 
-        actor = new Actor();
+        actor = new Actor(world, old);
         for (int id = 310; id <= 313; id++) {
             Object armor = old ? stack.getConstructor(int.class, int.class, int.class).newInstance(id, 1, 0) :
                 stack.getConstructor(item, int.class, int.class).newInstance(item.getMethod("func_150899_d", int.class).invoke(null, id), 1, 0);
@@ -60,7 +58,7 @@ final class LegacyMinechemPlayerDecay {
         set.invoke(actor.inventory, 0, sample());
         rows.put("vanilla_armor", scan(actor, actor.inventory, 0));
 
-        actor = new Actor();
+        actor = new Actor(world, old);
         Object carried = sample();
         playerInv.getMethod("func_70437_b", stack).invoke(actor.inventory, carried);
         float prior = actor.health();
@@ -70,7 +68,7 @@ final class LegacyMinechemPlayerDecay {
         set.invoke(actor.inventory, 0, carried);
         rows.put("cursor_placed", scan(actor, actor.inventory, 0));
 
-        actor = new Actor();
+        actor = new Actor(world, old);
         Object chest = mc("inventory.InventoryBasic").getConstructor(String.class, boolean.class, int.class).newInstance("samples", false, 27);
         opened.set(actor.player, mc("inventory.ContainerChest").getConstructor(inv, inv).newInstance(actor.inventory, chest));
         set.invoke(chest, 0, sample());
@@ -94,7 +92,7 @@ final class LegacyMinechemPlayerDecay {
                 machine(rows, "decomposer_true", "decomposer.Decomposer", 0, 25, 26);
             } finally { option.setBoolean(null, original); }
 
-            actor = new Actor();
+            actor = new Actor(world, old);
             set.invoke(actor.inventory, 0, sample());
             Class<?> fml = Class.forName("cpw.mods.fml.common.FMLCommonHandler");
             Object hooks = fml.getMethod("instance").invoke(null);
@@ -113,12 +111,12 @@ final class LegacyMinechemPlayerDecay {
     }
 
     private void machine(Map<String, String> rows, String label, String kind, int storage, int early, int late) throws Exception {
-        Actor actor = new Actor();
+        Actor actor = new Actor(world, old);
         Object tile = open(actor, kind);
         set.invoke(tile, storage, sample());
         rows.put(label + "_storage", scan(actor, tile, storage));
         for (int slot : new int[]{early, late, 0}) {
-            actor = new Actor();
+            actor = new Actor(world, old);
             open(actor, kind);
             set.invoke(actor.inventory, slot, sample());
             rows.put(label + "_player_" + slot, scan(actor, actor.inventory, slot));
@@ -137,7 +135,7 @@ final class LegacyMinechemPlayerDecay {
     private Object sample() throws Exception { return matter.aged(uranium, 3, life + 1201); }
 
     private void bucket(Map<String, String> rows, String label, String key, long age) throws Exception {
-        Actor actor = new Actor();
+        Actor actor = new Actor(world, old);
         set.invoke(actor.inventory, 0, matter.aged(matter.filledBucket(key), age));
         rows.put(label, scan(actor, actor.inventory, 0));
         List<String> byproducts = new ArrayList<String>();
@@ -180,14 +178,18 @@ final class LegacyMinechemPlayerDecay {
         return actor.outcome(matter.key(get.invoke(inventory, slot)), before);
     }
 
-    private final class Actor {
-        final Object player, inventory, network;
-        final List<Object> packets = new ArrayList<Object>();
+    static final class Actor {
+        final Object player, inventory, interaction;
+        private final Object network;
+        private final boolean old;
+        private final List<Object> packets = new ArrayList<Object>();
 
-        Actor() throws Exception {
+        Actor(Object world, boolean old) throws Exception {
+            this.old = old;
+            Class<?> server = mc("server.MinecraftServer"), mp = mc("entity.player.EntityPlayerMP"), w = mc("world.World");
             Object game = server.getMethod("func_71276_C").invoke(null);
             Class<?> manager = mc(old ? "item.ItemInWorldManager" : "server.management.ItemInWorldManager");
-            Object interaction = manager.getConstructor(w).newInstance(world);
+            interaction = manager.getConstructor(w).newInstance(world);
             if (old) {
                 player = mp.getConstructor(server, w, String.class, manager).newInstance(game, world, "Probe", interaction);
                 Class<?> connection = mc("network.INetworkManager");
@@ -214,12 +216,16 @@ final class LegacyMinechemPlayerDecay {
             Field immunity = mp.getDeclaredField(old ? "field_71145_cl" : "field_147101_bU");
             immunity.setAccessible(true);
             immunity.setInt(player, 0);
-            inventory = LegacyMinechemPlayerDecay.this.player.getField("field_71071_by").get(player);
+            inventory = mc("entity.player.EntityPlayer").getField("field_71071_by").get(player);
         }
 
-        float health() throws Exception { return ((Number) health.invoke(player)).floatValue(); }
+        float health() throws Exception { return ((Number) player.getClass().getMethod("func_110143_aJ").invoke(player)).floatValue(); }
 
         String outcome(String product, float before) throws Exception {
+            return product + "|" + (before - health()) + "|" + chat();
+        }
+
+        List<String> chat() throws Exception {
             List<String> warnings = new ArrayList<String>();
             if (old) {
                 for (Object packet : packets) if (packet.getClass().getSimpleName().equals("Packet3Chat")) {
@@ -249,7 +255,7 @@ final class LegacyMinechemPlayerDecay {
                     pending.clear();
                 }
             }
-            return product + "|" + (before - health()) + "|" + warnings;
+            return warnings;
         }
     }
 
