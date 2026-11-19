@@ -10,7 +10,7 @@ import subprocess
 import traceback
 from zipfile import ZipFile
 
-from legacy_recipe_fixture import java8, legacy_command, prepare, run_server
+from legacy_recipe_fixture import prepare, run_server
 from mixed_legacy_pack_smoke import note
 from mcmodup.minechem_final_synthesis import TRACE
 from mcmodup.minechem_materials import observations
@@ -47,6 +47,7 @@ def compile_probe(root: Path, server: Path, forge: Path, javac: str) -> None:
 def original(root: Path, version: str) -> None:
     source, server = root / "original", root / "server"
     options = [f"-Dmcmodup.minechem.version={version}"]
+    jdk = Path(os.environ["JAVA_HOME"]) / "bin"
     if version == "1.6.4":
         name, checksum = FINAL, FINAL_HASH
         assert file_digest(source / "mods" / name) == checksum
@@ -62,7 +63,6 @@ def original(root: Path, version: str) -> None:
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_bytes(pack.read(file))
         shutil.copyfile(source / "mods" / name, server / "mods" / name)
-        jdk = Path(os.environ["JAVA_HOME"]) / "bin"
         forge = server / "Voltz.jar"
         compile_probe(root, server, forge, str(jdk / "javac"))
         command = [str(jdk / "java"), "-Xmx1G", "-Djava.awt.headless=true", *options, "-jar", forge.name, "nogui"]
@@ -74,8 +74,9 @@ def original(root: Path, version: str) -> None:
         assert file_digest(root / COFH, "sha1") == "20617e7822e0217cd091867db681d940f682235b"
         forge = prepare(server, source, "1.7.10")
         shutil.copyfile(root / COFH, server / "mods" / COFH)
-        compile_probe(root, server, forge, java8("javac"))
-        command = legacy_command("1.7.10", options)
+        compile_probe(root, server, forge, str(jdk / "javac"))
+        # .394's original molecule-decay cache links to sun.misc.Hashing, removed in Java 8.
+        command = [str(jdk / "java"), "-Xmx1G", "-Djava.awt.headless=true", *options, "-jar", forge.name, "nogui"]
     try:
         evidence = run_server(server, command, legacy=True, success_marker="MCMODUP_MINECHEM_ORIGINAL_PASS",
                               failure_marker="MCMODUP_MINECHEM_ORIGINAL_FAIL")

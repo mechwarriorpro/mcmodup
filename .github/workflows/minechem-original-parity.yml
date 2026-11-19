@@ -52,12 +52,19 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.11'
-      - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
-        if: matrix.minecraft == '1.7.10'
-        with:
-          distribution: temurin
-          java-version: '8'
-      - name: Download pinned Java 7, exact Minechem FINAL and Voltz runtime
+      - name: Download pinned Java 7 for both binary probes
+        shell: bash
+        run: |
+          root="$RUNNER_TEMP/minechem"
+          mkdir -p "$root"
+          cd "$root"
+          jdk=zulu7.56.0.11-ca-jdk7.0.352-linux_x64
+          curl --proto '=https' --proto-redir '=https' --fail --silent --show-error --location \
+            --retry 2 --max-time 120 --max-filesize 68604442 -o "$jdk.tar.gz" "https://cdn.azul.com/zulu/bin/$jdk.tar.gz"
+          printf '%s  %s\n' 8a7387c1ed151474301b6553c6046f865dc6c1e1890bcf106acc2780c55727c8 "$jdk.tar.gz" | sha256sum --check
+          tar -xf "$jdk.tar.gz"
+          echo "JAVA_HOME=$root/$jdk" >> "$GITHUB_ENV"
+      - name: Download exact Minechem FINAL and Voltz runtime
         if: matrix.minecraft == '1.6.4'
         shell: bash
         run: |
@@ -69,10 +76,6 @@ jobs:
               --retry 2 --max-time 120 --max-filesize "$4" -o "$1" "$2"
             printf '%s  %s\n' "$3" "$1" | sha256sum --check
           }
-          jdk=zulu7.56.0.11-ca-jdk7.0.352-linux_x64
-          download "$jdk.tar.gz" "https://cdn.azul.com/zulu/bin/$jdk.tar.gz" 8a7387c1ed151474301b6553c6046f865dc6c1e1890bcf106acc2780c55727c8 68604442
-          tar -xf "$jdk.tar.gz"
-          echo "JAVA_HOME=$root/$jdk" >> "$GITHUB_ENV"
           download voltz.zip https://raw.githubusercontent.com/TechnicPack/Technic/8c4e20f9225bcd6612fca4cb29c53366317d3e13/servers/voltz/Voltz_Server_v3.0.0c.zip 2eda607746a22edbf45612243adce37a876251e36d46c692a48344fe98eec84e 76658094
           download original/mods/Minechem-1.6.4-5.0.5.FINAL.jar https://edge.forgecdn.net/files/2214/881/Minechem-1.6.4-5.0.5.FINAL.jar 2443c7f91351f0e6c2323636be28a6fe8697704f20edf378dfe1a9d7a3070bea 1410748
       - name: Download exact Minechem .394 with Forge and CoFHLib
