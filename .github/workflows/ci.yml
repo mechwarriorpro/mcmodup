@@ -110,12 +110,25 @@ jobs:
         shell: bash
         run: |
           jar="$RUNNER_TEMP/Minechem-1.6.4-5.0.5.FINAL.jar"
-          curl --proto '=https' --proto-redir '=https' --fail --location --retry 2 \
-            --output "$jar" https://github.com/iopleke/Minechem/releases/download/1.6.4-5.0.5-FINAL/Minechem-1.6.4-5.0.5.FINAL.jar
+          options=(--proto '=https' --proto-redir '=https' --fail --location --retry 2
+                   --max-time 100 --max-filesize 1410748 --output "$jar")
+          if ! curl "${options[@]}" https://github.com/iopleke/Minechem/releases/download/1.6.4-5.0.5-FINAL/Minechem-1.6.4-5.0.5.FINAL.jar; then
+            curl "${options[@]}" https://edge.forgecdn.net/files/2214/881/Minechem-1.6.4-5.0.5.FINAL.jar
+          fi
           printf '%s  %s\n' 2443c7f91351f0e6c2323636be28a6fe8697704f20edf378dfe1a9d7a3070bea "$jar" | sha256sum --check
           # Inspect/adapt data only. Do not run or upload the original JAR.
-          python -m mcmodup convert-jar "$jar" --pack "$RUNNER_TEMP/Voltz_Server_v3.0.0c.zip" --profile minechem-chemistry --allow-partial \
-            -o "$RUNNER_TEMP/minechem-chemistry-test-only.jar"
+          log="$RUNNER_TEMP/minechem-final-build.log"
+          if ! python -m mcmodup convert-jar "$jar" --pack "$RUNNER_TEMP/Voltz_Server_v3.0.0c.zip" \
+            --profile minechem-chemistry --allow-partial -o "$RUNNER_TEMP/minechem-chemistry-test-only.jar" > "$log" 2>&1; then
+            python - "$log" <<'PY'
+          import pathlib
+          import sys
+          output = pathlib.Path(sys.argv[1]).read_text(errors="replace")[-4000:]
+          print("::error title=Minechem FINAL build failed::" + output.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A"))
+          PY
+            exit 1
+          fi
+          cat "$log"
           python - "$RUNNER_TEMP/minechem-chemistry-test-only.jar" <<'PY'
           import json
           import sys
