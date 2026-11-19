@@ -15,7 +15,7 @@ from .source_ports import digest
 
 LEGACY_SHA256 = "80cf5bd9d485377ecde3822154a5db47804fab3e8f78c388cfcf529239655938"
 MOD_ID = "atomic_thermometer"
-VERSION = "1.2.0-preview.5"
+VERSION = "1.2.0-preview.6"
 ARCHIVE = f"{MOD_ID}-{VERSION}.jar"
 PACKAGE = "mcmodup_kernel.atomic_thermometer"
 KERNEL = PACKAGE.replace(".", "/")
@@ -171,6 +171,7 @@ neoForge.runs.create('gameTestServer') {{
             f"info.{MOD_ID}.untracked": "Not tracking a remote position",
             **{f"block.{MOD_ID}.{block}": block.replace("_", " ").title() for block in ACCEL_BLOCKS},
             f"block.{MOD_ID}.creative_fe_supply": "Creative FE Supply",
+            f"info.{MOD_ID}.item_charge": "Transferred %s FE to the held item",
             f"item.{MOD_ID}.empty_cell": "Empty Cell", f"item.{MOD_ID}.antimatter_cell": "Antimatter Cell (125 mg)",
             f"block.{MOD_ID}.steam_turbine": "Steam Turbine", f"fluid.{MOD_ID}.steam": "Steam", f"block.{MOD_ID}.steam_funnel": "Steam Funnel",
             f"info.{MOD_ID}.turbine": "Steam: %s mB · Stored: %s FE · Rotor: %s rad/s"}),

@@ -101,13 +101,13 @@ def original(root: Path, version: str) -> None:
         for index, (actual, expected) in enumerate(zip(observed, pinned)):
             assert actual == expected, f"FINAL synthesis row {index}: {actual!r} != {expected!r}"
     if version == "1.7.10":
-        observations = (server / "minechem-materials.txt").read_text(encoding="utf-8").splitlines()
+        material_rows = (server / "minechem-materials.txt").read_text(encoding="utf-8").splitlines()
         expected = [f"{key}=" + ",".join(f"{part}x{amount}" for part, amount in products)
                     for key, products in release394_trace().items()]
-        missing = sorted(set(expected) - set(observations))
-        unexpected = sorted(set(observations) - set(expected))
-        assert observations == expected, f".394 material trace changed: missing {missing[:8]}; unexpected {unexpected[:8]}"
-        note("Pinned .394 material trace re-observed", f"{len(observations)} ordered outputs matched the pinned Forge trace.")
+        missing = sorted(set(expected) - set(material_rows))
+        unexpected = sorted(set(material_rows) - set(expected))
+        assert material_rows == expected, f".394 material trace changed: missing {missing[:8]}; unexpected {unexpected[:8]}"
+        note("Pinned .394 material trace re-observed", f"{len(material_rows)} ordered outputs matched the pinned Forge trace.")
         synthesis = (server / "minechem-synthesis.txt").read_text(encoding="utf-8").splitlines()
         expected_synthesis = {key: f"{cost};{count};{'shaped' if shaped else 'shapeless'};" +
                               ",".join(f"{part[0]}x{part[1]}" if part else "_" for part in pattern)

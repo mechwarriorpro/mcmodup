@@ -97,7 +97,8 @@ ARTIFACT_MARKERS = (PROVENANCE, "META-INF/MCModUp-NOTICE.txt")
 TARGETS = {
     "minechem": ("minechem/tileentity/decomposer/DecomposerTileEntity", "minechem/tileentity/synthesis/SynthesisTileEntity",
                  "minechem/tileentity/multiblock/fission/FissionTileEntity", "minechem/tileentity/multiblock/fusion/FusionTileEntity",
-                 "minechem/tileentity/blueprintprojector/BlueprintProjectorTileEntity"),
+                 "minechem/tileentity/blueprintprojector/BlueprintProjectorTileEntity",
+                 "minechem/item/polytool/PolytoolItem", "minechem/item/polytool/PolytoolContainer"),
     "icbm": ("icbm/explosion/machines/TileLauncherBase", "icbm/explosion/machines/TileLauncherFrame",
              "icbm/explosion/machines/TileLauncherScreen", "icbm/explosion/missile/missile/EntityMissile",
              "icbm/explosion/missile/missile/ItemMissile", "icbm/explosion/missile/modular/TileMissileAssembler",

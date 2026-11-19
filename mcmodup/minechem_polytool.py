@@ -86,7 +86,7 @@ def project(namespace: str, package: str, entries: list[CatalogEntry], release_3
            "shift": "Shift-click a full stack to infuse" if release_394 else "FINAL uses left-click, not shift-click",
            "wrong_input": "Needs 64 tubes of an eligible element from this release",
            "reject": "Infusion rejected: a stat would reach zero or the rank limit was reached",
-           "alloy": "Alloy: changes the five tool stats",
+           "alloy": "Alloy: trades one tool stat against others",
            "rank": "%s · rank %s", "rank_next": "%s: rank %s → %s", "more": "… and %s more elements",
            "air": "Oxygen: restores air when mining", "vein": "Iron: mines adjacent matching ores",
            "fire": "Sulfur: ignites targets on melee hits", "lithium": "Lithium: enables FE charging and a melee bonus",
