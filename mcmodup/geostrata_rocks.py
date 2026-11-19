@@ -16,13 +16,14 @@ from .runtime import file_digest
 
 LEGACY_SHA256 = "afd68aa6ca1222a0f53ee25323c18bd3c2473c346a15345b216c9ef1042a0414"
 MOD_ID = "geostrata_rocks"
-VERSION = "23b-preview.2"
+VERSION = "23b-preview.3"
 ARCHIVE = f"{MOD_ID}-{VERSION}.jar"
 PACKAGE = "mcmodup.geostratarocks"
 RESOURCE = "src/main/resources/"
 FEATURES = {
-    "All 136 decorative blocks, observed tool tiers and drops": "measuredrockfamilies",
+    "All 153 decorative blocks, observed tool tiers and drops": "measuredrockfamilies",
     "Seven measured recipe families, with engraved mirrors": "measuredrockrecipes",
+    "Connected wall adjacency masks on all six faces": "measuredconnectedfaces",
     "Registered stone-only veins and biome filters from observed defaults": "orepreservingveins",
 }
 
@@ -66,16 +67,17 @@ VEINS = {
 }
 
 
-# Leave connected walls unregistered until the original adjacency/render rules
-# can be reproduced. These are full cube variants, not alternate metadata states.
+# These shapes are separate modern blocks, not alternate metadata states. A
+# connected wall uses its rock's smooth sprite plus the shared overlay sheet.
 SHAPES = {"smooth": "", "cobblestone": "_c", "brick": "_b", "round": "_r", "fitted": "_f",
-          "tile": "_t", "engraved": "_e", "inscribed": "_i"}
+          "tile": "_t", "engraved": "_e", "inscribed": "_i", "connected": ""}
 CRAFTING = {
     "brick": (4, ("SS", "SS")),
     "round": (4, ("BB", "BB")),
     "fitted": (2, ("BB",)),
     "tile": (4, (" S ", "S S", " S ")),
     "inscribed": (3, ("B", "S", "B")),
+    "connected": (8, ("SSS", "S S", "SSS")),
     "engraved": (2, ("SB", "BS")),  # Minecraft's shaped matcher handles the mirror.
 }
 
@@ -89,8 +91,10 @@ def _block(rock: Rock, shape: str) -> str:
 
 
 def textures() -> dict[str, str]:
-    return {f"assets/geostrata/textures/blocks/{rock.name}{suffix}.png": f"assets/{MOD_ID}/textures/block/{_block(rock, shape)}.png"
-            for rock in ROCKS for shape, suffix in SHAPES.items()}
+    rocks = {f"assets/geostrata/textures/blocks/{rock.name}{suffix}.png": f"assets/{MOD_ID}/textures/block/{_block(rock, shape)}.png"
+             for rock in ROCKS for shape, suffix in SHAPES.items() if shape != "connected"}
+    return rocks | {f"assets/geostrata/textures/blocks/connected/{i}.png": f"assets/{MOD_ID}/textures/block/connected/{i}.png"
+                    for i in range(10)}
 
 
 def checks(package: str, namespace: str) -> str:
@@ -139,6 +143,26 @@ def _vein_resources(data: str) -> dict[str, str]:
     return files
 
 
+def _border_cube(offset: float, texture: str, *, border: bool = True) -> dict:
+    # In-plane orientations of the legacy border. Top/down use XZ;
+    # east/west use YZ; north/south use YX. The base is a regular cube.
+    transforms = {"up": ([16, 0, 0, 16], 0), "down": ([16, 16, 0, 0], 0),
+                  "east": ([0, 0, 16, 16], 90), "west": ([0, 16, 16, 0], 90),
+                  "north": ([0, 0, 16, 16], 90), "south": ([0, 16, 16, 0], 90)}
+    faces = {face: {"texture": texture, "cullface": face,
+                    **({"uv": uv, "rotation": rotation} if border else {})}
+             for face, (uv, rotation) in transforms.items()}
+    return {"from": [-offset] * 3, "to": [16 + offset] * 3, "faces": faces}
+
+
+def _connected_resources(assets: str) -> dict[str, str]:
+    return {f"{assets}/models/block/connected/{index}.json": _json({
+            "render_type": "minecraft:translucent",
+            "textures": {"particle": f"{MOD_ID}:block/connected/{index}", "edge": f"{MOD_ID}:block/connected/{index}"},
+            "elements": [_border_cube(0.016, "#edge")],
+        }) for index in range(1, 10)}
+
+
 def _project(workspace: Path) -> None:
     resources = RESOURCE
     assets = f"{resources}assets/{MOD_ID}"
@@ -146,7 +170,7 @@ def _project(workspace: Path) -> None:
     java_package = PACKAGE.replace(".", "/")
     java = f"src/main/java/{java_package}"
     meta = _metadata(ModMetadata("", authors="Reika Kalseki (original GeoStrata)",
-                                 description="17 GeoStrata v23b rock families and native stone-only veins; no DragonAPI implementation."),
+                                 description="17 GeoStrata v23b rock families, connected walls and native stone-only veins; no DragonAPI implementation."),
                      MOD_ID, "GeoStrata Rocks (Preview)", VERSION, "GeoStrata original assets: private use only without permission")
     files = {
         "settings.gradle": f"rootProject.name = '{MOD_ID}'\n",
@@ -169,10 +193,13 @@ neoForge.runs.create('gameTestServer') {{
             "Original textures by Reika Kalseki, https://github.com/ReikaKalseki/GeoStrata.\n"
             "Do not redistribute GeoStrata assets or derivative builds without the owner's permission.\n"
             "No original Java code is bundled. Tested against the default v23b Forge rock survey.\n"),
-        f"{data}/structure/rock_room.nbt": empty_test_structure(),
+        f"{data}/structure/rock_room.nbt": empty_test_structure(3),
         f"{data}/structure/vein_room.nbt": empty_test_structure(19),
         **_vein_resources(data),
+        **_connected_resources(assets),
         f"{java}/GeoRockChecks.java": checks(PACKAGE, MOD_ID),
+        **{f"{java}/{name}.java": (TEMPLATES / f"geostrata_rocks/{name}.java").read_text(encoding="utf-8")
+           for name in ("ConnectedRock", "GeoConnectedClient")},
     }
     locales = {f"itemGroup.{MOD_ID}.rocks": "GeoStrata Rocks (Preview)"}
     mining, stone, iron, registrations = [], [], [], []
@@ -183,15 +210,21 @@ neoForge.runs.create('gameTestServer') {{
             name = _block(rock, shape)
             model, identifier = f"{MOD_ID}:block/{name}", f"{MOD_ID}:{name}"
             locales[f"block.{MOD_ID}.{name}"] = rock.name.title() + ("" if shape == "smooth" else f" {shape.title()}")
-            registrations.append(f'        register("{name}", {rock.hardness}F, {rock.resistance}F);')
+            registrations.append(f'        register("{name}", "{rock.name}", {rock.hardness}F, {rock.resistance}F, {str(shape == "connected").lower()});')
             mining.append(identifier)
             if rock.tier == "stone":
                 stone.append(identifier)
             elif rock.tier == "iron":
                 iron.append(identifier)
             files[f"{assets}/blockstates/{name}.json"] = _json({"variants": {"": {"model": model}}})
-            files[f"{assets}/models/block/{name}.json"] = _json({"parent": "minecraft:block/cube_all", "textures": {"all": model}})
-            files[f"{assets}/models/item/{name}.json"] = _json({"parent": model})
+            texture = f"{MOD_ID}:block/{rock.name}" if shape == "connected" else model
+            files[f"{assets}/models/block/{name}.json"] = _json({"parent": "minecraft:block/cube_all", "textures": {"all": texture}})
+            item_model = {"parent": model}
+            if shape == "connected":
+                item_model = {"parent": "minecraft:block/block", "render_type": "minecraft:translucent",
+                    "textures": {"particle": texture, "base": texture, "edge": f"{MOD_ID}:block/connected/0"},
+                    "elements": [_border_cube(0.0, "#base", border=False), _border_cube(0.016, "#edge")]}
+            files[f"{assets}/models/item/{name}.json"] = _json(item_model)
             ordinary_drop = f"{MOD_ID}:{_block(rock, 'cobblestone')}" if shape == "smooth" else identifier
             item = {"type": "minecraft:item", "name": ordinary_drop, "conditions": [{"condition": "minecraft:survives_explosion"}]}
             entry = item
@@ -242,7 +275,7 @@ def prepare(output: Path) -> Path:
                   "artifact": f"build/libs/{ARCHIVE}", "tasks": ["jar", "runGameTestServer"], "game_report": "build/gametest.xml",
                   "minimum_tests": len(FEATURES), "features": FEATURES, "status": "preview", "standalone_preview": True,
                   "limitations": ["Native ore placement in Overworld biomes, not the old RNG or exact chunk output. No retro-generation or custom dimension and density settings.",
-                                  "Only plain stone is replaced. Original mining timing, connected rendering, opal tint, crystals, DragonAPI integrations and old saves are missing."],
+                                  "Only plain stone is replaced. Original mining timing, opal tint, crystals, DragonAPI integrations and old saves are missing. Connected wall masks are measured; lighting and pixel parity are not certified."],
                   "import_assets": {old: RESOURCE + new for old, new in imports.items()},
                   "asset_map": {old: {"path": new} for old, new in imports.items()}}
         manifest = output / "geostrata-rocks.json"

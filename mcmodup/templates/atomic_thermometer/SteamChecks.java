@@ -67,7 +67,7 @@ public final class SteamChecks {
         var match = level.getRecipeManager().getRecipeFor(RecipeType.CRAFTING, grid, level).orElseThrow();
         var made = match.value().assemble(grid, level.registryAccess());
         test.assertTrue(match.id().equals(id("steam_funnel")) && made.is(block("steam_funnel").asItem()) && made.getCount() == 2,
-            "Wrong Voltz steam funnel recipe");
+            "Wrong preview steam funnel recipe");
         test.setBlock(NEAR, block("steam_funnel"));
         var pos = test.absolutePos(NEAR);
         var input = fluid(test, NEAR, Direction.DOWN);

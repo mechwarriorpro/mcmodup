@@ -13,7 +13,8 @@ from atomic_thermometer_smoke import check_artifact as check_thermometer
 from geostrata_original_smoke import DRAGONAPI, DRAGONAPI_SHA256
 from icbm_plate_smoke import check_artifact as check_icbm
 from mcmodup.atomic_thermometer import ARCHIVE as THERMOMETER, prepare as prepare_thermometer
-from mcmodup.geostrata_rocks import ARCHIVE as ROCKS, MOD_ID as ROCK_ID, prepare as prepare_rocks, textures as rock_textures
+from mcmodup.geostrata_rocks import ARCHIVE as ROCKS, FEATURES as GEO_FEATURES
+from mcmodup.geostrata_rocks import MOD_ID as ROCK_ID, prepare as prepare_rocks, textures as rock_textures
 from mcmodup.icbm_plate import ARCHIVE as PLATE, prepare as prepare_plate
 from mcmodup.method_ports import PROVENANCE
 from mcmodup.mimicry_catalyst import ARCHIVE as CATALYST, LEGACY_TEXTURE as CATALYST_ICON, MOD_ID as CATALYST_ID
@@ -117,7 +118,7 @@ def check(root: Path) -> None:
         assert not any(name.startswith(("modMimicry/", "assets/minecraft/")) or name.endswith(("CatalystChecks.class", ".jar"))
                        for name in jar.namelist())
     evidence = report["native_builds"][rocks.name]
-    assert evidence["status"] == "preview" and evidence["gametests"]["passed"] == 3, evidence
+    assert evidence["status"] == "preview" and evidence["gametests"]["passed"] == len(GEO_FEATURES), evidence
     assert evidence["original_sha256"] == rocks_original.sha256 == before[source / rocks_original.label]
     assert evidence["legacy_ids"] == {"geostrata": ROCK_ID} and evidence["jar_sha256"] == file_digest(rocks)
     with ZipFile(rocks) as jar, ZipFile(source / rocks_original.label) as original:

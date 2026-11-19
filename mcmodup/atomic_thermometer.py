@@ -35,7 +35,7 @@ FEATURES = {
     "Measured single-source heat transfer through stone and air": "measuredheatspread",
     "One-cell steam consumption, spin, stored FE and sided transfer": "standalonesteamturbine",
     "Heated water boils and supplies turbine via a steam funnel": "heatedwaterfeedsturbine",
-    "Funnel recipe, sided gas tank and native persistence": "funnelcraftsidesandsave",
+    "Preview funnel recipe, sided gas tank and native persistence": "funnelcraftsidesandsave",
 }
 
 
@@ -168,7 +168,7 @@ def prepare(output: Path) -> Path:
                   "status": "preview", "limitations": [
                       "Loaded-chunk server heat grid and water vaporization only. No legacy thermal events, persistent heat, ice or other phase changes.",
                       "Water can produce gas with externally supplied heat. Reactors, multiblock turbine, legacy boil effects and original geometry are absent.",
-                      "Iron funnel recipe only. The native funnel saves its tank, unlike the original reversed persistence callbacks. Thermometer and turbine still lack survival crafting.",
+                      "Adapted iron funnel recipe; original recipe availability is not verified. The native funnel saves its tank, unlike the original reversed persistence callbacks. Thermometer and turbine still lack survival crafting.",
                       "No ComputerCraft/OpenComputers, Universal Electricity, old saves or legacy add-ons."],
                   "import_assets": {old: f"src/main/resources/{new}" for old, new in TEXTURES.items()},
                   "asset_map": {old: {"path": new} for old, new in TEXTURES.items()}, "method_imports": [method_group()]}

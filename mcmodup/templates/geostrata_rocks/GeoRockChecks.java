@@ -3,7 +3,9 @@ package @PACKAGE@;
 import java.io.File;
 import java.util.ArrayList;
 import javax.xml.parsers.ParserConfigurationException;
+import mcmodup.geostratarocks.ConnectedRock;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.gametest.framework.GameTest;
@@ -32,7 +34,7 @@ import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 @PrefixGameTestTemplate(false)
 public final class GeoRockChecks {
     private static final String ID = "geostrata_rocks";
-    private static final String[] SHAPES = {"", "_cobblestone", "_brick", "_round", "_fitted", "_tile", "_engraved", "_inscribed"};
+    private static final String[] SHAPES = {"", "_cobblestone", "_brick", "_round", "_fitted", "_tile", "_engraved", "_inscribed", "_connected"};
     private record Rock(String name, float hardness, float resistance, String tier) {}
     private static final Rock[] ROCKS = {
 @ROCKS@
@@ -76,7 +78,6 @@ public final class GeoRockChecks {
             test.assertTrue(drops.size() == 1 && drops.getFirst().is(drop.getItem()) && drops.getFirst().getCount() == 1,
                     "Wrong drop for " + name + ": " + drops);
         }
-        test.assertTrue(!BuiltInRegistries.BLOCK.containsKey(id("granite_connected")), "Do not replace connected rendering with a normal cube");
         test.succeed();
     }
 
@@ -92,6 +93,7 @@ public final class GeoRockChecks {
             craft(test, name, "inscribed", 3, "B", "S", "B");
             craft(test, name, "engraved", 2, "SB", "BS");
             craft(test, name, "engraved", 2, "BS", "SB");
+            craft(test, name, "connected", 8, "SSS", "S S", "SSS");
             var input = new SingleRecipeInput(item(name + "_cobblestone"));
             var smelt = level.getRecipeManager().getRecipeFor(RecipeType.SMELTING, input, level).orElseThrow();
             var result = smelt.value().assemble(input, level.registryAccess());
@@ -101,6 +103,39 @@ public final class GeoRockChecks {
         // The recipes require four blocks of the same rock, not a tag mixing rock families.
         var mixed = CraftingInput.of(2, 2, java.util.List.of(item("basalt"), item("granite"), item("granite"), item("granite")));
         test.assertTrue(level.getRecipeManager().getRecipeFor(RecipeType.CRAFTING, mixed, level).isEmpty(), "Mixed rock recipe unexpectedly matched");
+        test.succeed();
+    }
+
+    @GameTest(template = "rock_room")
+    public static void measuredConnectedFaces(GameTestHelper test) {
+        var level = test.getLevel();
+        var center = test.absolutePos(new BlockPos(1, 1, 1));
+        var state = BuiltInRegistries.BLOCK.get(id("granite_connected")).defaultBlockState();
+        var granite = BuiltInRegistries.BLOCK.get(id("granite")).defaultBlockState();
+        var brick = BuiltInRegistries.BLOCK.get(id("granite_brick")).defaultBlockState();
+        var marble = BuiltInRegistries.BLOCK.get(id("marble_connected")).defaultBlockState();
+        level.setBlock(center, state, Block.UPDATE_CLIENTS);
+        int[] mask = {1, 2, 3, 4, 6, 7, 8, 9};
+        int[] two = {1, 1, 1, 0, 0, -1, -1, -1}, four = {1, 0, -1, 1, -1, 1, 0, -1};
+        for (var face : Direction.values()) {
+            var axis = face.getAxis();
+            var step2 = axis == Direction.Axis.Z ? Direction.EAST : Direction.SOUTH;
+            var step4 = axis == Direction.Axis.Y ? Direction.EAST : Direction.UP;
+            for (int bits = 0; bits < 256; bits++) {
+                int expected = 0x3fe;
+                for (int i = 0; i < 8; i++) {
+                    boolean same = (bits & (1 << i)) != 0;
+                    var neighbor = center.relative(step2, two[i]).relative(step4, four[i]);
+                    level.setBlock(neighbor, same ? (i % 2 == 0 ? granite : brick) : marble, Block.UPDATE_CLIENTS);
+                    boolean joined = two[i] == 0 || four[i] == 0 ||
+                        ((bits & (two[i] > 0 ? 2 : 64)) != 0 && (bits & (four[i] > 0 ? 8 : 16)) != 0);
+                    if (same && joined) expected &= ~(1 << mask[i]);
+                }
+                test.assertTrue(ConnectedRock.edges(level, center, state, axis) == expected, "Unexpected masks for " + face + " at " + bits);
+            }
+        }
+        test.assertTrue(state.skipRendering(state, Direction.EAST) && !state.skipRendering(marble, Direction.EAST),
+            "Interior connected face should be suppressed only for matching blocks");
         test.succeed();
     }
 

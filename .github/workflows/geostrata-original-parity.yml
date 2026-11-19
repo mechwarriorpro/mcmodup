@@ -48,3 +48,46 @@ jobs:
           download 'DragonAPI 1.6 v23b.zip' https://dist.modpacks.ch/Reika/DragonAPI/release/2dbd889f480fe39c094575c8045b4f4652a33aa3 bf30330e9ada3efa3810747ac3ed096cd7ada35371dd8554a357a36c8703c86f 1209419
       - name: Exercise the original rock blocks, crafts, smelts and vein generation
         run: python -m geostrata_original_smoke "$RUNNER_TEMP/geostrata-original"
+
+  staged-client:
+    name: Stage connected GeoStrata rocks on a client
+    runs-on: ubuntu-latest
+    timeout-minutes: 23
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.11'
+      - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Bake and compare connected models in an integrated world
+        shell: bash
+        run: |
+          command -v xvfb-run
+          scratch="$(mktemp -d "$RUNNER_TEMP/geo-client.XXXXXX")"
+          trap 'rm -rf -- "$scratch"' EXIT
+          jar="$scratch/GeoStrata 1.6 v23b.zip"
+          curl --proto '=https' --proto-redir '=https' --fail --location --retry 2 \
+            --max-time 120 --max-filesize 1138465 \
+            https://dist.modpacks.ch/Reika/GeoStrata/Gamma/a4c4318549d1ac6de878c5dce95ac9fa3f55dbb6 -o "$jar"
+          printf '%s  %s\n' afd68aa6ca1222a0f53ee25323c18bd3c2473c346a15345b216c9ef1042a0414 "$jar" | sha256sum --check
+          if ! PYTHONPATH=.:tests LIBGL_ALWAYS_SOFTWARE=1 ALSOFT_DRIVERS=null \
+            xvfb-run -a -s '-screen 0 1280x800x24' python -u -m geostrata_client_smoke "$scratch" "$jar" \
+            2>&1 | tee "$scratch/client.log"; then
+            python - "$scratch/client.log" <<'PY'
+          import pathlib
+          import sys
+          text = pathlib.Path(sys.argv[1]).read_text(errors="replace")
+          lines = [line for line in text.splitlines() if "error:" in line or "FAIL:" in line or "AssertionError" in line]
+          excerpt = "\n".join(lines[:12]) + "\n" + text[-5200:]
+          print("::error title=Connected model client failed::" + excerpt.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A"))
+          PY
+            exit 1
+          fi
+          evidence=$(tail -n 1 "$scratch/client.log")
+          printf '::notice title=Staged GeoStrata connected models verified::%s\n' "$evidence"
+          printf '%s\n' "$evidence" >> "$GITHUB_STEP_SUMMARY"

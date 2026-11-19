@@ -31,8 +31,11 @@ public final class GeoRocks {
         TABS.register(bus);
     }
 
-    private static void register(String name, float hardness, float resistance) {
-        var block = BLOCKS.registerSimpleBlock(name, BlockBehaviour.Properties.of().strength(hardness, resistance).requiresCorrectToolForDrops());
+    private static void register(String name, String family, float hardness, float resistance, boolean connected) {
+        var block = BLOCKS.register(name, () -> {
+            var properties = BlockBehaviour.Properties.of().strength(hardness, resistance).requiresCorrectToolForDrops();
+            return connected ? new ConnectedRock(family, properties) : new RockBlock(family, properties);
+        });
         ROCKS.add(ITEMS.registerSimpleBlockItem(block));
     }
 }

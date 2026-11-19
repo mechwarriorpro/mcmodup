@@ -34,6 +34,11 @@ class AtomicThermometerTests(unittest.TestCase):
                     self.assertIn(f"src/main/java/{KERNEL}/{name}.java", source.namelist())
                 steam = json.loads(source.read("src/main/resources/data/c/tags/fluid/steam.json"))
                 self.assertEqual(steam, {"replace": False, "values": [f"{MOD_ID}:steam"]})
+                recipe = json.loads(source.read(f"src/main/resources/data/{MOD_ID}/recipe/steam_funnel.json"))
+                self.assertEqual(recipe["pattern"], [" I ", "I I", "I I"])
+                self.assertEqual(recipe["key"], {"I": {"tag": "c:ingots/iron"}})
+                self.assertEqual(recipe["result"], {"id": f"{MOD_ID}:steam_funnel", "count": 2})
+                self.assertIn("SteamChecks*.class", source.read("build.gradle").decode())
                 self.assertIn("TurbineChecks*.class", source.read("build.gradle").decode())
                 self.assertFalse(any(path.endswith(".class") or path in port.imports.values() for path in source.namelist()))
 

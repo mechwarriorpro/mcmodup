@@ -163,20 +163,7 @@ public final class LegacyVoltzInfrastructure {
         funnel.getMethod("func_70310_b", tag.getClass()).invoke(higher, tag);
         funnel.getMethod("func_70307_a", tag.getClass()).invoke(restored, tag);
         require((Integer) amount.invoke(field(funnel, "tank").get(restored)) == 0, "Original funnel NBT behavior changed");
-        int funnelCount = funnelCraft(collector);
-        require(funnelCount == 2, "Original U-shaped iron funnel recipe did not yield two funnels: " + funnelCount);
-        return "372 K does not boil; 373 K source disappears and offers 500/1000 mB at 1/2 blocks above; 16000 mB each; " +
-               "gas-only bottom fill/top drain advice; upward push supplies turbine 1500 mB; normal original NBT reload loses stored gas; U-shaped iron craft yields two";
-    }
-
-    private static int funnelCraft(Object block) throws Exception {
-        Class<?> stack = mc("item.ItemStack"), gridType = mc("inventory.InventoryCrafting"), manager = mc("item.crafting.CraftingManager");
-        Object grid = gridType.getConstructor(mc("inventory.Container"), int.class, int.class).newInstance(null, 3, 3);
-        Object[] gridSlots = (Object[]) field(gridType, "field_70466_a").get(grid);
-        for (int i : new int[]{1, 3, 5, 6, 8}) gridSlots[i] = stack.getConstructor(int.class, int.class, int.class).newInstance(265, 1, 0);
-        Object result = manager.getMethod("func_82787_a", gridType, worldType).invoke(manager.getMethod("func_77594_a").invoke(null), grid, world);
-        if (result == null || stack.getField("field_77993_c").getInt(result) != mc("block.Block").getField("field_71990_ca").getInt(block)) return 0;
-        return stack.getField("field_77994_a").getInt(result);
+        return "372 K does not boil; at 373 K source is consumed and offers 500/1000 mB at +1/+2; funnel 16000 mB, bottom fill/top drain, pushes 1500 mB upward; original NBT reload loses stored gas";
     }
 
     private static String assembler() throws Exception {
