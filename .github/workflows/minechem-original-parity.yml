@@ -1,4 +1,4 @@
-name: Compare original Minechem decomposers
+name: Compare exact Minechem releases on Forge
 
 on:
   workflow_dispatch:
@@ -12,6 +12,8 @@ on:
       - 'tests/fixtures/LegacyMinechemMaterials.java'
       - 'tests/fixtures/LegacyMinechemSynthesis394.java'
       - 'tests/fixtures/LegacyMinechemJournal394.java'
+      - 'tests/fixtures/LegacyMinechemReactors.java'
+      - 'mcmodup/templates/minechem/reactor-blueprints.txt'
       - 'tests/legacy_recipe_fixture.py'
 
 permissions:

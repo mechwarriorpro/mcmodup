@@ -185,7 +185,8 @@ public final class LegacyMinechemDecomposer {
             String materials = FINAL_164 ? "; " + finalWater(tile, world) : "; " + LegacyMinechemMaterials.survey(machine, world) +
                     " | " + LegacyMinechemSynthesis394.survey(world) + " | " + LegacyMinechemJournal394.survey(world, x, y, z);
             System.out.println("MCMODUP_MINECHEM_ORIGINAL_PASS slots=" + slots + "; start_charge=" + capacity + "; start_cost=" + paidAtStart
-                    + "; input_consumed_on_start; saved_queue_emits_16_iron_tubes_one_per_tick; remaining_charge=0" + jam + materials + " | " + cloning(world));
+                    + "; input_consumed_on_start; saved_queue_emits_16_iron_tubes_one_per_tick; remaining_charge=0" + jam + materials + " | " + cloning(world) +
+                    " | " + LegacyMinechemReactors.survey(world, FINAL_164, x, y + 18, z));
         } catch (Throwable failure) {
             Throwable cause = failure.getCause() == null ? failure : failure.getCause();
             System.err.println("MCMODUP_MINECHEM_ORIGINAL_FAIL " + cause + " at " +

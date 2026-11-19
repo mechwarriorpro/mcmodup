@@ -28,7 +28,7 @@ def compile_probe(root: Path, server: Path, forge: Path, javac: str) -> None:
     fixtures = Path(__file__).with_name("fixtures")
     subprocess.run([javac, "-proc:none", "-encoding", "UTF-8", "-classpath", str(forge), "-d", str(probe),
                     *(str(fixtures / name) for name in ("LegacyMinechemDecomposer.java", "LegacyMinechemMaterials.java",
-                                                        "LegacyMinechemSynthesis394.java", "LegacyMinechemJournal394.java"))], check=True, timeout=60)
+                                                        "LegacyMinechemSynthesis394.java", "LegacyMinechemJournal394.java", "LegacyMinechemReactors.java"))], check=True, timeout=60)
     with ZipFile(server / "mods/mcmodup-minechemoracle.jar", "x") as jar:
         for compiled in probe.rglob("*.class"):
             jar.write(compiled, compiled.relative_to(probe).as_posix())
@@ -77,6 +77,9 @@ def original(root: Path, version: str) -> None:
         raise
     assert file_digest(server / "mods" / name) == checksum
     note(f"Original Minechem decomposer on Forge {version}", evidence)
+    shape = (server / "minechem-blueprints.txt").read_text(encoding="utf-8")
+    expected_shape = Path(__file__).resolve().parents[1] / "mcmodup/templates/minechem/reactor-blueprints.txt"
+    assert shape.splitlines() == expected_shape.read_text(encoding="utf-8").splitlines(), "Blueprint geometry in the original binary changed"
     if version == "1.7.10":
         observations = (server / "minechem-materials.txt").read_text(encoding="utf-8").splitlines()
         expected = [f"{key}=" + ",".join(f"{part}x{amount}" for part, amount in products)
