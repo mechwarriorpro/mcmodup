@@ -107,12 +107,13 @@ final class LegacyMinechemMatter {
             tile.getMethod("func_145839_a", nbt).invoke(reload, saved);
             rows.put("reload", name.invoke(fluidStack.getMethod("getFluid").invoke(drain.invoke(reload, side, 125, false))) + ":" +
                      mb.getInt(drain.invoke(reload, side, 125, false)));
-            rows.put("bucket", bucket(container));
+            rows.put("bucket", bucket(container, false));
+            rows.put("water", bucket(container, true));
         }
         write("fluids", rows);
     }
 
-    private String bucket(Method getFilled) throws Exception {
+    private String bucket(Method getFilled, boolean water) throws Exception {
         Class<?> gridType = mc("inventory.InventoryCrafting"), container = mc("inventory.Container");
         Object actor = LegacyMinechemChemistry.fakePlayer(world, false, "[Vials]");
         Object grid = gridType.getConstructor(container, int.class, int.class).newInstance(player.getField("field_71069_bz").get(actor), 3, 3);
@@ -121,14 +122,20 @@ final class LegacyMinechemMatter {
         Object craft = recipe.newInstance(), uncraft = reverse.newInstance();
         Object vanilla = Class.forName("cpw.mods.fml.common.registry.GameRegistry").getMethod("findItem", String.class, String.class).invoke(null, "minecraft", "bucket");
         set.invoke(grid, 0, make.newInstance(vanilla, 1, 0));
-        for (int i = 1; i < 9; i++) set.invoke(grid, i, make.newInstance(element, 1, 26));
-        require((Boolean) recipe.getMethod("func_77569_a", gridType, w).invoke(craft, grid, world), "Original iron bucket recipe didn't match");
-        Object bucket = recipe.getMethod("func_77572_b", gridType).invoke(craft, grid);
+        Object tube = make.newInstance(water ? molecule : element, 1, water ? 1 : 26);
+        for (int i = 1; i < 9; i++) set.invoke(grid, i, tube);
+        boolean matches = (Boolean) recipe.getMethod("func_77569_a", gridType, w).invoke(craft, grid, world);
+        require(water || matches, "Original iron bucket recipe didn't match");
+        Object bucket = matches ? recipe.getMethod("func_77572_b", gridType).invoke(craft, grid) : make.newInstance(
+            Class.forName("cpw.mods.fml.common.registry.GameRegistry").getMethod("findItem", String.class, String.class).invoke(null, "minecraft", "water_bucket"), 1, 0);
         Object held = getFilled.invoke(null, bucket);
         for (int i = 1; i < 9; i++) set.invoke(grid, i, null);
         set.invoke(grid, 0, bucket);
         require((Boolean) reverse.getMethod("func_77569_a", gridType, w).invoke(uncraft, grid, world), "Original bucket reverse recipe didn't match");
-        return mb.getInt(held) + "/" + key(reverse.getMethod("func_77572_b", gridType).invoke(uncraft, grid));
+        String output = mb.getInt(held) + "/" + key(reverse.getMethod("func_77572_b", gridType).invoke(uncraft, grid));
+        if (!water) return output;
+        Object filled = getFilled.invoke(null, tube);
+        return matches + "/" + (filled == null ? "-" : mb.getInt(filled)) + "/" + output;
     }
 
     private void decayAndStorage(int x, int y, int z) throws Exception {
