@@ -106,8 +106,8 @@ final class LegacyMinechemPlayerDecay {
             rows.put("tick_start", actor.outcome(matter.key(get.invoke(actor.inventory, 0)), prior));
 
             bucket(rows, "element_bucket", "e" + uranium, life + 1201);
-            bucket(rows, "m109_bucket", "m109", life / 2 + 1201);
-            bucket(rows, "m153_bucket", "m153", life / 8 + 1201);
+            moleculeBuckets(rows, "m109", 109, life / 2 + 1201);
+            moleculeBuckets(rows, "m153", 153, life / 8 + 1201);
         }
         return rows;
     }
@@ -147,6 +147,30 @@ final class LegacyMinechemPlayerDecay {
         }
         Collections.sort(byproducts);
         rows.put(label + "_byproducts", byproducts.toString());
+    }
+
+    private void moleculeBuckets(Map<String, String> rows, String key, int id, long age) throws Exception {
+        Class<?> handler = Class.forName("minechem.radiation.RadiationMoleculeHandler");
+        Field field = handler.getDeclaredField("decayedMoleculesCache");
+        field.setAccessible(true);
+        Map<?, ?> cache = (Map<?, ?>) field.get(handler.getMethod("getInstance").invoke(null));
+        Object molecule = Class.forName("minechem.item.molecule.MoleculeEnum").getMethod("getById", int.class).invoke(null, id);
+        String label = key + "_bucket";
+        Map<String, String> results = new TreeMap<String, String>();
+        // HashSet identity order can change when the original recomputes its product cache.
+        for (int i = 0; i < 64 && results.size() < 2; i++) {
+            cache.remove(molecule);
+            Map<String, String> sample = new TreeMap<String, String>();
+            bucket(sample, label, key, age);
+            results.put(sample.get(label), sample.get(label + "_byproducts"));
+        }
+        if (results.size() != 2) throw new AssertionError("Could not re-observe both " + key + " daughters: " + results);
+        String suffix = "";
+        for (Map.Entry<String, String> result : results.entrySet()) {
+            rows.put(label + suffix, result.getKey());
+            rows.put(label + suffix + "_byproducts", result.getValue());
+            suffix = "_alternate";
+        }
     }
 
     private void update(Actor actor) throws Exception { radiation.getMethod("update", player).invoke(handler, actor.player); }
