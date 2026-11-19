@@ -98,7 +98,11 @@ final class PolytoolCombat {
                 }
                 case SULFUR -> target.igniteForSeconds(rank + 1);
                 case ARGON -> {
-                    if (!level.canSeeSky(target.blockPosition())) target.hurt(level.damageSources().inWall(), rank);
+                    var pos = target.blockPosition();
+                    // Check the column's skylight boundary, not distributed sky brightness (which can lag updates).
+                    var sky = level.getChunkAt(pos).getSkyLightSources();
+                    if (pos.getY() < sky.getLowestSourceY(pos.getX() & 15, pos.getZ() & 15))
+                        target.hurt(level.damageSources().inWall(), rank);
                 }
                 case TITANIUM -> {
                     if (RELEASE_394 && target instanceof Mob mob) mob.setDropChance(EquipmentSlot.MAINHAND, .8F);

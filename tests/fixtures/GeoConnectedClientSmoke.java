@@ -4,6 +4,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 import net.minecraft.client.Minecraft;
@@ -26,6 +27,9 @@ import net.minecraft.util.RandomSource;
 import net.minecraft.world.Difficulty;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.MenuProvider;
+import net.minecraft.world.effect.MobEffects;
+import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.animal.Pig;
 import net.minecraft.world.inventory.ClickType;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
@@ -62,10 +66,14 @@ public final class GeoConnectedClientSmoke {
     private int age, emptyHandSlot;
     private CompletableFuture<Void> reload;
     private String decayWarning;
+    private UUID combatTarget;
+    private boolean combat394, sawNeon;
     private enum Stage {
         TITLE, JOIN, ISOLATED, JOINED, CHANGE, RELOAD, REACTOR, SYNTHESIS, PAID, DEPOSITED, RETRIEVED,
         BATCH, BATCH_PAID, BATCH_DEPOSITED, BULK_PAID, TREATMENT, FINAL_TOOL, FINAL_TOOL_MENU, FINAL_TOOL_CURSOR,
-        FINAL_ALLOY, FINAL_LITHIUM_CURSOR, FINAL_LITHIUM, FINAL_CHARGE, TOOL_394, TOOL_394_MENU, TOOL_394_SYNC, FLUID_HAND, FLUID_MENU, LEADED, LEADED_TAKEN, RADIATION, DONE
+        FINAL_ALLOY, FINAL_LITHIUM_CURSOR, FINAL_LITHIUM, FINAL_NEON_CURSOR, FINAL_CLOSE, FINAL_CHARGE,
+        TOOL_394, TOOL_394_MENU, TOOL_394_SYNC, TOOL_394_NEON, MELEE_READY, MELEE_RESULT,
+        FLUID_HAND, FLUID_MENU, LEADED, LEADED_TAKEN, RADIATION, DONE
     }
 
     public GeoConnectedClientSmoke() {
@@ -284,6 +292,19 @@ public final class GeoConnectedClientSmoke {
                     var charge = client.player.getMainHandItem().getCapability(Capabilities.EnergyStorage.ITEM);
                     if (screen == null || !screen.getMenu().getCarried().isEmpty() || charge == null) return;
                     require(charge.getEnergyStored() == 0 && screen.getMenu().getSlot(11).getItem().isEmpty(), "Lithium didn't sync as a paid, empty receiver");
+                    click(screen, 12);
+                    advance(Stage.FINAL_NEON_CURSOR);
+                }
+                case FINAL_NEON_CURSOR -> {
+                    var screen = polytoolScreen(client, false);
+                    if (screen == null || screen.getMenu().getCarried().getCount() != 64) return;
+                    click(screen, 0);
+                    advance(Stage.FINAL_CLOSE);
+                }
+                case FINAL_CLOSE -> {
+                    var screen = polytoolScreen(client, false);
+                    if (screen == null || !screen.getMenu().getCarried().isEmpty() ||
+                        !screen.getMenu().getSlot(12).getItem().isEmpty() || !hasTooltip(client.player.getMainHandItem(), client, "Neon")) return;
                     client.player.closeContainer();
                     advance(Stage.FINAL_CHARGE);
                 }
@@ -300,8 +321,7 @@ public final class GeoConnectedClientSmoke {
                     }
                     require(charge.getEnergyStored() >= 20_000_000 && hasTooltip(tool, client, "Lithium melee bonus: +1"),
                         "Creative FE Supply did not charge FINAL's tool and sync its melee bonus");
-                    prepareTool(client, true);
-                    advance(Stage.TOOL_394);
+                    prepareCombat(client, false);
                 }
                 case TOOL_394_SYNC -> {
                     var screen = polytoolScreen(client, true);
@@ -310,8 +330,44 @@ public final class GeoConnectedClientSmoke {
                         tool.getDestroySpeed(Blocks.OAK_LOG.defaultBlockState()) != 16) return;
                     require(tool.getCapability(Capabilities.EnergyStorage.ITEM) == null && hasTooltip(tool, client, "rank 1"),
                         ".394 tool gained an FE capability or didn't sync the rank tooltip");
-                    prepareMatter(client);
-                    advance(Stage.FLUID_HAND);
+                    client.gameMode.handleInventoryMouseClick(screen.getMenu().containerId, 12, 0, ClickType.QUICK_MOVE, client.player);
+                    advance(Stage.TOOL_394_NEON);
+                }
+                case TOOL_394_NEON -> {
+                    var screen = polytoolScreen(client, true);
+                    if (screen == null || !screen.getMenu().getSlot(12).getItem().isEmpty() ||
+                        !hasTooltip(client.player.getMainHandItem(), client, "Neon")) return;
+                    client.player.closeContainer();
+                    prepareCombat(client, true);
+                }
+                case MELEE_READY -> {
+                    var pig = combatPig(client);
+                    if (pig == null || !pig.isAlive() || client.screen != null || client.player.isCreative() ||
+                        !client.player.onGround() || client.player.getAttackStrengthScale(.5F) < 1F ||
+                        client.player.hasEffect(MobEffects.NIGHT_VISION)) return;
+                    client.gameMode.attack(client.player, pig); // send the real serverbound interact packet
+                    advance(Stage.MELEE_RESULT);
+                }
+                case MELEE_RESULT -> {
+                    var pig = combatPig(client);
+                    sawNeon |= client.player.hasEffect(MobEffects.NIGHT_VISION);
+                    if (pig == null || pig.getHealth() >= pig.getMaxHealth() || !sawNeon) return;
+                    require(Math.abs(pig.getMaxHealth() - pig.getHealth() - 9F) < .02F,
+                        "Wrong server melee damage for " + (combat394 ? ".394" : "charged FINAL") + ": " + pig.getHealth());
+                    var server = client.getSingleplayerServer();
+                    var playerId = client.player.getUUID();
+                    var targetId = combatTarget;
+                    server.execute(() -> {
+                        var target = server.getPlayerList().getPlayer(playerId).serverLevel().getEntity(targetId);
+                        if (target != null) target.discard();
+                    });
+                    if (combat394) {
+                        prepareMatter(client);
+                        advance(Stage.FLUID_HAND);
+                    } else {
+                        prepareTool(client, true);
+                        advance(Stage.TOOL_394);
+                    }
                 }
                 case FLUID_HAND -> {
                     if (client.screen != null || client.player.isCreative() ||
@@ -369,7 +425,7 @@ public final class GeoConnectedClientSmoke {
                     if (decayWarning == null || !slot.is(BuiltInRegistries.ITEM.get(release394Id("element_pa")))) return;
                     require(slot.getCount() == 3 && decayWarning.startsWith("Radiation Warning: Element Uranium decayed into Protactinium after "),
                         "Wrong localized .394 decay warning or daughter count: " + decayWarning);
-                    finish(client, " The .394 projector synced its blueprint; FINAL paid for a 144-tube ghost recipe and cleared its journal. .394 paid for regular and bulk stone batches and synced its coating and Delirium. FINAL infused aluminium and Lithium and charged its tool; .394 shift-infused without an FE capability. A survival iron vial filled the .394 machine, returned an empty tube, and synced the 125 mB and fluid name. The leaded chest synced an overdue sample; it stayed uranium on the cursor and became three protactinium tubes in the hotbar. Received: " + decayWarning);
+                    finish(client, " The .394 projector synced its blueprint; FINAL paid for a 144-tube ghost recipe and cleared its journal. .394 paid for regular and bulk stone batches and synced its coating and Delirium. FINAL infused aluminium and Lithium and charged its tool; .394 shift-infused without an FE capability. Both infused Neon and synced night vision and damage from a real survival attack. A survival iron vial filled the .394 machine, returned an empty tube, and synced the 125 mB and fluid name. The leaded chest synced an overdue sample; it stayed uranium on the cursor and became three protactinium tubes in the hotbar. Received: " + decayWarning);
                 }
                 default -> { }
             }
@@ -497,6 +553,7 @@ public final class GeoConnectedClientSmoke {
             player.closeContainer();
             var registry = BuiltInRegistries.ITEM;
             player.getInventory().setItem(9, new ItemStack(registry.get(toolId(newer, "element_al")), 64));
+            player.getInventory().setItem(11, new ItemStack(registry.get(toolId(newer, "element_ne")), 64));
             if (!newer) {
                 player.getInventory().setItem(10, new ItemStack(registry.get(finalId("element_li")), 64));
                 var supply = BuiltInRegistries.BLOCK.get(ResourceLocation.parse("atomic_thermometer:creative_fe_supply"));
@@ -504,6 +561,33 @@ public final class GeoConnectedClientSmoke {
             }
             player.setItemInHand(InteractionHand.MAIN_HAND, new ItemStack(registry.get(toolId(newer, "polytool"))));
         });
+    }
+
+    private void prepareCombat(Minecraft client, boolean newer) {
+        var server = client.getSingleplayerServer();
+        var playerId = client.player.getUUID();
+        var targetId = UUID.randomUUID();
+        combatTarget = targetId;
+        combat394 = newer;
+        sawNeon = false;
+        server.execute(() -> {
+            var player = server.getPlayerList().getPlayer(playerId);
+            var level = player.serverLevel();
+            player.setGameMode(GameType.SURVIVAL);
+            player.removeEffect(MobEffects.NIGHT_VISION);
+            var testPig = EntityType.PIG.create(level);
+            if (testPig == null) throw new AssertionError("Could not create the connected melee target");
+            testPig.setUUID(targetId);
+            testPig.setNoAi(true);
+            testPig.moveTo(player.getX(), player.getY(), player.getZ() + 1.5, 0, 0);
+            if (!level.addFreshEntity(testPig)) throw new AssertionError("Could not spawn the connected melee target");
+        });
+        advance(Stage.MELEE_READY);
+    }
+
+    private Pig combatPig(Minecraft client) {
+        return client.level.getEntitiesOfClass(Pig.class, client.player.getBoundingBox().inflate(5),
+            pig -> pig.getUUID().equals(combatTarget)).stream().findFirst().orElse(null);
     }
 
     private static BlockHitResult hit(BlockPos pos) {
