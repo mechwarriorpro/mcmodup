@@ -31,7 +31,9 @@ public final class LegacyVoltzInfrastructure {
             String grid = thermal();
             String turbine = turbine();
             String assembler = assembler();
-            System.out.println("MCMODUP_INFRA_PASS " + grid + " | " + turbine + " | " + assembler + " | " + platform());
+            String platform = platform();
+            String inventory = platformInventory();
+            System.out.println("MCMODUP_INFRA_PASS " + grid + " | " + turbine + " | " + assembler + " | " + platform + " | " + inventory);
         } catch (Throwable error) {
             Throwable cause = error.getCause() == null ? error : error.getCause();
             System.err.println("MCMODUP_INFRA_FAIL " + cause + " (probe: " + error.getStackTrace()[0] + ")");
@@ -177,6 +179,46 @@ public final class LegacyVoltzInfrastructure {
         require((Long) extract.invoke(platform, north, 17L, true) == 0L, "Platform extracted power");
         return "Sentry platform forwards first 5 then 12, simulates without mutation, no extraction; slots=" +
                 platformType.getMethod("func_70302_i_").invoke(platform) + "; registry=" + new java.util.TreeSet<String>(types.keySet());
+    }
+
+    private static String platformInventory() throws Exception {
+        Class<?> sentry = Class.forName("icbm.sentry.ICBMSentry");
+        Object block = sentry.getField("blockTurretPlatform").get(null);
+        int px = x + 12;
+        Object platform = place(block, px, y, z, 0);
+        Object restored = place(block, px + 2, y, z, 0);
+        Class<?> tile = platform.getClass(), stack = mc("item.ItemStack");
+        int slots = (Integer) tile.getMethod("func_70302_i_").invoke(platform);
+        int stackLimit = (Integer) tile.getMethod("func_70297_j_").invoke(platform);
+        require(slots == 20 && stackLimit == 64, "Unexpected platform inventory dimensions");
+        Method available = tile.getMethod("func_94128_d", int.class);
+        Method insertable = tile.getMethod("func_102007_a", int.class, stack, int.class);
+        Method extractable = tile.getMethod("func_102008_b", int.class, stack, int.class);
+        // Use only inert vanilla blocks; the test never loads or ticks any armament.
+        Object payload = stack.getConstructor(int.class, int.class, int.class).newInstance(4, 37, 0);
+        for (int side = 0; side < 6; ++side) {
+            int[] seen = (int[]) available.invoke(platform, side);
+            require(seen.length == slots, "Platform does not expose all slots to side " + side);
+            for (int slot = 0; slot < slots; ++slot) {
+                require(seen[slot] == slot && (Boolean) insertable.invoke(platform, slot, payload, side) &&
+                        (Boolean) extractable.invoke(platform, slot, payload, side), "Denied inert storage at " + side + "/" + slot);
+            }
+        }
+        Method set = tile.getMethod("func_70299_a", int.class, stack);
+        set.invoke(platform, 19, payload);
+        Class<?> nbt = mc("nbt.NBTTagCompound");
+        Object saved = nbt.newInstance();
+        tile.getMethod("func_70310_b", nbt).invoke(platform, saved);
+        tile.getMethod("func_70307_a", nbt).invoke(restored, saved);
+        Object result = tile.getMethod("func_70301_a", int.class).invoke(restored, 19);
+        require(result != null && stack.getField("field_77993_c").getInt(result) == 4 &&
+                stack.getField("field_77994_a").getInt(result) == 37, "Platform lost inert inventory on NBT reload");
+        Class<?> blockType = mc("block.Block");
+        float hardness = (Float) blockType.getMethod("func_71934_p", worldType, int.class, int.class, int.class).invoke(block, world, px, y, z);
+        float blast = (Float) blockType.getMethod("getExplosionResistance", mc("entity.Entity"), worldType, int.class, int.class, int.class,
+                double.class, double.class, double.class).invoke(block, null, world, px, y, z, 0D, 0D, 0D);
+        return "Sentry placed inventory=" + slots + "×" + stackLimit + "; all six sides; saved cobblestone x37 at slot 19; hardness=" + hardness +
+                "; resistance=" + blast;
     }
 
     private static Object place(Object block, int px, int py, int pz, int meta) throws Exception {
