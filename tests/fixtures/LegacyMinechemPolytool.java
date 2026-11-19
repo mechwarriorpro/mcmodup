@@ -109,7 +109,6 @@ final class LegacyMinechemPolytool {
             Object shifted = fresh();
             setInventory.invoke(inventory, 1, tubes(8, 64)); // container index 2 is hotbar index 1
             click.invoke(container, 2, 0, 1, player);
-            varNoop();
             Object remains = inventory.getClass().getMethod("func_70301_a", int.class).invoke(inventory, 1);
             out.println("shift=" + rank(shifted, 8) + "," + amount(remains) + "," + amount(inSlot.invoke(slot)));
             clearCursorAndSlot();
