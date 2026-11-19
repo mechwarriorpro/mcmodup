@@ -65,6 +65,7 @@ public final class GeoConnectedClientSmoke {
     private BlockPos center, charger, matterMachine, matterChest;
     private int age, emptyHandSlot;
     private CompletableFuture<Void> reload;
+    private CompletableFuture<Boolean> meleeReady;
     private String decayWarning;
     private UUID combatTarget;
     private boolean combat394, sawNeon;
@@ -345,6 +346,17 @@ public final class GeoConnectedClientSmoke {
                     if (pig == null || !pig.isAlive() || client.screen != null || client.player.isCreative() ||
                         !client.player.onGround() || client.player.getAttackStrengthScale(.5F) < 1F ||
                         client.player.hasEffect(MobEffects.NIGHT_VISION)) return;
+                    // The client can finish its swing cooldown one tick before the server.
+                    if (meleeReady == null || (meleeReady.isDone() && !meleeReady.join())) {
+                        var server = client.getSingleplayerServer();
+                        var id = client.player.getUUID();
+                        meleeReady = server.submit(() -> {
+                            var player = server.getPlayerList().getPlayer(id);
+                            return player != null && player.onGround() && !player.isCreative() && player.getAttackStrengthScale(.5F) >= 1F;
+                        });
+                        return;
+                    }
+                    if (!meleeReady.isDone()) return;
                     client.gameMode.attack(client.player, pig); // send the real serverbound interact packet
                     advance(Stage.MELEE_RESULT);
                 }
@@ -570,6 +582,7 @@ public final class GeoConnectedClientSmoke {
         combatTarget = targetId;
         combat394 = newer;
         sawNeon = false;
+        meleeReady = null;
         server.execute(() -> {
             var player = server.getPlayerList().getPlayer(playerId);
             var level = player.serverLevel();
