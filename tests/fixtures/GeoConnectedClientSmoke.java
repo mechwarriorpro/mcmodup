@@ -14,13 +14,18 @@ import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.block.model.BakedQuad;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
+import net.minecraft.nbt.ListTag;
+import net.minecraft.nbt.StringTag;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.Difficulty;
 import net.minecraft.world.MenuProvider;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.item.component.CustomData;
 import net.minecraft.world.level.GameRules;
 import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.LevelSettings;
@@ -30,6 +35,7 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.levelgen.WorldOptions;
 import net.minecraft.world.level.levelgen.presets.WorldPresets;
 import net.neoforged.fml.common.Mod;
+import net.neoforged.neoforge.capabilities.Capabilities;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
 import net.neoforged.neoforge.client.model.data.ModelData;
 import net.neoforged.neoforge.common.NeoForge;
@@ -44,7 +50,7 @@ public final class GeoConnectedClientSmoke {
     private BlockPos center;
     private int age;
     private CompletableFuture<Void> reload;
-    private enum Stage { TITLE, JOIN, ISOLATED, JOINED, CHANGE, RELOAD, REACTOR, DONE }
+    private enum Stage { TITLE, JOIN, ISOLATED, JOINED, CHANGE, RELOAD, REACTOR, SYNTHESIS, PAID, DEPOSITED, RETRIEVED, DONE }
 
     public GeoConnectedClientSmoke() { NeoForge.EVENT_BUS.addListener(this::tick); }
 
@@ -111,6 +117,7 @@ public final class GeoConnectedClientSmoke {
                         checkModel(client, "atomic_thermometer", "particle_accelerator");
                         checkModel(client, "atomic_thermometer", "creative_fe_supply");
                         checkModel(client, "minechem_chemistry", "decomposer");
+                        checkModel(client, "minechem_chemistry", "synthesizer");
                         checkModel(client, "minechem_chemistry_394", "synthesizer");
                         checkModel(client, "minechem_chemistry", "blueprint_projector");
                         checkModel(client, "minechem_chemistry_394", "ghost_coil");
@@ -124,7 +131,45 @@ public final class GeoConnectedClientSmoke {
                     var paper = ResourceLocation.fromNamespaceAndPath("minechem_chemistry_394", "fission_blueprint");
                     if (!screen.getMenu().getSlot(0).getItem().is(BuiltInRegistries.ITEM.get(paper))) return;
                     require(screen.getTitle().getString().equals("Blueprint Projector"), "Wrong client menu opened");
-                    finish(client, " The .394 projector screen opened with its actual blueprint synced from the integrated server.");
+                    openFinalSynthesis(client);
+                    advance(Stage.SYNTHESIS);
+                }
+                case SYNTHESIS -> {
+                    var screen = synthesisScreen(client);
+                    if (screen == null || !screen.getMenu().getSlot(0).getItem().is(Items.IRON_BLOCK)) return;
+                    require(screen.getXSize() == 176 && screen.getYSize() == 187 && screen.getMenu().slots.size() == 56,
+                        "Wrong FINAL client screen dimensions or slot layout");
+                    require(client.getResourceManager().getResource(finalId("textures/gui/final_synthesis.png")).isPresent(),
+                        "Missing imported FINAL GUI texture");
+                    var ghost = screen.getMenu().getSlot(1).getItem();
+                    if (!ghost.is(BuiltInRegistries.ITEM.get(finalId("element_fe"))) || screen.getMenu().getSlot(19).getItem().isEmpty()) return;
+                    if (menuInt(screen, "ghostCount", 0) != 144 || menuInt(screen, "energy") != 66_536 || menuInt(screen, "status") != 2) return;
+                    require(ghost.getCount() == 1 && menuInt(screen, "cost") == 1000,
+                        "Large ghost was synced as real oversized storage, or cost was wrong");
+                    click(screen, 0);
+                    advance(Stage.PAID);
+                }
+                case PAID -> {
+                    var screen = synthesisScreen(client);
+                    if (screen == null || !screen.getMenu().getCarried().is(Items.IRON_BLOCK)) return;
+                    var menu = screen.getMenu();
+                    if (menu.getSlot(10).hasItem() || menu.getSlot(11).hasItem() || menu.getSlot(18).hasItem() ||
+                        menuInt(screen, "energy") != 65_536 || menuInt(screen, "status") != 1) return;
+                    require(menu.getCarried().getCount() == 1 && menuInt(screen, "ghostCount", 0) == 144, "Client received wrong amount or lost the ghost after paying");
+                    click(screen, 20);
+                    advance(Stage.DEPOSITED);
+                }
+                case DEPOSITED -> {
+                    var screen = synthesisScreen(client);
+                    if (screen == null || !screen.getMenu().getCarried().isEmpty() || !screen.getMenu().getSlot(20).getItem().is(Items.IRON_BLOCK)) return;
+                    click(screen, 19);
+                    advance(Stage.RETRIEVED);
+                }
+                case RETRIEVED -> {
+                    var screen = synthesisScreen(client);
+                    if (screen == null || !screen.getMenu().getCarried().is(BuiltInRegistries.ITEM.get(finalId("chemist_journal")))) return;
+                    if (screen.getMenu().getSlot(0).hasItem() || screen.getMenu().getSlot(1).hasItem() || menuInt(screen, "ghostCount", 0) != 0) return;
+                    finish(client, " The .394 projector synced its actual blueprint; FINAL's original-sized screen synced a 144-tube ghost and power, paid on a real screen click, and cleared on journal retrieval.");
                 }
                 default -> { }
             }
@@ -158,6 +203,65 @@ public final class GeoConnectedClientSmoke {
                 var menu = projector.createMenu(0, player.getInventory(), player);
                 menu.getSlot(0).set(new ItemStack(BuiltInRegistries.ITEM.get(paper)));
                 player.openMenu(projector);
+            }
+        });
+    }
+
+    private static ResourceLocation finalId(String path) { return ResourceLocation.fromNamespaceAndPath("minechem_chemistry", path); }
+
+    private static AbstractContainerScreen<?> synthesisScreen(Minecraft client) {
+        return client.screen instanceof AbstractContainerScreen<?> screen &&
+            BuiltInRegistries.MENU.getKey(screen.getMenu().getType()).equals(finalId("synthesizer")) ? screen : null;
+    }
+
+    private static int menuInt(AbstractContainerScreen<?> screen, String name, int... arguments) throws Exception {
+        var menu = screen.getMenu();
+        var method = arguments.length == 0 ? menu.getClass().getDeclaredMethod(name) : menu.getClass().getDeclaredMethod(name, int.class);
+        method.setAccessible(true);
+        return (Integer) (arguments.length == 0 ? method.invoke(menu) : method.invoke(menu, arguments[0]));
+    }
+
+    private static void click(AbstractContainerScreen<?> screen, int index) {
+        var slot = screen.getMenu().getSlot(index);
+        int x = screen.getGuiLeft() + slot.x + 8;
+        int y = screen.getGuiTop() + slot.y + 8;
+        screen.mouseClicked(x, y, 0);
+        screen.mouseReleased(x, y, 0);
+    }
+
+    private void openFinalSynthesis(Minecraft client) {
+        var server = client.getSingleplayerServer();
+        var playerId = client.player.getUUID();
+        var pos = client.player.blockPosition().east(3).above(1);
+        server.execute(() -> {
+            var player = server.getPlayerList().getPlayer(playerId);
+            var level = player.serverLevel();
+            level.setBlockAndUpdate(pos, BuiltInRegistries.BLOCK.get(finalId("synthesizer")).defaultBlockState());
+            if (level.getBlockEntity(pos) instanceof MenuProvider synth) {
+                var book = new ItemStack(BuiltInRegistries.ITEM.get(finalId("chemist_journal")));
+                CustomData.update(DataComponents.CUSTOM_DATA, book, data -> {
+                    var research = data.getCompound("ChemistJournal");
+                    var known = new ListTag();
+                    known.add(StringTag.valueOf("minecraft:iron_block"));
+                    research.put("Discoveries", known);
+                    research.putString("Active", "minecraft:iron_block");
+                    data.put("ChemistJournal", research);
+                });
+                var menu = synth.createMenu(0, player.getInventory(), player);
+                menu.getSlot(19).set(book);
+                var iron = BuiltInRegistries.ITEM.get(finalId("element_fe"));
+                var input = level.getCapability(Capabilities.ItemHandler.BLOCK, pos, Direction.UP);
+                input.insertItem(0, new ItemStack(iron, 64), false);
+                input.insertItem(1, new ItemStack(iron, 64), false);
+                input.insertItem(8, new ItemStack(iron, 16), false);
+                var power = level.getCapability(Capabilities.EnergyStorage.BLOCK, pos, Direction.UP);
+                int remaining = 66_536;
+                while (remaining > 0) {
+                    int accepted = power.receiveEnergy(remaining, false);
+                    require(accepted > 0, "FINAL client fixture could not supply its starting charge");
+                    remaining -= accepted;
+                }
+                player.openMenu(synth);
             }
         });
     }

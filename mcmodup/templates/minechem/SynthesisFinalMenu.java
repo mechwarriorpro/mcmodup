@@ -34,8 +34,8 @@ final class SynthesisFinalMenu extends AbstractContainerMenu {
         this.data = machine == null ? new SimpleContainerData(DATA_SIZE) : new ContainerData() {
             @Override public int get(int index) {
                 return switch (index) {
-                    case 0 -> machine.power.getEnergyStored() & 0xffff;
-                    case 1 -> machine.power.getEnergyStored() >>> 16;
+                    case 0 -> machine.energy() & 0xffff;
+                    case 1 -> machine.energy() >>> 16;
                     case 2 -> machine.cost() & 0xffff;
                     case 3 -> machine.cost() >>> 16;
                     case 4 -> machine.status();

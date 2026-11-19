@@ -157,7 +157,7 @@ final class SynthesizerFinal extends BaseEntityBlock {
         final SimpleContainer display = new SimpleContainer(GRID + 1);
         private final NonNullList<ItemStack> pattern = NonNullList.withSize(GRID, ItemStack.EMPTY);
         private final EnumMap<Direction, IItemHandler> faces = new EnumMap<>(Direction.class);
-        final Power power = new Power();
+        private final Power power = new Power();
         private SynthesisFinalRules.Rule selected;
         private boolean loading;
 
@@ -209,6 +209,7 @@ final class SynthesizerFinal extends BaseEntityBlock {
             setChanged();
         }
 
+        int energy() { return power.getEnergyStored(); }
         int cost() { return selected == null ? 0 : selected.cost(); }
         int ghostCount(int slot) { return pattern.get(slot).getCount(); }
         int status() { return selected == null ? 0 : !selected.nativeOutput() ? 3 : payable(1) > 0 ? 2 : 1; }
