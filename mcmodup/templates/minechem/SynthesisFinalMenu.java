@@ -13,7 +13,7 @@ import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.items.ItemStackHandler;
 import net.neoforged.neoforge.items.SlotItemHandler;
 
-final class SynthesisFinalMenu extends AbstractContainerMenu {
+final class SynthesisFinalMenu extends AbstractContainerMenu implements ChemistryRadiation.MenuRules {
     static final int OUTPUT = 0, GHOST = 1, STORAGE = 10, JOURNAL = 19, PLAYER = 20;
     private static final int COUNTS = 5, DATA_SIZE = COUNTS + SynthesizerFinal.GRID;
     private final SynthesizerFinal.Tile machine;
@@ -70,6 +70,10 @@ final class SynthesisFinalMenu extends AbstractContainerMenu {
     int cost() { return (data.get(3) << 16) | (data.get(2) & 0xffff); }
     int status() { return data.get(4); }
     int ghostCount(int slot) { return data.get(COUNTS + slot); }
+
+    @Override public boolean virtualRadiationSlot(int slot) { return slot < STORAGE; }
+    @Override public boolean shieldedRadiationSlot(int slot) { return slot >= STORAGE && slot < JOURNAL; }
+    @Override public float radiationReduction() { return 0.4F; }
 
     @Override public boolean stillValid(Player player) {
         return machine == null || (!machine.isRemoved() && machine.getLevel() == player.level() &&

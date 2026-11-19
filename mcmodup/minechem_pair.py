@@ -7,7 +7,7 @@ import shutil
 import tempfile
 from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
 
-from . import NEOFORGE_VERSION, minechem_final_synthesis, minechem_polytool, minechem_reactors
+from . import NEOFORGE_VERSION, minechem_final_synthesis, minechem_matter, minechem_polytool, minechem_reactors
 from .api import ClassLocation
 from .catalogs import PROFILES, RELEASE_394_PROFILE, RELEASE_394_SHA256, CatalogEntry, Profile
 from .classfiles import CLASS_LIMIT
@@ -25,7 +25,7 @@ STACK = "net/minecraft/item/ItemStack"
 RESOURCE = "src/main/resources/"
 FINAL = PROFILES["minechem-chemistry"]
 RELEASE_394 = PROFILES[RELEASE_394_PROFILE]
-VERSIONS = {FINAL.namespace: "1.3.7-partial", RELEASE_394.namespace: "1.4.5-partial"}
+VERSIONS = {FINAL.namespace: "1.3.8-partial", RELEASE_394.namespace: "1.4.6-partial"}
 FEATURES = minechem_reactors.FEATURES | {"Buffered iron decomposition and saved remaining output": "savedbufferdrains",
             "Original decomposer output-slot method": "linkedslotrule",
             "Journal cloning preserves discovery and selection components": "journalcloningpreservescomponents"}
@@ -150,7 +150,7 @@ def _recipe(original: Path, profile: Profile, checksum: str, output: Path) -> di
     locations = [ClassLocation(original, owner + ".class", owner) for owner in profile.owners]
     entries = _catalog_entries(profile, locations)
     reactor_icons = minechem_reactors.asset_paths(namespace, prepaid)
-    synthesis_icons = minechem_polytool.asset_paths(namespace)
+    synthesis_icons = minechem_polytool.asset_paths(namespace) | minechem_matter.asset_paths(namespace, prepaid)
     if not prepaid:
         synthesis_icons.update(minechem_final_synthesis.asset_paths(namespace))
     with open_input(original) as source:

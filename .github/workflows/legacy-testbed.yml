@@ -12,6 +12,7 @@ on:
       - 'mcmodup/minechem_materials.py'
       - 'mcmodup/minechem_effects.py'
       - 'mcmodup/minechem_polytool.py'
+      - 'mcmodup/minechem_matter.py'
       - 'mcmodup/convert.py'
       - 'mcmodup/minechem_reactors.py'
       - 'mcmodup/machines.py'

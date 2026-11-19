@@ -39,6 +39,7 @@ import net.neoforged.neoforge.capabilities.Capabilities;
 import net.neoforged.neoforge.capabilities.RegisterCapabilitiesEvent;
 import net.neoforged.neoforge.energy.EnergyStorage;
 import net.neoforged.neoforge.fluids.FluidStack;
+import net.neoforged.neoforge.fluids.capability.IFluidHandler;
 import net.neoforged.neoforge.fluids.capability.IFluidHandler.FluidAction;
 import net.neoforged.neoforge.fluids.capability.templates.FluidTank;
 import net.neoforged.neoforge.items.ItemStackHandler;
@@ -80,7 +81,7 @@ public final class ChemistryMachines {
             return side == Direction.DOWN ? machine.outputs : machine.inputs;
         });
         if (Machine.ORIGINAL_DECOMPOSER) {
-            event.registerBlockEntity(Capabilities.FluidHandler.BLOCK, MACHINE.get(), (machine, side) -> machine.bufferedDecomposer() ? machine.waterTank : null);
+            event.registerBlockEntity(Capabilities.FluidHandler.BLOCK, MACHINE.get(), (machine, side) -> machine.bufferedDecomposer() ? machine.fluidHandler : null);
         }
     }
 
@@ -98,6 +99,7 @@ public final class ChemistryMachines {
             return level.isClientSide() ? null : createTickerHelper(type, MACHINE.get(), Machine::tick);
         }
 
+@USE_FLUID_CONTAINER@
         @Override
         protected InteractionResult useWithoutItem(BlockState state, Level level, BlockPos pos, Player player, BlockHitResult hit) {
             if (!level.isClientSide() && level.getBlockEntity(pos) instanceof Machine machine) player.openMenu(machine);
@@ -142,6 +144,8 @@ public final class ChemistryMachines {
                 return PREPAID_DECOMPOSER ? super.drain(volume, action) : FluidStack.EMPTY;
             }
         } : null;
+
+        private final IFluidHandler fluidHandler = @EXPOSED_TANK@;
 
         final ItemStackHandler inventory = new ItemStackHandler(SLOTS) {
             @Override protected void onContentsChanged(int slot) {
@@ -216,7 +220,7 @@ public final class ChemistryMachines {
                         case 4 -> bufferedDecomposer() ? decompositionBuffer.stream().mapToInt(ItemStack::getCount).sum() : remaining;
                         case 5 -> (bufferedDecomposer() || automatic) ? 1 : 0;
                         case 6 -> waterTank != null ? waterTank.getFluidAmount() : 0;
-                        case 7 -> waterTank == null || waterTank.getFluid().isEmpty() ? 0 : waterTank.getFluid().getFluid() == Fluids.LAVA ? 2 : 1;
+                        case 7 -> @TANK_DISPLAY@;
                         default -> 0;
                     };
                 }
@@ -466,7 +470,10 @@ public final class ChemistryMachines {
                 status = decompositionBuffer.isEmpty() ? IDLE : tag.getBoolean("DecomposerJammed") ? OUTPUT_FULL : WORKING;
                 if (waterTank != null) {
                     finalWaterInput = !PREPAID_DECOMPOSER && tag.getBoolean("FinalWaterInput") && inventory.getStackInSlot(0).isEmpty();
-                    if (!PREPAID_DECOMPOSER) waterTank.setFluid(FluidStack.EMPTY);
+                    if (!PREPAID_DECOMPOSER) {
+                        waterTank.setFluid(FluidStack.EMPTY);
+@RESET_TANK@
+                    }
                     else {
                         var storedFluid = tag.contains("MaterialFluid", Tag.TAG_COMPOUND)
                                 ? FluidStack.parseOptional(registries, tag.getCompound("MaterialFluid"))

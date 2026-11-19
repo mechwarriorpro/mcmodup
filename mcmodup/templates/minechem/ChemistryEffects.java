@@ -152,7 +152,7 @@ final class ChemistryEffects {
 
     private static List<String> doses(ItemStack stack) { return stack.getOrDefault(TREATMENT.get(), List.of()); }
 
-    private static void apply(LivingEntity target, String key) {
+    static void apply(LivingEntity target, String key) {
         var profile = PROFILES.get(key);
         if (profile != null && profile.enabled()) for (var action : profile.actions()) action.apply(target);
     }

@@ -95,8 +95,10 @@ public final class ChemistryScreen extends AbstractContainerScreen<ChemistryMenu
         } else line = Component.translatable("gui.@NAMESPACE@.decompose").getString();
         gui.drawString(font, font.plainSubstrByWidth(line, menu.synthesis() ? 140 : 160), 8, 21, 0x404040, false);
         if (ChemistryMachines.Machine.PREPAID_DECOMPOSER) {
-            gui.drawString(font, Component.translatable("gui.@NAMESPACE@.water_tank", Component.translatable("gui.@NAMESPACE@." + menu.fluidLabel()), menu.fluidVolume(),
-                ChemistryMachines.Machine.WATER_CAPACITY), 8, 84, 0x404040, false);
+            var title = Component.translatable("gui.@NAMESPACE@.water_tank", menu.fluidLabel(), menu.fluidVolume(),
+                ChemistryMachines.Machine.WATER_CAPACITY);
+            gui.drawString(font, font.plainSubstrByWidth(title.getString(), 101), 8, 84, 0x404040, false);
+            if (isHovering(8, 83, 101, 11, mouseX, mouseY)) gui.renderTooltip(font, title, mouseX, mouseY);
         }
         gui.drawString(font, Component.translatable("gui.@NAMESPACE@.state_" + menu.status(), menu.energy()), 8, 102, 0x404040, false);
     }

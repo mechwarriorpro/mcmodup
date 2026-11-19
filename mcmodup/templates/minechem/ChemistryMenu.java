@@ -1,5 +1,6 @@
 package @PACKAGE@;
 
+import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
@@ -13,7 +14,7 @@ import net.neoforged.neoforge.items.SlotItemHandler;
 
 import static @PACKAGE@.ChemistryMachines.Machine.*;
 
-final class ChemistryMenu extends AbstractContainerMenu {
+final class ChemistryMenu extends AbstractContainerMenu@RADIATION_MENU@ {
     static final int RUN = 0, PREVIOUS = 1, NEXT = 2, BACK_TEN = 3, FORWARD_TEN = 4, TOGGLE_AUTO = 5, EMPTY_TANK = 6;
     private final ChemistryMachines.Machine machine;
     private final ContainerData values;
@@ -66,13 +67,8 @@ final class ChemistryMenu extends AbstractContainerMenu {
     int remaining() { return values.get(4); }
     boolean automatic() { return values.get(5) != 0; }
     int fluidVolume() { return PREPAID_DECOMPOSER ? values.get(6) : 0; }
-    String fluidLabel() {
-        return switch (values.get(7)) {
-            case 1 -> "tank_water";
-            case 2 -> "tank_lava";
-            default -> "tank_empty";
-        };
-    }
+    Component fluidLabel() { return @FLUID_LABEL@; }
+@MACHINE_SHIELD@
 
     @Override
     public boolean clickMenuButton(Player player, int button) {

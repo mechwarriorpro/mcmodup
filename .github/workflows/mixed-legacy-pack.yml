@@ -22,6 +22,7 @@ on:
       - 'mcmodup/minechem_materials.py'
       - 'mcmodup/minechem_effects.py'
       - 'mcmodup/minechem_polytool.py'
+      - 'mcmodup/minechem_matter.py'
       - 'mcmodup/minechem_reactors.py'
       - 'mcmodup/icbm_plate.py'
       - 'mcmodup/atomic_thermometer.py'

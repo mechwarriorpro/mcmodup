@@ -14,7 +14,7 @@ import net.neoforged.neoforge.items.SlotItemHandler;
 
 import static @PACKAGE@.ReactorMachines.*;
 
-final class ReactorMenu extends AbstractContainerMenu {
+final class ReactorMenu extends AbstractContainerMenu implements ChemistryRadiation.MenuRules {
     final Mode mode;
     private final Station station;
     private final BlockPos access;
@@ -73,6 +73,10 @@ final class ReactorMenu extends AbstractContainerMenu {
     int activeSlice() { return data.get(0); }
     boolean formed() { return data.get(1) == 1; }
     ReactorBlueprints.Plan blueprint() { return ReactorMachines.blueprint(getSlot(0).getItem()); }
+
+    @Override public float radiationReduction() {
+        return switch (mode) { case FUSION -> 1F; case FISSION -> 0.4F; default -> 0F; };
+    }
 
     @Override public boolean stillValid(Player player) {
         if (station == null) return true;

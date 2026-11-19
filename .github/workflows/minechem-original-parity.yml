@@ -16,6 +16,7 @@ on:
       - 'mcmodup/minechem_materials.py'
       - 'mcmodup/minechem_effects.py'
       - 'mcmodup/minechem_polytool.py'
+      - 'mcmodup/minechem_matter.py'
       - 'mcmodup/templates/minechem/release394-*.txt'
       - 'tests/minechem_original_smoke.py'
       - 'tests/fixtures/LegacyMinechemDecomposer.java'

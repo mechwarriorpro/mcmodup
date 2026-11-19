@@ -14,7 +14,7 @@ import zipfile
 
 from . import JAVA_VERSION, MINECRAFT_VERSION, NEOFORGE_VERSION
 from .api import ClassLocation
-from . import minechem_final_synthesis, minechem_polytool
+from . import minechem_final_synthesis, minechem_matter, minechem_polytool
 from .assets import PNG_SIGNATURE
 from .audit import ModMetadata
 from .catalogs import RELEASE_394_PROFILE, CatalogEntry, Profile, recover_catalog
@@ -82,6 +82,9 @@ def _java(package: str, namespace: str, entries: list[CatalogEntry], mode: Decom
                            f'.component(DataComponents.LORE, new ItemLore(List.of({lore})))));')
     if exact:
         definitions.append("        ChemistryEffects.register(bus, mod);")
+        definitions.append("        ChemistryRadiation.register(bus, mod);")
+        definitions.append("        entries.addAll(ShieldedStorage.register(bus, items));")
+        definitions.append("        entries.addAll(ChemistryFluids.register(bus, items));")
         definitions.extend(('        var polytool = items.registerItem("polytool", PolytoolItem::new);',
                             '        PolytoolItem.register(bus, polytool);', '        entries.add(polytool);'))
     if mode is not None:
@@ -183,8 +186,8 @@ def _project_files(profile: Profile, entries: list[CatalogEntry], textures: dict
     namespace = profile.namespace
     package = f"mcmodup.generated.{namespace}"
     mode = _decomposer_mode(profile, digest)
-    version = project_version or {DecomposerMode.FINAL: "1.3.4-partial", DecomposerMode.BATCH: "1.2.0-partial",
-                                  DecomposerMode.RELEASE_394: "1.3.3-partial"}.get(mode, "1.0.0-partial")
+    version = project_version or {DecomposerMode.FINAL: "1.3.5-partial", DecomposerMode.BATCH: "1.2.0-partial",
+                                  DecomposerMode.RELEASE_394: "1.3.4-partial"}.get(mode, "1.0.0-partial")
     machine_rules = machine_recipes(namespace, entries, mode=mode, linked=linked_decomposer) if mode else []
     if mode:
         recipe_files, extra_locales = machine_project(namespace, package, entries, machine_rules, mode=mode,
@@ -198,7 +201,7 @@ def _project_files(profile: Profile, entries: list[CatalogEntry], textures: dict
                              for entry in entries}
             decomposition = sum(rule.machine == "decomposer" for rule in machine_rules)
             features = (f"Recovered .394 catalog items, {decomposition} mapped decomposition rules (including weighted and recursive recipes), "
-                        "a saved water/lava tank, and "
+                        "a saved chemical fluid tank, and "
                         f"{count - decomposition} measured synthesis registrations with virtual templates and full batches paid on extraction. "
                         "Recipe browsing and journals can select either result of an identical pattern. The microscope records supported discoveries.")
         elif mode == DecomposerMode.FINAL:
@@ -219,8 +222,10 @@ def _project_files(profile: Profile, entries: list[CatalogEntry], textures: dict
     not_ported = profile.not_ported
     if mode in (DecomposerMode.FINAL, DecomposerMode.RELEASE_394):
         features += (" Includes release-local Polytool infusion and selected modules, molecule drinking, coating and spiked food, "
-                     "and journal cloning with component preservation.")
-        not_ported = ("Unmapped materials, chemical/other third-party fluids, radiation and decay, "
+                     "journal cloning, uranium ore, radioactive decay, and shielded storage.")
+        features += (" .394 includes native chemical fluid blocks, tubes and buckets." if mode == DecomposerMode.RELEASE_394 else
+                     " FINAL registers its non-placeable fluids in a volatile, fill-only collector.")
+        not_ported = ("Unmapped materials, full chemical fluid reactions and rendering, legacy radiation hooks, "
                       "legacy power or add-on integrations, and old saves. Some materials, recipes and effect interactions "
                       "use native substitutions. Other machines and the original lens chain require a paired or expanded build. "
                       + minechem_polytool.LIMIT)
@@ -358,7 +363,7 @@ def convert_catalog(pack: ModPack, mod: PackMod, profile: Profile, output: Path,
         files, recipe_count = _project_files(profile, entries, textures, digest, observed, locations)
         mode = _decomposer_mode(profile, digest)
         if mode in (DecomposerMode.FINAL, DecomposerMode.RELEASE_394):
-            mapping = minechem_polytool.asset_paths(profile.namespace)
+            mapping = minechem_polytool.asset_paths(profile.namespace) | minechem_matter.asset_paths(profile.namespace, mode == DecomposerMode.RELEASE_394)
             if mode == DecomposerMode.FINAL:
                 mapping.update(minechem_final_synthesis.asset_paths(profile.namespace))
             with open_input(mod.path) as source:

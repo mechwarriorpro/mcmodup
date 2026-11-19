@@ -35,7 +35,8 @@ def vanilla_ids() -> dict[str, str]:
 
 
 _NATIVE_394 = {"cPolytool:0": "polytool", "ctile.chemicalDecomposer:0": "decomposer",
-               "ctile.chemicalSynthesizer:0": "synthesizer", "ctile.opticalMicroscope:0": "microscope"}
+               "ctile.chemicalSynthesizer:0": "synthesizer", "ctile.opticalMicroscope:0": "microscope",
+               "ctile.oreUranium:0": "uranium_ore", "ctile.leadChest:0": "leaded_chest"}
 _PAIRED_394 = {"citem.opticalMicroscopeLens:0": "concave_lens", "citem.opticalMicroscopeLens:1": "convex_lens",
                 "citem.opticalMicroscopeLens:2": "microscope_lens", "citem.opticalMicroscopeLens:3": "projector_lens",
                 "ctile.blueprintProjector:0": "blueprint_projector", "cminechem.FusionWall:0": "reactor_casing",
@@ -50,6 +51,11 @@ def item_id(key: str, namespace: str, ids: dict[str, str], paired: bool = False)
         if item is None:
             raise InputError(f"Missing review for original material identity {key}")
         return item if item != "-" else None
+    if re.fullmatch(r"b[em]\d{1,3}", key):
+        chemical = chemical_id(key[1:], ids).split(":", 1)[1]
+        return f"{namespace}:bucket_{chemical}"
+    if key == "ctile.minechem.uraniumOre:0":
+        return f"{namespace}:uranium_ore"
     path = _NATIVE_394.get(key) or (_PAIRED_394.get(key) if paired else None)
     return f"{namespace}:{path}" if path else None
 
@@ -112,6 +118,23 @@ def release(namespace: str, ids: dict[str, str], *, prepaid: bool, paired: bool 
             ordered: dict[str, tuple[tuple[str, int], ...]] | None = None) -> tuple[list[Material], dict[str, Node]]:
     prefix = "release394" if prepaid else "final"
     rows = observations(f"{prefix}-materials.txt")
+    # Resolve Forge fluid names against the exact release; do not admit external or other-release fluids.
+    from .minechem_matter import fluid_rows
+    fluids = fluid_rows(prepaid, ids)
+    native_fluids = {}
+    if prepaid:
+        matter = observations(f"{prefix}-fluids.txt")
+        for fluid in fluids:
+            legacy = f"f{fluid.legacy_name}:125"
+            # Two old fluids share the name mt. Keep both containers, using the observed tank lookup.
+            key = legacy if legacy not in native_fluids else f"f{fluid.key}:125"
+            rows[key] = matter.get(f"alias_{fluid.key}", rows[legacy])
+            native_fluids[key] = fluid.fluid
+            if f"b{fluid.key}" in matter:
+                rows[f"b{fluid.key}"] = matter[f"b{fluid.key}"]
+    else:
+        ore_key, ore_yield = observations(f"{prefix}-radiation.txt")["ore"].split("/", 1)
+        rows[f"c{ore_key}:0"] = ore_yield
     nodes = {key: parse(raw, ids) for key, raw in rows.items()}
     if {key for key in ids if key.startswith("m")} != {key for key in nodes if re.fullmatch(r"m\d+", key)}:
         raise InputError(f"The {prefix} molecule catalog does not match the measured decomposition inputs.")
@@ -150,10 +173,11 @@ def release(namespace: str, ids: dict[str, str], *, prepaid: bool, paired: bool 
     for key, node in nodes.items():
         preview, maximum = bounds(node, (key,))
         if key[0] == "f":
-            if key not in ({"fwater:1000", "flava:250"} if prepaid else {"fwater:144"}):
-                continue  # The trace retains chemical-fluid and optional integration observations.
             name, volume = key[1:].split(":")
-            id_, millibuckets = f"minecraft:{name}", int(volume)
+            id_ = native_fluids.get(key)
+            if key in ({"fwater:1000", "flava:250"} if prepaid else {"fwater:144"}):
+                id_ = f"minecraft:{name}"
+            millibuckets = int(volume)
         else:
             id_, millibuckets = item_id(key, namespace, ids, paired), 0
         if not id_ or not maximum:

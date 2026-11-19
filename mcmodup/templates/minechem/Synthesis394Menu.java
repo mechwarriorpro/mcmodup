@@ -14,7 +14,7 @@ import net.neoforged.neoforge.items.SlotItemHandler;
 
 import static @PACKAGE@.Synthesizer394.*;
 
-final class Synthesis394Menu extends AbstractContainerMenu {
+final class Synthesis394Menu extends AbstractContainerMenu implements ChemistryRadiation.MenuRules {
     static final int OUTPUT = GHOST_SLOTS, STORAGE = OUTPUT + 1, JOURNAL = STORAGE + STORAGE_SLOTS, PLAYER = JOURNAL + 1;
     static final int PREVIOUS = 0, NEXT = 1, BACK_TEN = 2, AHEAD_TEN = 3, CLEAR = 4;
     private final Synthesizer394.Tile machine;
@@ -66,6 +66,10 @@ final class Synthesis394Menu extends AbstractContainerMenu {
     int cost() { return (state.get(3) << 16) | (state.get(2) & 0xffff); }
     int ghostCount(int slot) { return state.get(5 + slot); }
     boolean ready() { return state.get(4) != 0; }
+
+    @Override public boolean virtualRadiationSlot(int slot) { return slot < STORAGE; }
+    @Override public boolean shieldedRadiationSlot(int slot) { return slot >= STORAGE && slot < JOURNAL; }
+    @Override public float radiationReduction() { return 0.4F; }
 
     @Override public boolean stillValid(Player player) {
         return machine == null || (machine.getLevel() == player.level() && player.level().getBlockEntity(machine.getBlockPos()) == machine &&
