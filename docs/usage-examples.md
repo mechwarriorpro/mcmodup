@@ -1,6 +1,6 @@
 # Porting examples: Minechem, Thaumcraft, Atomic Science, and ICBM
 
-**Current capability:** `convert-jar` builds partial NeoForge 1.21.1 JARs for Minechem and Thaumcraft. Source-build mode covers the [two Minechem releases](source-port-builds.md#both-exact-minechem-releases-linked-previews), a [broader Thaumcraft 4 preview](source-port-builds.md#thaumcraft-4-reload-preview), one [ICBM pressure plate](source-port-builds.md#voltz-glass-pressure-plate-executable-preview), and one [Atomic Science thermometer](source-port-builds.md#voltz-atomic-science-thermometer-executable-preview). None is a verified full port with all assets and add-ons.
+**Current capability:** `convert-jar` builds partial NeoForge 1.21.1 JARs for Minechem and Thaumcraft. Source-build mode covers the [two Minechem releases](source-port-builds.md#both-exact-minechem-releases-linked-previews), a [broader Thaumcraft 4 preview](source-port-builds.md#thaumcraft-4-reload-preview), one [ICBM pressure plate](source-port-builds.md#voltz-glass-pressure-plate-executable-preview), and [Atomic Science thermal machines](source-port-builds.md#voltz-atomic-science-thermometer-executable-preview). None is a verified full port with all assets and add-ons.
 
 Run the examples from the mcmodup checkout with Python 3.11+. Put your local inputs under `.mcmodup/` (ignored by Git). You can substitute an installed pack folder for either pack archive. A `.jar` or `.zip` pack must contain the actual mod files under `mods/` or `coremods/` (an enclosing instance folder is fine), or at the archive root. If a launcher export has only a download manifest, point to the installed instance instead.
 
@@ -39,11 +39,11 @@ python3 -m mcmodup convert-jar .mcmodup/Thaumcraft-1.7.10-4.2.3.5.jar \
 
 The [NeoForge GameTests](https://github.com/mechwarriorpro/mcmodup/actions/runs/44328458928) exercised both synthetic inputs and the JAR built from Minechem 5.0.5 FINAL: discoveries were deduplicated, both microscope slots survived save/reload, and a saved journal selected a synthesis job that used the normal ingredients and FE. These are dedicated server and menu checks, not a comparison of the original screens or a full survival playthrough.
 
-These are adapted machines: new menus and models, a spyglass instead of the original lens chain, and manual or repeating processing and a redstone fallback (+500 FE) in the Synthesizer. The [exact FINAL Forge run](https://github.com/mechwarriorpro/mcmodup/actions/runs/44366937376/job/135023092554) measured the iron-ingot decomposition queue, one-unit output ticks, reception limit and jam recovery. The [NeoForge release-derived JAR checks](https://github.com/mechwarriorpro/mcmodup/actions/runs/44366937370/job/135023710792) repeated the iron intake/output trace, buffer save/load and jam recovery with the checksum-pinned FINAL build. The later [.394 build](#minechem-505394-decomposer-preview) has a different cost and uses a separate mod ID.
+These are adapted machines: new menus and models, a spyglass instead of the original lens chain, and manual or repeating processing and a redstone fallback (+500 FE) in the Synthesizer. The [exact FINAL Forge run](https://github.com/mechwarriorpro/mcmodup/actions/runs/44366937376/job/135023092554) measured the iron-ingot decomposition queue, one-unit output ticks, reception limit and jam recovery. The [NeoForge release-derived JAR checks](https://github.com/mechwarriorpro/mcmodup/actions/runs/44366937370/job/135023710792) repeated the iron intake/output trace, buffer save/load and jam recovery with the checksum-pinned FINAL build. The later [.394 build](#minechem-505394-machine-preview) has a different cost and uses a separate mod ID.
 
 The original journal cloning and GUI art are not ported. FE is not a conversion of Universal Electricity voltage or power units. Most material, ore dictionary/tag, chance, and fluid recipes are not implemented, nor are integrations, radiation, reactors, the rest of Minechem's machines, and legacy-world migration. Only recovered formulas and the listed starter materials can be processed.
 
-## Minechem 5.0.5.394 decomposer preview
+## Minechem 5.0.5.394 machine preview
 
 Build from the [original 1.7.10 release](https://www.curseforge.com/minecraft/mc-mods/minechem/files/2230655). This profile requires the exact SHA-256, not just the same filename or mod version. The JAR contains both catalog classes, so `--pack` can point to the same input:
 
@@ -53,11 +53,17 @@ python3 -m mcmodup convert-jar "$jar" --pack "$jar" \
   --profile minechem-chemistry-394 --allow-partial -o ports/minechem-chemistry-394.jar
 ```
 
-This is `minechem_chemistry_394`, separate from FINAL's `minechem_chemistry`. Craft the decomposer with the starter recipe above. It exposes one item input at the top, 18 outputs on the other sides, and a **5,000 mB plain-water tank**. Feed water with a compatible NeoForge fluid handler. One 1,000 mB water batch yields two hydrogen tubes followed by one oxygen tube. A water bucket in the item slot is a different recipe; when both inputs are present, a valid item wins.
+This is `minechem_chemistry_394`, separate from FINAL's `minechem_chemistry`. Craft the machines with the patterns above, but use **copper ingots** for `I` in the .394 build. These are preview crafting recipes. It exposes one item input at the top, 18 outputs on the other sides, and a **5,000 mB plain-water tank**. Feed water with a compatible NeoForge fluid handler. One 1,000 mB water batch yields two hydrogen tubes followed by one oxygen tube. A water bucket in the item slot is a different recipe; when both inputs are present, a valid item wins.
 
 The machine deducts **1,000 FE at intake**, compacts existing outputs, and emits one tube per tick. The remaining charge, water, and output queue survive a save and load in a **new** world. A paid, jammed queue resumes when space opens, even at zero charge. The receive limit is 100 FE per transfer. Use a compatible NeoForge FE source; there is no redstone-dust fallback.
 
-The 113 element and 173 molecule catalog entries retain their original metadata mapping. The [Forge replay](https://github.com/mechwarriorpro/mcmodup/actions/runs/44453747811) confirmed all 199 traces (25 vanilla items, 173 molecules, and tank water), and the [NeoForge combined test](https://github.com/mechwarriorpro/mcmodup/actions/runs/44454155162/job/135325005923) checked those rules from the staged JAR. Chance, recursive and unmeasured recipes, other fluids, original power integrations, synthesis, research and other .394 machines are outside this slice. Use the **generated** JAR in a fresh instance. It is not a drop-in replacement or dependency provider.
+The 113 element and 173 molecule catalog entries retain their original metadata mapping. The [Forge replay](https://github.com/mechwarriorpro/mcmodup/actions/runs/44455959826/job/135330895641) and [NeoForge staged test](https://github.com/mechwarriorpro/mcmodup/actions/runs/44456872616/job/135333915557) checked 199 decomposition rules and 182 stable synthesis rules. Unlike the FINAL machine, the .394 synthesizer doesn't start a timed job:
+
+1. Open the synthesizer and choose a recipe with **<** or **>** (hold Shift to skip ten). You can also click a ghost slot while holding a chemical stack to copy the template without moving the actual items. Use **Clear** to remove the templates.
+2. Add the real chemicals to the 18 storage slots and connect FE. The machine stores up to 100,000 FE and accepts at most 100 per transfer. For example, 16 iron tubes and 3,000 FE make an iron ingot.
+3. Take the output once to spend one complete batch. Seeing the output template alone does not mean ingredients or FE have been spent. Partial batches are not extractable. The storage, ghost pattern, and FE save in a new world.
+
+The two original outputs that compete for the same `m140`/`m143` template are excluded. Chance and recursive decomposition, unmeasured recipes, other fluids, old power integrations, journal/research and other machines are not in this slice. Use the **generated** JAR in a fresh instance. It is not a drop-in replacement or dependency provider.
 
 ## Thaumcraft 4.2.3.5: Forge 1.7.10 → NeoForge 1.21.1
 
