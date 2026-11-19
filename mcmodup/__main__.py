@@ -166,6 +166,8 @@ def _parser() -> argparse.ArgumentParser:
     thermometer.add_argument("--output", "-o", required=True, type=Path, help="new directory for a reviewable source ZIP and recipe")
     catalyst = commands.add_parser("prepare-mimicry-catalyst", help="prepare a local source recipe for five Mimicry 1.3.9 crafts")
     catalyst.add_argument("--output", "-o", required=True, type=Path, help="new directory for a reviewable source ZIP and recipe")
+    rocks = commands.add_parser("prepare-geostrata-rocks", help="prepare the local GeoStrata v23b decorative rock preview")
+    rocks.add_argument("--output", "-o", required=True, type=Path, help="new directory for a reviewable source ZIP and recipe")
     pair = commands.add_parser("prepare-minechem-pair", help="prepare local preview recipes for both exact Minechem releases")
     pair.add_argument("final", type=Path, help="original Minechem 1.6.4 5.0.5 FINAL JAR")
     pair.add_argument("release394", type=Path, help="original Minechem 1.7.10 5.0.5.394 JAR")
@@ -201,6 +203,11 @@ def main(argv: list[str] | None = None) -> int:
 
             manifest = prepare(args.output)
             print(f"Prepared {manifest}. Local preview only; use update-pack --source-ports with --allow-preview-ports and --output-pack.")
+        elif args.command == "prepare-geostrata-rocks":
+            from .geostrata_rocks import prepare
+
+            manifest = prepare(args.output)
+            print(f"Prepared {manifest}. Private-use preview only; use update-pack --source-ports with --allow-preview-ports and --output-pack.")
         elif args.command == "prepare-minechem-pair":
             from .minechem_pair import prepare
 

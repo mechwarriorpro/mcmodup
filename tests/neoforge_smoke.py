@@ -41,11 +41,12 @@ def check_minechem_artifacts(final: Path, release394: Path) -> list[CatalogEntry
 
 def check_recipes_in_game(project: Path, outputs: list[Path], *, minechem_394: Path | None = None,
                           multipart_control: list[Path] | None = None, icbm_plate: Path | None = None,
-                          atomic_thermometer: Path | None = None, mimicry: Path | None = None) -> None:
+                          atomic_thermometer: Path | None = None, mimicry: Path | None = None,
+                          geostrata: Path | None = None) -> None:
     namespace = "mcmodup_smoke"
     assert len(outputs) in (1, 2), "Supply the FINAL-based (or fixture) JAR with an optional aspect JAR"
     include_aspects = len(outputs) == 2
-    jars = [*outputs, *(path for path in (minechem_394, icbm_plate, mimicry, atomic_thermometer) if path is not None)]
+    jars = [*outputs, *(path for path in (minechem_394, icbm_plate, mimicry, geostrata, atomic_thermometer) if path is not None)]
     # Load the separately built production JARs as runtime mods, not as source sets.
     inputs = {f"fixtures/{i}.jar": path.read_bytes() for i, path in enumerate(jars)}
     controls = {}
@@ -113,6 +114,12 @@ neoForge.runs.create('gameTestServer') {{
         from mcmodup.mimicry_catalyst import PACKAGE, checks
 
         integrate_fixture("CatalystChecks.java", checks(namespace), PACKAGE, namespace)
+    geostrata_rooms = {}
+    if geostrata:
+        from mcmodup.geostrata_rocks import checks
+
+        tests["src/main/java/mcmodup/test/GeoRockChecks.java"] = checks("mcmodup.test", namespace)
+        geostrata_rooms[f"src/main/resources/data/{namespace}/structure/rock_room.nbt"] = empty_test_structure()
     write_workspace(project, {
         "settings.gradle": "rootProject.name = 'catalog-smoke'\n",
         "build.gradle": gradle,
@@ -123,15 +130,16 @@ neoForge.runs.create('gameTestServer') {{
         f"src/main/resources/data/{namespace}/structure/test_room.nbt": empty_test_structure(5),
         **inputs,
         **controls,
+        **geostrata_rooms,
     })
     run = subprocess.run(["./gradlew", "--no-daemon", "--console=plain", "runGameTestServer"],
                          cwd=project, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=420)
     count = (7 + include_aspects + (4 if minechem_394 else 0) + bool(controls)
-             + (3 if icbm_plate else 0) + bool(atomic_thermometer) + (2 if mimicry else 0))
+             + (3 if icbm_plate else 0) + bool(atomic_thermometer) + (2 if mimicry else 0) + (2 if geostrata else 0))
     if run.returncode or f"All {count} required tests passed" not in run.stdout:
         raise AssertionError(run.stdout[-8000:])
     parsing_errors = [line for line in run.stdout.splitlines() if "Parsing error loading recipe" in line
-                      and any(f"{mod}:" in line for mod in ("minechem_chemistry", "minechem_chemistry_394", "thaumcraft_aspects"))]
+                      and any(f"{mod}:" in line for mod in ("minechem_chemistry", "minechem_chemistry_394", "geostrata_rocks", "thaumcraft_aspects"))]
     if parsing_errors:
         raise AssertionError("Generated recipe errors:\n" + "\n".join(parsing_errors[:5]))
 

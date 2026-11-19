@@ -1,4 +1,4 @@
-"""Boot both Minechem, both Voltz, and the Mimicry previews with the native controls."""
+"""Boot the priority previews and Mimicry together with unchanged native controls."""
 
 import argparse
 import json
@@ -10,7 +10,9 @@ import traceback
 from zipfile import ZipFile
 
 from atomic_thermometer_smoke import check_artifact as check_thermometer
+from geostrata_original_smoke import DRAGONAPI, DRAGONAPI_SHA256
 from mcmodup.atomic_thermometer import ARCHIVE as THERMOMETER, prepare as prepare_thermometer
+from mcmodup.geostrata_rocks import ARCHIVE as ROCKS, MOD_ID as ROCK_ID, prepare as prepare_rocks, textures as rock_textures
 from mcmodup.icbm_plate import ARCHIVE as PLATE, MOD_ID as PLATE_ID, prepare as prepare_plate
 from mcmodup.method_ports import PROVENANCE
 from mcmodup.mimicry_catalyst import ARCHIVE as CATALYST, LEGACY_TEXTURE as CATALYST_ICON, MOD_ID as CATALYST_ID
@@ -31,7 +33,8 @@ def check(root: Path) -> None:
     plate_original = next(entry for entry in ORIGINALS if "icbm" in entry.ids)
     sensor_original = next(entry for entry in ORIGINALS if "atomicscience" in entry.ids)
     mimicry_original = next(entry for entry in ORIGINALS if "mimicry" in entry.ids)
-    selected = sorted([*labels, plate_original.label, sensor_original.label, mimicry_original.label])
+    rocks_original = next(entry for entry in ORIGINALS if "geostrata" in entry.ids)
+    selected = sorted([*labels, plate_original.label, sensor_original.label, mimicry_original.label, rocks_original.label])
     all_before = fingerprints(full_source, target)
     for label in selected:
         path = source / label
@@ -45,13 +48,17 @@ def check(root: Path) -> None:
     libraries.mkdir()
     for filename in ("universal-electricity-3.1.0.74-core.jar", "calclavia-core-development-1.2.0.6-main.jar"):
         shutil.copyfile(full_source / "mods/1.6.4" / filename, libraries / filename)
+    dragonapi = full_source / "mods/1.6.4" / DRAGONAPI
+    assert file_digest(dragonapi) == DRAGONAPI_SHA256
+    shutil.copyfile(dragonapi, libraries / DRAGONAPI)
     before = fingerprints(source)
     recipe = root / "minechem-recipes"
     proc = subprocess.run([sys.executable, "-m", "mcmodup", "prepare-minechem-pair", *(str(source / label) for label in labels),
                            "-o", str(recipe)], text=True, capture_output=True, timeout=50)
     assert proc.returncode == 0, proc.stdout + proc.stderr
     options = (recipe / "minechem-pair.json", prepare_plate(root / "linked-plate-recipe"),
-               prepare_thermometer(root / "linked-thermometer-recipe"), prepare_mimicry(root / "mimicry-catalyst-recipe"))
+               prepare_thermometer(root / "linked-thermometer-recipe"), prepare_mimicry(root / "mimicry-catalyst-recipe"),
+               prepare_rocks(root / "geostrata-rock-recipe"))
     manifests = [arg for path in options for arg in ("--source-ports", str(path))]
     command = ["update-pack", str(source), "--target", str(target), *manifests, "--include-native", "cb_multipart"]
     for label in selected:
@@ -79,7 +86,8 @@ def check(root: Path) -> None:
     plate = out / "mods" / PLATE
     sensor = out / "mods" / THERMOMETER
     catalyst = out / "mods" / CATALYST
-    assert set((out / "mods").iterdir()) == {*artifacts, *controls, plate, sensor, catalyst}
+    rocks = out / "mods" / ROCKS
+    assert set((out / "mods").iterdir()) == {*artifacts, *controls, plate, sensor, catalyst, rocks}
     for split_row, path, label, method in zip(split["archives"], artifacts, labels, ("canUnjam()Z", "pushQueue()V")):
         evidence = report["native_builds"][path.name]
         tests_passed = 4 if method == "pushQueue()V" else 2
@@ -110,9 +118,20 @@ def check(root: Path) -> None:
         assert proof["original_sha256"] == mimicry_original.sha256 and jar.read(PORTED_ICON) == original.read(CATALYST_ICON)
         assert not any(name.startswith(("modMimicry/", "assets/minecraft/")) or name.endswith(("CatalystChecks.class", ".jar"))
                        for name in jar.namelist())
+    evidence = report["native_builds"][rocks.name]
+    assert evidence["status"] == "preview" and evidence["gametests"]["passed"] == 2, evidence
+    assert evidence["original_sha256"] == rocks_original.sha256 == before[source / rocks_original.label]
+    assert evidence["legacy_ids"] == {"geostrata": ROCK_ID} and evidence["jar_sha256"] == file_digest(rocks)
+    with ZipFile(rocks) as jar, ZipFile(source / rocks_original.label) as original:
+        proof = json.loads(jar.read(PROVENANCE))
+        assert proof["preview"] and not proof["parity_verified"] and not proof["imports"]
+        assert proof["original_sha256"] == rocks_original.sha256
+        assert all(jar.read(new) == original.read(old) for old, new in rock_textures().items())
+        assert not any(name.startswith(("Reika/", "assets/geostrata/")) or name.endswith(".jar") or "GeoRockChecks" in name
+                       for name in jar.namelist())
     boot(out, report["instance_runtime"]["launch"]["unix"])
     check_recipes_in_game(root / "preview-staged-smoke", [artifacts[0]], minechem_394=artifacts[1],
-                          multipart_control=controls, icbm_plate=plate, atomic_thermometer=sensor, mimicry=catalyst)
+                          multipart_control=controls, icbm_plate=plate, atomic_thermometer=sensor, mimicry=catalyst, geostrata=rocks)
     assert fingerprints(full_source, target) == all_before and fingerprints(source) == before
     # Opting in must not silently stage previews if the rest of the full selection is blocked.
     delta = root / "mixed-with-linked-previews-must-not-stage"
@@ -123,12 +142,13 @@ def check(root: Path) -> None:
     code, report = run(*full)
     assert code == 1 and not report["ready"] and not delta.exists() and not report["native_builds"], report["problems"]
     assert not report["legacy_selection_conflicts"] and report["legacy_identity_splits"], report["legacy_selection_conflicts"]
-    note("Combined native previews booted", "Both Minechem previews, the ICBM plate, the Atomic Science thermometer, and the Mimicry catalyst "
-         "reached dedicated server ready with unchanged Multipart and CCL. Twelve source and 18 staged-JAR tests passed. All eight still block without writing a pack.")
+    note("Combined native previews booted", "Both Minechem previews, the ICBM plate, the Atomic Science thermometer, GeoStrata rocks "
+         "and the Mimicry catalyst reached dedicated server ready with unchanged Multipart and CCL. Fourteen source and 20 staged-JAR tests passed. "
+         "All eight still block without writing a pack.")
     summary(["## Combined native previews", "",
-             "Five previews built in one updater invocation and staged with unchanged CB Multipart and CodeChickenLib: both Minechem releases, "
-             "the ICBM plate, the Atomic Science thermometer, and the Mimicry catalyst. Twelve source GameTests, stock dedicated boot, "
-             "and 18 staged-JAR GameTests passed. These are bounded previews, not full ports. The all-eight selection with the same recipes staged nothing.", ""])
+             "Six previews built in one updater invocation and staged with unchanged CB Multipart and CodeChickenLib: both Minechem releases, "
+             "ICBM plate, Atomic Science thermometer, GeoStrata rocks, and Mimicry catalyst. Fourteen source GameTests, stock dedicated boot, "
+             "and 20 staged-JAR GameTests passed. These are bounded previews, not full ports. The all-eight selection staged nothing.", ""])
 
 
 if __name__ == "__main__":

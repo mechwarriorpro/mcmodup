@@ -21,11 +21,13 @@ on:
       - 'mcmodup/icbm_plate.py'
       - 'mcmodup/atomic_thermometer.py'
       - 'mcmodup/mimicry_catalyst.py'
+      - 'mcmodup/geostrata_rocks.py'
       - 'mcmodup/source_ports.py'
       - 'mcmodup/templates/minechem/**'
       - 'mcmodup/templates/icbm_plate/**'
       - 'mcmodup/templates/atomic_thermometer/**'
       - 'mcmodup/templates/mimicry_catalyst/**'
+      - 'mcmodup/templates/geostrata_rocks/**'
       - 'tests/atomic_thermometer_smoke.py'
       - 'tests/mixed_legacy_pack_smoke.py'
       - 'tests/minechem_pair_pack_smoke.py'
@@ -94,14 +96,14 @@ jobs:
           download legacy/mods/1.6.4/Random_Things_v._1.9__MC_1.6.4_.jar https://edge.forgecdn.net/files/787/782/Random_Things_v._1.9__MC_1.6.4_.jar sha256sum cc3b350aed5a41b48da68ebcea27cb156c4eed6347bf060bbdbb00b5109faa49 1396811
           # Paired originals from FTB's Monster 1.1.2 manifest (pack 66, version 194).
           download 'legacy/mods/1.6.4/GeoStrata 1.6 v23b.zip' https://dist.modpacks.ch/Reika/GeoStrata/Gamma/a4c4318549d1ac6de878c5dce95ac9fa3f55dbb6 sha256sum afd68aa6ca1222a0f53ee25323c18bd3c2473c346a15345b216c9ef1042a0414 1138465
-          download 'legacy/mods/1.6.4/DragonAPI 1.6 v23b.zip' https://dist.modpacks.ch/Reika/DragonAPI/release/2dbd889f480fe39c094575c8045b4f4652a33aa3 sha1sum 2dbd889f480fe39c094575c8045b4f4652a33aa3 1209419
+          download 'legacy/mods/1.6.4/DragonAPI 1.6 v23b.zip' https://dist.modpacks.ch/Reika/DragonAPI/release/2dbd889f480fe39c094575c8045b4f4652a33aa3 sha256sum bf30330e9ada3efa3810747ac3ed096cd7ada35371dd8554a357a36c8703c86f 1209419
       - name: Run the updater on the whole original selection
         if: ${{ inputs.connector_oracle == '' || inputs.connector_oracle == 'none' }}
         run: python -m mixed_legacy_pack_smoke "$RUNNER_TEMP/mixed-legacy-pack" originals
       - name: Run the unchanged Multipart and CodeChickenLib control separately
         if: ${{ !cancelled() && steps.target.outcome == 'success' && (inputs.connector_oracle == '' || inputs.connector_oracle == 'none') }}
         run: python -m mixed_legacy_pack_smoke "$RUNNER_TEMP/mixed-legacy-pack" control
-      - name: Stage the Minechem, Voltz, and Mimicry previews together and run the staged JARs
+      - name: Stage the Minechem, GeoStrata, Voltz, and Mimicry previews and test the production JARs
         if: ${{ inputs.connector_oracle == '' || inputs.connector_oracle == 'none' }}
         run: python -m minechem_pair_pack_smoke "$RUNNER_TEMP/mixed-legacy-pack"
       - name: Run the exact-input Legacy Connector oracle (not a native pack)
