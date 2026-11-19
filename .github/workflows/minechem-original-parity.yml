@@ -12,6 +12,7 @@ on:
       - 'tests/minechem_original_smoke.py'
       - 'tests/fixtures/LegacyMinechemDecomposer.java'
       - 'tests/fixtures/LegacyMinechemMaterials.java'
+      - 'tests/fixtures/LegacyMinechemChemistry.java'
       - 'tests/fixtures/LegacyMinechemSynthesis394.java'
       - 'tests/fixtures/LegacyMinechemSynthesisFinal.java'
       - 'tests/fixtures/LegacyMinechemJournal394.java'

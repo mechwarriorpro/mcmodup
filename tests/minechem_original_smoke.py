@@ -1,6 +1,8 @@
 """Exercise the checksum-pinned originals in separate Forge worlds."""
 
 import argparse
+import base64
+import zlib
 import os
 from pathlib import Path
 import shutil
@@ -30,7 +32,8 @@ def compile_probe(root: Path, server: Path, forge: Path, javac: str) -> None:
     subprocess.run([javac, "-proc:none", "-encoding", "UTF-8", "-classpath", str(forge), "-d", str(probe),
                     *(str(fixtures / name) for name in ("LegacyMinechemDecomposer.java", "LegacyMinechemMaterials.java",
                                                         "LegacyMinechemSynthesis394.java", "LegacyMinechemJournal394.java",
-                                                        "LegacyMinechemReactors.java", "LegacyMinechemSynthesisFinal.java"))], check=True, timeout=60)
+                                                        "LegacyMinechemReactors.java", "LegacyMinechemSynthesisFinal.java",
+                                                        "LegacyMinechemChemistry.java"))], check=True, timeout=60)
     with ZipFile(server / "mods/mcmodup-minechemoracle.jar", "x") as jar:
         for compiled in probe.rglob("*.class"):
             jar.write(compiled, compiled.relative_to(probe).as_posix())
@@ -79,6 +82,12 @@ def original(root: Path, version: str) -> None:
         raise
     assert file_digest(server / "mods" / name) == checksum
     note(f"Original Minechem decomposer on Forge {version}", evidence)
+    for key in ("all-decomposition", "pharmacology", "all-synthesis"):
+        path = server / f"minechem-{key}.txt"
+        if path.exists() and os.environ.get("GITHUB_ACTIONS") == "true":
+            data = base64.b64encode(zlib.compress(path.read_bytes(), level=9)).decode("ascii")
+            for offset in range(0, len(data), 3000):
+                note(f"Minechem {version} {key} {offset // 3000}", data[offset:offset+3000])
     shape = (server / "minechem-blueprints.txt").read_text(encoding="utf-8")
     expected_shape = Path(__file__).resolve().parents[1] / "mcmodup/templates/minechem/reactor-blueprints.txt"
     assert shape.splitlines() == expected_shape.read_text(encoding="utf-8").splitlines(), "Blueprint geometry in the original binary changed"
