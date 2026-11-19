@@ -198,7 +198,8 @@ def control(root: Path) -> None:
     workspace = root / "multipart-gametest"
     fixture = Path(__file__).with_name("fixtures") / "MultipartControlSmoke.java"
     write_workspace(workspace, {
-        "settings.gradle": "rootProject.name = 'multipart-control-check'\n",
+        "settings.gradle": "pluginManagement { repositories { mavenCentral(); gradlePluginPortal() } }\n"
+                           "rootProject.name = 'multipart-control-check'\n",
         "gradle.properties": "org.gradle.jvmargs=-Xmx2G\n",
         "src/main/resources/META-INF/neoforge.mods.toml": _metadata(ModMetadata(""), CHECK, CHECK, "1.0.0", "Unlicense"),
         f"src/main/resources/data/{CHECK}/structure/empty.nbt": empty_test_structure(),
