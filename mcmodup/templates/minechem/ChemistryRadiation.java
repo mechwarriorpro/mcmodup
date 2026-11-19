@@ -12,7 +12,10 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.network.codec.ByteBufCodecs;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.inventory.ResultContainer;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.level.Level;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.ModContainer;
@@ -49,7 +52,7 @@ final class ChemistryRadiation {
             Codec.STRING.fieldOf("dimension").forGetter(Clock::dimension)).apply(instance, Clock::new));
     }
     private record Rule(int tier, List<ChemistryRecipes.Part> products) {}
-    private record Decayed(List<ItemStack> products, int dose) {}
+    private record Decayed(List<ItemStack> products, int dose, long elapsed) {}
 
     private static final Map<String, Rule> RULES = Map.ofEntries(
 @RADIATION_ROWS@
@@ -123,24 +126,29 @@ final class ChemistryRadiation {
             var bucket = ChemistryFluids.bucketType(stack);
             if (bucket != null && !bucket.chemical().contains(":molecule_")) {
                 stack.set(CLOCK.get(), fresh(level));
-                return new Decayed(List.of(stack), DAMAGE[rule.tier()] * stack.getCount());
+                return new Decayed(List.of(stack), DAMAGE[rule.tier()] * stack.getCount(), age);
             }
             var result = new ArrayList<ItemStack>();
             int count = stack.getCount();
+            ChemistryRecipes.Part retained = null;
             if (bucket != null) {
+                // Original .394 keeps one daughter in full buckets and returns the other tubes.
+                // Product order came from a HashSet; choose the first registered daughter.
+                for (var part : rule.products()) {
+                    var daughter = ChemistryFluids.bucketForTube(part.item());
+                    if (daughter != Items.AIR) {
+                        retained = part;
+                        append(result, daughter, part.count() * count, level);
+                        break;
+                    }
+                }
+                if (retained == null) append(result, Items.BUCKET, count, level);
                 count *= 8;
-                result.add(net.minecraft.world.item.Items.BUCKET.getDefaultInstance());
             }
             for (var part : rule.products()) {
-                int remaining = part.count() * count;
-                while (remaining > 0) {
-                    var product = new ItemStack(part.item(), Math.min(remaining, part.item().getDefaultMaxStackSize()));
-                    if (tier(part.id()) > 0) product.set(CLOCK.get(), fresh(level));
-                    result.add(product);
-                    remaining -= product.getCount();
-                }
+                if (part != retained) append(result, part.item(), part.count() * count, level);
             }
-            return new Decayed(List.copyOf(result), DAMAGE[rule.tier()] * stack.getCount());
+            return new Decayed(List.copyOf(result), DAMAGE[rule.tier()] * stack.getCount(), age);
         }
         int dose = 0;
         ChemistryRecipes.Part product;
@@ -152,7 +160,16 @@ final class ChemistryRadiation {
         } while (rule != null && age >= life(rule.tier()));
         var result = new ItemStack(product.item(), stack.getCount());
         if (rule != null) result.set(CLOCK.get(), new Clock(age, level.getGameTime(), dimension(level)));
-        return new Decayed(List.of(result), dose);
+        return new Decayed(List.of(result), dose, 0);
+    }
+
+    private static void append(List<ItemStack> products, Item item, int count, Level level) {
+        while (count > 0) {
+            var product = new ItemStack(item, Math.min(count, item.getDefaultMaxStackSize()));
+            if (tier(id(product)) > 0) product.set(CLOCK.get(), fresh(level));
+            products.add(product);
+            count -= product.getCount();
+        }
     }
 
     private static void tick(PlayerTickEvent.Pre event) {
@@ -164,49 +181,58 @@ final class ChemistryRadiation {
 
     // Keep overflow separate until all original slots have been checked once.
     static void update(Player player) {
-        var menu = player.containerMenu;
         var level = player.level();
-        var rules = menu instanceof MenuRules configured ? configured : null;
         var inventory = player.getInventory();
-        var leftovers = new ArrayList<ItemStack>();
-        for (int index = 0; index < inventory.getContainerSize(); index++) {
-            var changes = step(inventory.getItem(index), level);
-            if (changes == null) continue;
-            inventory.setItem(index, replacement(changes, leftovers));
-            applyDose(player, rules, changes);
-        }
-        if (menu != player.inventoryMenu) for (var slot : menu.slots) {
-            if (!slot.isActive() || slot.container == inventory || (rules != null && rules.virtualRadiationSlot(slot.index))) continue;
+        var menu = player.containerMenu == null ? player.inventoryMenu : player.containerMenu;
+        var rules = menu instanceof MenuRules configured ? configured : null;
+        var extras = new ArrayList<ItemStack>();
+        // Both legacy handlers walked the open menu's slots, not its carried cursor.
+        for (var slot : menu.slots) {
+            if (!slot.isActive() || slot.container instanceof ResultContainer ||
+                (rules != null && rules.virtualRadiationSlot(slot.index))) continue;
+            var stack = slot.getItem();
+            if (stack.isEmpty()) continue;
             if (rules != null && rules.shieldedRadiationSlot(slot.index)) {
-                if (checkpoint(slot.getItem(), level)) slot.setChanged();
+                if (checkpoint(stack, level)) slot.setChanged();
                 continue;
             }
-            var changes = step(slot.getItem(), level);
-            if (changes == null) continue;
-            var result = replacement(changes, leftovers);
-            if (!slot.mayPlace(result) && !slot.getItem().is(result.getItem())) {
-                // In a restricted input/output slot, replacing the item must not bypass its rules.
-                slot.set(ItemStack.EMPTY);
-                leftovers.add(result);
-            } else slot.set(result);
-            applyDose(player, rules, changes);
+            var before = stack.getItem();
+            var decay = step(stack, level);
+            if (decay != null) {
+                var product = decay.products().getFirst();
+                // Replace an existing chemical in place, even in an output-only slot.
+                slot.set(product);
+                extras.addAll(decay.products().subList(1, decay.products().size()));
+                reportDecay(player, rules, before, product.getItem(), decay);
+            } else if (tier(id(stack)) != 0) {
+                slot.setChanged();
+            }
         }
-        var cursor = step(menu.getCarried(), level);
-        if (cursor != null) {
-            menu.setCarried(replacement(cursor, leftovers));
-            applyDose(player, rules, cursor);
+        for (var extra : extras) {
+            inventory.add(extra);
+            if (!extra.isEmpty()) player.drop(extra, false);
         }
-        for (var leftover : leftovers) if (!inventory.add(leftover)) player.drop(leftover, false);
     }
 
-    private static ItemStack replacement(Decayed changes, List<ItemStack> leftovers) {
-        var products = changes.products();
-        leftovers.addAll(products.subList(1, products.size()));
-        return products.getFirst();
+    private static void reportDecay(Player player, MenuRules menu, Item before, Item after, Decayed decay) {
+        float remaining = Math.max(0F, 1F - (menu == null ? 0F : menu.radiationReduction()));
+        int dose = Math.round(decay.dose() * remaining);
+        if (dose > 0) player.hurt(player.damageSources().generic(), dose);
+        // Fully shielded reactors still report the change of chemical.
+        String message = "message.@NAMESPACE@.radiation_decay";
+        player.sendSystemMessage(RELEASE_394
+            ? Component.translatable(message, before.getDescription(), after.getDescription(), duration(decay.elapsed()))
+            : Component.translatable(message, before.getDescription(), after.getDescription()));
     }
-    private static void applyDose(Player player, MenuRules menu, Decayed decay) {
-        int dose = Math.round(decay.dose() * (1F - (menu == null ? 0F : menu.radiationReduction())));
-        if (dose > 0) player.hurt(player.damageSources().magic(), dose);
+
+    private static String duration(long ticks) {
+        long seconds = ticks / 20;
+        var parts = new ArrayList<String>(4);
+        if (seconds >= 86_400) parts.add(seconds / 86_400 + "d");
+        if (seconds / 3600 % 24 != 0) parts.add(seconds / 3600 % 24 + "hr");
+        if (seconds / 60 % 60 != 0) parts.add(seconds / 60 % 60 + "m");
+        if (seconds % 60 != 0 || parts.isEmpty()) parts.add(seconds % 60 + "s");
+        return String.join(" ", parts);
     }
 
     private static void tooltip(ItemTooltipEvent event) {

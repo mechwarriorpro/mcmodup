@@ -304,7 +304,9 @@ def machine_project(namespace: str, package: str, entries: list[CatalogEntry], r
                 return accepted;
             }""" if prepaid else ""
     radiation_menu = " implements ChemistryRadiation.MenuRules" if clone_journal else ""
-    shield = ("    @Override public boolean shieldedRadiationSlot(int slot) { return slot < SLOTS && ChemistryRadiation.shieldDecomposer(); }\n"
+    # FINAL's first 27 original menu slots included 10 machine + 17 player slots.
+    shield_limit = "slot < SLOTS && ChemistryRadiation.shieldDecomposer()" if prepaid else "slot < SLOTS + 17"
+    shield = (f"    @Override public boolean shieldedRadiationSlot(int slot) {{ return {shield_limit}; }}\n"
               "    @Override public float radiationReduction() { return 0.4F; }") if clone_journal else ""
     files = {f"{java}/{name}.java": (TEMPLATES / f"{name}.java").read_text(encoding="utf-8")
              .replace("@PACKAGE@", package).replace("@NAMESPACE@", namespace)

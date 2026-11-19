@@ -72,7 +72,8 @@ final class SynthesisFinalMenu extends AbstractContainerMenu implements Chemistr
     int ghostCount(int slot) { return data.get(COUNTS + slot); }
 
     @Override public boolean virtualRadiationSlot(int slot) { return slot < STORAGE; }
-    @Override public boolean shieldedRadiationSlot(int slot) { return slot >= STORAGE && slot < JOURNAL; }
+    // FINAL also shielded the first seven player slots.
+    @Override public boolean shieldedRadiationSlot(int slot) { return slot < 27; }
     @Override public float radiationReduction() { return 0.4F; }
 
     @Override public boolean stillValid(Player player) {

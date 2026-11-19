@@ -206,7 +206,9 @@ def project(namespace: str, package: str, ids: dict[str, str], names: dict[str, 
         files[f"{java}/ChemicalFuels.java"] = files[f"{java}/ChemicalFuels.java"].replace("@FURNACE_FUELS@", ",\n".join(
             f"        Map.entry(ResourceLocation.parse({json.dumps(key)}), {ticks})" for key, ticks in automation["furnace_fuels"].items()))
         files[f"{data}/mcmodup/fluid_automation.json"] = out(automation)
-    locales = {f"gui.{namespace}.tank_empty": "Empty", f"item.{namespace}.radioactive": "Radioactivity %s · %s s to decay"}
+    warning = "Radiation Warning: Element %s decayed into %s" + (" after %s." if prepaid else ".")
+    locales = {f"gui.{namespace}.tank_empty": "Empty", f"item.{namespace}.radioactive": "Radioactivity %s · %s s to decay",
+               f"message.{namespace}.radiation_decay": warning}
     blocks = [("leaded_chest", "Leaded Chest", "leaded_chest"), ("uranium_ore", "Uranium Ore", "uranium_ore")]
     if not prepaid:
         blocks.append(("chemical_storage", "Chemical Storage", "leaded_chest"))
@@ -287,7 +289,11 @@ def features(prepaid: bool) -> dict[str, str]:
     return {f"{prefix} fluid registry and release-specific tank behavior": f"{prefix}fluidregistryandtank",
             f"{prefix} shielded storage, save, and uranium ore yield": f"{prefix}storageandore",
             f"{prefix} radioactive lifetime boundary and catch-up": f"{prefix}decayboundaryandcatchup",
-            **({".394 crafting, no-loss fluid transfer, and contact effects": "release394tubebucketandcontact",
+            f"{prefix} radiation tick phase and repeat suppression": f"{prefix}decayscheduler",
+            f"{prefix} decay warnings, survival dose, armor, and cursor eligibility": f"{prefix}decayplayerandchest",
+            f"{prefix} open-machine dose and storage slot boundaries": f"{prefix}decaymachineslots",
+            **({".394 radioactive bucket daughter and byproduct conservation": "release394decaybuckets",
+                ".394 crafting, no-loss fluid transfer, and contact effects": "release394tubebucketandcontact",
                 ".394 split tube payment and radioactive source reload": "release394radioactivetubesource",
                 ".394 dispenser transfer, split payment, and vanilla fallback": "release394dispensertransfers",
                 ".394 block fluid reactions, source/flow output and ignition": "release394fluidreactions",
@@ -305,8 +311,59 @@ def checks(package: str, test_namespace: str, namespace: str, ids: dict[str, str
             .replace("@CLASS@", "MatterChecks394" if prepaid else "MatterChecksFinal")
             .replace("@PREFIX@", "release394" if prepaid else "final").replace("@RELEASE_394@", str(prepaid).lower())
             .replace("@LIFETIME@", lifetime).replace("@FLUIDS@", flows)
+            .replace("@PLAYER_DECAY_CHECKS@", player_decay_checks(ids, prepaid))
             .replace("@BUCKET_CHECKS@", (TEMPLATES / "Matter394Checks.java").read_text(encoding="utf-8") if prepaid else "")
             .replace("@AUTOMATION_CHECKS@", automation_checks(ids) if prepaid else FINAL_FUEL_CHECK))
+
+
+def player_decay_checks(ids: dict[str, str], prepaid: bool) -> str:
+    observations_ = observations(trace_name(prepaid, "player-decay"))
+
+    def part(encoded: str) -> tuple[str, int]:
+        match = re.fullmatch(r"(b?)([em]\d+)x([1-9]\d*)", encoded)
+        if match is None:
+            raise InputError(f"Invalid Minechem player decay product {encoded!r}")
+        bucket, key, count = match.groups()
+        path = chemical_id(key, ids).split(":", 1)[1]
+        return (f"bucket_{path}" if bucket else path), int(count)
+
+    cases, buckets = [], []
+    for label, row in observations_.items():
+        if "|" not in row or label.endswith("_alternate"):
+            continue
+        result, damage, warning = row.split("|", 2)
+        path, count = part(result)
+        if warning == "[]":
+            elapsed = "null"
+        elif prepaid:
+            match = re.fullmatch(r"\[Radiation Warning: Element .+ decayed into .+ after ([\w ]+)\.\]", warning)
+            if match is None:
+                raise InputError(f"Invalid .394 warning observation {warning!r}")
+            elapsed = json.dumps(match[1])
+        else:
+            elapsed = '""'  # FINAL's warning has no time argument.
+        if not re.fullmatch(r"\d+\.0", damage):
+            raise InputError(f"Invalid Minechem player radiation dose {damage!r}")
+        cases.append(f"        Map.entry({json.dumps(label)}, new Exposure({json.dumps(path)}, "
+                     f"{1 if result.startswith('b') else count}, {damage}F, {elapsed}))")
+        if not label.endswith("_bucket"):
+            continue
+        origin, age = {"element_bucket": ("e92", "LIFE"), "m109_bucket": ("m109", "LIFE / 2"),
+                       "m153_bucket": ("m153", "LIFE / 8")}[label]
+        other = observations_[f"{label}_byproducts"].removeprefix("[").removesuffix("]")
+        products = dict(part(token) for token in other.split(", ")) if other else {}
+        if count > 1:
+            products[path] = count - 1  # Preserve the native one-filled-bucket stack limit.
+        expected = ", ".join(f"{json.dumps(item)}, {amount}" for item, amount in products.items())
+        bucket = "bucket_" + chemical_id(origin, ids).split(":", 1)[1]
+        args = f"test, {json.dumps(label)}, {json.dumps(bucket)}, {age} + 1201, Map.of({expected})"
+        buckets.append(f"        decayBucket({args}, false);")
+        if count > 1:
+            buckets.append(f"        decayBucket({args}, true);")
+    source = (TEMPLATES / "PlayerDecayChecks.java").read_text(encoding="utf-8")
+    bucket_source = (TEMPLATES / "BucketDecayChecks.java").read_text(encoding="utf-8") if prepaid else ""
+    return (source.replace("@PREFIX@", "release394" if prepaid else "final").replace("@PLAYER_CASES@", ",\n".join(cases))
+            .replace("@BUCKET_DECAY_CHECKS@", bucket_source.replace("@BUCKET_CASES@", "\n".join(buckets))))
 
 
 def automation_checks(ids: dict[str, str]) -> str:

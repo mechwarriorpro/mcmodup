@@ -120,6 +120,28 @@ class MatterTests(unittest.TestCase):
             self.assertEqual(placement['placement'][0]['count'], 6)
             self.assertIn('test.port', checks('test.port', 'checker', ns, ids, prepaid))
 
+    def test_decay_probe_rows_and_warning_locales_keep_releases_distinct(self):
+        for prepaid in (False, True):
+            ns, ids = self.ids(prepaid)
+            rows = observations(trace_name(prepaid, "player-decay"))
+            self.assertEqual(rows["registered_item_shields"], "0")
+            self.assertEqual(rows["cursor"], "e92x3|0.0|[]" if prepaid else "e91x3|0.0|[]")
+            self.assertEqual(rows["hotbar"].split("|")[1], "3.0" if prepaid else "1.0")
+            self.assertEqual(rows["fusion_storage"].split("|")[1], "0.0")
+            self.assertNotEqual(rows["fusion_storage"].split("|")[2], "[]")
+            _, locales = project(ns, "example.matter", ids, {}, prepaid)
+            warning = locales[f"message.{ns}.radiation_decay"]
+            self.assertEqual(warning.count("%s"), 3 if prepaid else 2)
+            code = checks("test.port", "checker", ns, ids, prepaid)
+            self.assertNotRegex(code, r"@[A-Z_]+@")
+            self.assertEqual("release394DecayBuckets" in code, prepaid)
+            if prepaid:
+                self.assertEqual(rows["m109_bucket_alternate_byproducts"], "[e17x16]")
+                self.assertIn('Map.of("element_87", 8, "bucket_element_17", 1), true', code)
+            else:
+                self.assertIn('"decomposer_player_25", new Exposure("element_u", 3, 0.0F, null)', code)
+                self.assertEqual(rows["scheduler_spacing"], "20")
+
 
 if __name__ == '__main__':
     unittest.main()

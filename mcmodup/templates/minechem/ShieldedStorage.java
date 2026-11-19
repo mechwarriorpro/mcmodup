@@ -152,7 +152,10 @@ final class ShieldedStorage {
             for (int i = 0; i < 27; i++) addSlot(new Slot(player, i + 9, 8 + i % 9 * 18, row + i / 9 * 18));
             for (int i = 0; i < 9; i++) addSlot(new Slot(player, i, 8 + i * 18, row + 58));
         }
-        @Override public boolean shieldedRadiationSlot(int slot) { return slot < capacity; }
+        @Override public boolean shieldedRadiationSlot(int slot) {
+            // FINAL scanned the first 27 slots, including 18 player slots in the nine-slot chest.
+            return slot < (FINAL ? CABINET_SLOTS : capacity);
+        }
         @Override public boolean stillValid(Player player) {
             return tile == null || (tile.getLevel() == player.level() && player.level().getBlockEntity(tile.getBlockPos()) == tile &&
                 player.distanceToSqr(Vec3.atCenterOf(tile.getBlockPos())) <= 64);
