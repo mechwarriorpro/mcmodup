@@ -114,11 +114,12 @@ class SourcePort:
     require_asset_coverage: bool = False
     legacy_ids: dict[str, str | None] | None = None
     method_imports: tuple[method_ports.MethodPort, ...] = ()
+    standalone_preview: bool = False
 
     @property
     def isolated_preview(self) -> bool:
         """May be explicitly staged, but not advertised as a dependency provider."""
-        return bool(self.method_imports or None in (self.legacy_ids or {}).values())
+        return self.standalone_preview or bool(self.method_imports or None in (self.legacy_ids or {}).values())
 
     def describe(self) -> dict:
         result = {"original_sha256": self.legacy_sha256, "source_sha256": self.source_sha256,
@@ -128,6 +129,8 @@ class SourcePort:
             result["required_original_jar_checks"] = list(self.original_jar_checks.cases)
         if self.legacy_ids is not None:
             result["legacy_ids"] = self.legacy_ids
+        if self.isolated_preview:
+            result["isolated_preview"] = True
         if self.method_imports:
             result["required_method_imports"] = [method.key for group in self.method_imports for method in sorted(group.methods)]
         return result
@@ -138,7 +141,7 @@ def _parse_port(data: object, base: Path) -> SourcePort:
     allowed = {"legacy_sha256", "source_sha256", "source_zip", "source_url", "source_root", "ids", "neoforge",
                "dependencies", "artifact", "tasks", "game_report", "minimum_tests", "features", "limitations",
                "status", "target_property", "import_assets", "asset_map", "locale_imports", "original_jar_checks",
-               "require_asset_coverage", "legacy_ids", "method_imports"}
+               "require_asset_coverage", "legacy_ids", "method_imports", "standalone_preview"}
     if extra := set(row) - allowed:
         raise InputError(f"Unknown recipe fields: {', '.join(sorted(extra))}")
     legacy, source = row.get("legacy_sha256"), row.get("source_sha256")
@@ -253,12 +256,16 @@ def _parse_port(data: object, base: Path) -> SourcePort:
         targets = [value for value in legacy_ids.values() if value is not None]
         if len(targets) != len(ids) or set(targets) != ids.keys():
             raise InputError("legacy_ids must cover each native ID exactly once; do not coalesce original modules")
+    standalone_preview = row.get("standalone_preview", False)
+    if type(standalone_preview) is not bool or (standalone_preview and status != "preview"):
+        raise InputError("standalone_preview must be a boolean and can only be enabled for preview recipes")
     method_imports = method_ports.parse_method_ports(row.get("method_imports", []), ids)
     if method_imports and status != "preview":
         raise InputError("Method-import ports require preview status; successful linkage is not gameplay parity")
     return SourcePort(legacy, archive, source, root, ids, neoforge, tuple(dependencies), artifact, tasks,
                       game_report, minimum, features, limitations, status == "preview", target_property, imports, asset_map,
-                      locale_imports, original_checks, require_asset_coverage, legacy_ids, method_imports)
+                      locale_imports, original_checks, require_asset_coverage, legacy_ids, method_imports,
+                      standalone_preview=standalone_preview)
 
 
 def _resource_dest(dest: str, asset: str) -> bool:

@@ -113,6 +113,31 @@ class SourcePortTests(unittest.TestCase):
             old.writestr("different-bytes.txt", "same version but not the same release")
         self.assertFalse(plan(self._list(allow=True), ["mods/OldBase.jar"]).report["ready"])
 
+    def test_standalone_preview_is_explicit_selection_only_without_method_imports(self):
+        self.older_native.unlink()
+        row = {**self.base, "status": "preview", "standalone_preview": True, "limitations": ["Only one item"]}
+        write_manifest(self.manifest, row)
+        label = "mods/OldBase.jar"
+        self.assertFalse(plan(self._list(), [label], output_pack=True).report["ready"])
+        allowed = self._list(allow=True)
+        self.assertTrue(allowed.recipes[label].partial)
+        self.assertFalse(allowed.providers.get("techbase"))
+        self.assertIn("fresh --output-pack", " ".join(plan(allowed, [label]).problems))
+        self.assertTrue(plan(allowed, [label], output_pack=True).report["ready"])
+        other = legacy(self.src, "mods/Tools.jar", "addon", requirements=("required-after:techbase",))
+        addon = recipe(other, self.base_src, "addon", dependencies=(("techbase", "[2.0]"),))
+        write_manifest(self.manifest, row, addon)
+        blocked = plan(self._list(allow=True), [label], output_pack=True)
+        self.assertFalse(blocked.report["ready"])
+        self.assertIn("preview cannot replace its legacy provider", " ".join(blocked.problems))
+        with self.assertRaises(InputError):
+            stage(blocked, self.output)
+        self.assertFalse(self.output.exists())
+        for invalid in (self.base | {"standalone_preview": True}, row | {"standalone_preview": "true"}):
+            write_manifest(self.manifest, invalid)
+            with self.assertRaisesRegex(InputError, "standalone_preview must be a boolean"):
+                load_ports(BuildOptions(self.manifest, allow_preview=True))
+
     def test_source_digest_zip_safety_and_no_prebuilt_outputs(self):
         executables = [
             ({**self.base, "source_sha256": "0" * 64}, "Source ZIP SHA-256 differs"),

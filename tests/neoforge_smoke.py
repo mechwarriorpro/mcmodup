@@ -36,11 +36,11 @@ def check_minechem_artifacts(final: Path, release394: Path) -> None:
 
 def check_recipes_in_game(project: Path, outputs: list[Path], *, minechem_394: Path | None = None,
                           multipart_control: list[Path] | None = None, icbm_plate: Path | None = None,
-                          atomic_thermometer: Path | None = None) -> None:
+                          atomic_thermometer: Path | None = None, mimicry: Path | None = None) -> None:
     namespace = "mcmodup_smoke"
     assert len(outputs) in (1, 2), "Supply the FINAL-based (or fixture) JAR with an optional aspect JAR"
     include_aspects = len(outputs) == 2
-    jars = [*outputs, *(path for path in (minechem_394, icbm_plate, atomic_thermometer) if path is not None)]
+    jars = [*outputs, *(path for path in (minechem_394, icbm_plate, mimicry, atomic_thermometer) if path is not None)]
     # Load the separately built production JARs as runtime mods, not as source sets.
     inputs = {f"fixtures/{i}.jar": path.read_bytes() for i, path in enumerate(jars)}
     controls = {}
@@ -103,6 +103,10 @@ neoForge.runs.create('gameTestServer') {{
     if atomic_thermometer:
         integrate_fixture("ThermometerMultipartSmoke.java", (FIXTURES / "ThermometerMultipartSmoke.java").read_text(encoding="utf-8"),
                           "mcmodup.atomicintegration", "mcmodup_atomic_integration")
+    if mimicry:
+        from mcmodup.mimicry_catalyst import PACKAGE, checks
+
+        integrate_fixture("CatalystChecks.java", checks(namespace), PACKAGE, namespace)
     write_workspace(project, {
         "settings.gradle": "rootProject.name = 'catalog-smoke'\n",
         "build.gradle": gradle,
@@ -116,7 +120,8 @@ neoForge.runs.create('gameTestServer') {{
     })
     run = subprocess.run(["./gradlew", "--no-daemon", "--console=plain", "runGameTestServer"],
                          cwd=project, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=420)
-    count = 7 + include_aspects + (2 if minechem_394 else 0) + bool(controls) + (3 if icbm_plate else 0) + bool(atomic_thermometer)
+    count = (7 + include_aspects + (2 if minechem_394 else 0) + bool(controls)
+             + (3 if icbm_plate else 0) + bool(atomic_thermometer) + (2 if mimicry else 0))
     if run.returncode or f"All {count} required tests passed" not in run.stdout:
         raise AssertionError(run.stdout[-8000:])
     parsing_errors = [line for line in run.stdout.splitlines() if "Parsing error loading recipe" in line

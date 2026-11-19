@@ -60,13 +60,19 @@ public final class LegacyMimicryCatalyst {
         GameRegistry.UniqueIdentifier key = (GameRegistry.UniqueIdentifier) GameRegistry.class
                 .getMethod("findUniqueIdentifierFor", type("item.Item")).invoke(null, item);
         String name = key == null ? name(item) : key.modId + ":" + key.name;
-        String other = "gold_ore=" + describe(crafting.craft(catalyst, 0, 14, 0, false))
-                + "; sand=" + describe(crafting.craft(catalyst, 0, 12, 0, false))
-                + "; iron_ingot=" + describe(crafting.craft(catalyst, 0, 265, 0, false))
-                + "; lapis_dye=" + describe(crafting.craft(catalyst, 0, 351, 4, false));
+        String other = "gold_ore=" + expect(crafting, catalyst, 14, 0, "266:0x2")
+                + "; sand=" + expect(crafting, catalyst, 12, 0, "20:0x2")
+                + "; iron_ingot=" + expect(crafting, catalyst, 265, 0, "265:0x2")
+                + "; lapis_dye=" + expect(crafting, catalyst, 351, 4, "351:4x3");
         System.out.println("MCMODUP_MIMICRY_PASS " + mod.getModId() + " " + mod.getVersion() + "; catalyst=" + name
                 + " " + item.getClass().getName() + "/" + catalyst + ":0; " + items.size() + " candidate items; "
                 + "iron_ore=265:0x2 both orders; no output without catalyst or with dirt; " + other);
+    }
+
+    private static String expect(ForgeCrafting crafting, int catalyst, int item, int meta, String expected) throws Exception {
+        String observed = describe(crafting.craft(catalyst, 0, item, meta, false));
+        require(expected.equals(observed), "Unexpected original output for " + item + ":" + meta + " → " + observed);
+        return observed;
     }
 
     private static List<Integer> ownedItems(String modid, File source) throws Exception {

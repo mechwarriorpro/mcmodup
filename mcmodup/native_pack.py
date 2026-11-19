@@ -750,9 +750,9 @@ def plan(inventory: UpdateInventory, selections: list[str], *, output_pack: bool
                 continue
             if artifact.recipe.isolated_preview:
                 if not output_pack:
-                    problems.append(f"{label!r}: this executable preview must be built into a fresh --output-pack.")
+                    problems.append(f"{label!r}: this isolated preview must be built into a fresh --output-pack.")
                 for addon in sorted(inventory.addons.get(label, {}).keys() & closure):
-                    problems.append(f"{addon!r} expects {label!r}; an executable preview cannot replace its legacy provider.")
+                    problems.append(f"{addon!r} expects {label!r}; an isolated preview cannot replace its legacy provider.")
         else:
             artifact = inventory.conversions.get(label)
             if artifact is not None:
