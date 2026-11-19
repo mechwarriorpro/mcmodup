@@ -26,13 +26,6 @@ from mcmodup.runtime import file_digest
 
 
 ICBM = "mods/icbm-1.4.1.344.jar"
-ATOMIC_SCIENCE = "mods/atomicscience.jar"
-ATOMIC_SHA256 = "80cf5bd9d485377ecde3822154a5db47804fab3e8f78c388cfcf529239655938"
-
-
-def atomic(root: Path) -> None:
-    observed = probe(root, "LegacyAtomicThermometer", {ATOMIC_SCIENCE: ATOMIC_SHA256}, ("AtomicScience",), "MCMODUP_ATOMIC")
-    note("Exact Atomic Science thermometer baseline", observed)
 
 
 def legacy(root: Path) -> None:
@@ -118,10 +111,10 @@ neoForge.runs.create('gameTestServer') {{
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("root", type=Path)
-    parser.add_argument("side", choices=("legacy", "modern", "atomic"))
+    parser.add_argument("side", choices=("legacy", "modern"))
     args = parser.parse_args()
     try:
-        {"legacy": legacy, "modern": modern, "atomic": atomic}[args.side](args.root.resolve())
+        {"legacy": legacy, "modern": modern}[args.side](args.root.resolve())
     except Exception:
         if os.environ.get("GITHUB_ACTIONS") == "true":
             note(f"Voltz {args.side} probe failed", traceback.format_exc()[-5500:], level="error")

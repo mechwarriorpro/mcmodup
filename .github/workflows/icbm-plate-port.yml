@@ -1,4 +1,4 @@
-name: Check the executable Voltz plate port
+name: Compare exact Voltz executable previews
 
 on:
   workflow_dispatch:
@@ -7,7 +7,9 @@ on:
       - '.github/workflows/icbm-plate-port.yml'
       - 'mcmodup/method_ports.py'
       - 'mcmodup/icbm_plate.py'
+      - 'mcmodup/atomic_thermometer.py'
       - 'mcmodup/templates/icbm_plate/**'
+      - 'mcmodup/templates/atomic_thermometer/**'
       - 'mcmodup/native_pack.py'
       - 'mcmodup/native_resolution.py'
       - 'mcmodup/source_ports.py'
@@ -15,8 +17,11 @@ on:
       - 'mcmodup/port.py'
       - 'mcmodup/templates/gradle/**'
       - 'tests/icbm_plate_smoke.py'
+      - 'tests/atomic_thermometer_smoke.py'
+      - 'tests/test_atomic_thermometer.py'
       - 'tests/voltz_legacy.py'
       - 'tests/fixtures/LegacyAtomicThermometer.java'
+      - 'tests/fixtures/ThermometerMultipartSmoke.java'
       - 'tests/legacy_recipe_fixture.py'
       - 'tests/test_method_ports.py'
       - 'tests/test_source_identity.py'
@@ -32,7 +37,7 @@ jobs:
       fail-fast: false
       matrix:
         side: [legacy, modern]
-    name: Plate on ${{ matrix.side }} runtime
+    name: Voltz on ${{ matrix.side }} runtime
     runs-on: ubuntu-latest
     timeout-minutes: 18
     env:
@@ -71,7 +76,7 @@ jobs:
           printf '%s  %s\n' 2eda607746a22edbf45612243adce37a876251e36d46c692a48344fe98eec84e "$root/voltz.zip" | sha256sum --check
       - name: Check method linkage and exact identity guards
         if: matrix.side == 'modern'
-        run: MCMODUP_VOLTZ_ARCHIVE="$RUNNER_TEMP/icbm-plate/voltz.zip" python -m unittest test_method_ports test_source_identity
+        run: MCMODUP_VOLTZ_ARCHIVE="$RUNNER_TEMP/icbm-plate/voltz.zip" python -m unittest test_method_ports test_source_identity test_atomic_thermometer
       - name: Install the stock target and unchanged native Multipart JARs
         if: matrix.side == 'modern'
         shell: bash
@@ -89,6 +94,5 @@ jobs:
           download target/mods/CodeChickenLib-1.21.1-4.6.1.526.jar https://cdn.modrinth.com/data/2gq0ALnz/versions/gQ1srSKh/CodeChickenLib-1.21.1-4.6.1.526.jar sha512sum 2d4efdc64531d5bb8133a247bc22a0728ab99dbcb2842ad0303b2242afd0ddc1b90cd43f8ed8562f651d8d9e228c95d15d73b4b63b3980286450de2df9c0e5ef
       - name: Measure original or staged plate behavior (no checked JARs uploaded)
         run: python -m icbm_plate_smoke "$RUNNER_TEMP/icbm-plate" '${{ matrix.side }}'
-      - name: Measure the exact Atomic Science thermometer on Forge
-        if: matrix.side == 'legacy'
-        run: python -m icbm_plate_smoke "$RUNNER_TEMP/icbm-plate" atomic
+      - name: Compare the original or staged Atomic Science thermometer
+        run: python -m atomic_thermometer_smoke "$RUNNER_TEMP/icbm-plate" '${{ matrix.side }}'
