@@ -10,6 +10,7 @@ from zipfile import ZipFile
 
 from legacy_recipe_fixture import java8, legacy_command, prepare, run_server
 from mixed_legacy_pack_smoke import note
+from mcmodup.machines import release394_trace
 from mcmodup.runtime import file_digest
 
 
@@ -77,9 +78,12 @@ def original(root: Path, version: str) -> None:
     note(f"Original Minechem decomposer on Forge {version}", evidence)
     if version == "1.7.10":
         observations = (server / "minechem-materials.txt").read_text(encoding="utf-8").splitlines()
-        assert len(observations) > 125 and len({row.partition("=")[0] for row in observations}) == len(observations)
-        for start in range(0, len(observations), 40):
-            note(f"Exact .394 material trace {start // 40 + 1}", "\n".join(observations[start:start + 40]))
+        expected = [f"{key}=" + ",".join(f"{part}x{amount}" for part, amount in products)
+                    for key, products in release394_trace().items()]
+        missing = sorted(set(expected) - set(observations))
+        unexpected = sorted(set(observations) - set(expected))
+        assert observations == expected, f".394 material trace changed: missing {missing[:8]}; unexpected {unexpected[:8]}"
+        note("Pinned .394 material trace re-observed", f"{len(observations)} ordered outputs matched the pinned Forge trace.")
 
 
 if __name__ == "__main__":

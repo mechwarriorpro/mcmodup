@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 import json
 from pathlib import Path
+import re
 
 from .catalogs import CatalogEntry
 from .inputs import InputError
@@ -35,12 +36,17 @@ class MachineRecipe:
     energy: int
     ticks: int
     source: str
+    fluid_input: tuple[str, int] | None = None
 
     def describe(self) -> dict:
-        return {"machine": self.machine, "id": self.id, "energy_fe": self.energy, "ticks": self.ticks,
-                "inputs": [{"id": name, "count": count} for name, count in self.inputs],
-                "outputs": [{"id": name, "count": count} for name, count in self.outputs],
-                "legacy_source": self.source}
+        description = {"machine": self.machine, "id": self.id, "energy_fe": self.energy, "ticks": self.ticks,
+                       "inputs": [{"id": name, "count": count} for name, count in self.inputs],
+                       "outputs": [{"id": name, "count": count} for name, count in self.outputs],
+                       "legacy_source": self.source}
+        if self.fluid_input:
+            name, volume = self.fluid_input
+            description["fluid_input"] = {"id": name, "millibuckets": volume}
+        return description
 
 
 def _decomposition(source_item: str, products: tuple[tuple[str, int], ...], source: str) -> MachineRecipe:
@@ -50,15 +56,61 @@ def _decomposition(source_item: str, products: tuple[tuple[str, int], ...], sour
     return MachineRecipe("decomposer", source_item, ((source_item, 1),), products, amount, amount, source)
 
 
+def release394_trace() -> dict[str, tuple[tuple[str, int], ...]]:
+    """Read bounded observation data, not legacy recipe code or reconstructed formulas."""
+    path = TEMPLATES / "release394-decomposition.txt"
+    rows = {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if line.startswith("#") or not line:
+            continue
+        key, sep, values = line.partition("=")
+        if not sep or key in rows or not re.fullmatch(r"[a-z][a-z0-9_]*", key):
+            raise InputError(f"Invalid .394 trace input {key!r}")
+        parts = []
+        for value in values.split(","):
+            match = re.fullmatch(r"([em](?:0|[1-9][0-9]{0,3}))x([1-9][0-9]{0,3})", value)
+            if not match:
+                raise InputError(f"Invalid .394 trace output for {key}: {value!r}")
+            part, count = match.groups()
+            parts.append((part, int(count)))
+        if sum(count for _, count in parts) > 4096:
+            raise InputError(f".394 trace exceeds output limit for {key}")
+        rows[key] = tuple(parts)
+    return rows
+
+
+def _release394_recipes(namespace: str, entries: list[CatalogEntry]) -> list[MachineRecipe]:
+    traced = release394_trace()
+    ids = {}
+    for entry in entries:
+        kind = "e" if entry.path.startswith("element_") else "m"
+        metadata = entry.legacy.get("legacy_metadata")
+        key = f"{kind}{metadata}"
+        if not isinstance(metadata, int) or key in ids:
+            raise InputError(f"Missing or duplicate .394 metadata for {entry.path}")
+        ids[key] = f"{namespace}:{entry.path}"
+    if {key for key in ids if key.startswith("m")} != {key for key in traced if re.fullmatch(r"m\d+", key)}:
+        raise InputError("The .394 molecule catalog does not match the measured decomposition inputs.")
+    def resolve(key: str) -> str:
+        if key not in ids:
+            raise InputError(f"Could not map original .394 chemical metadata {key}.")
+        return ids[key]
+
+    recipes = []
+    for key, parts in traced.items():
+        fluid = key == "fluid_water"
+        item = resolve(key) if re.fullmatch(r"m\d+", key) else f"minecraft:{'water' if fluid else key}"
+        products = tuple((resolve(part), count) for part, count in parts)
+        recipes.append(MachineRecipe("decomposer", item, () if fluid else ((item, 1),), products, 1_000,
+                                     sum(count for _, count in products), "5.0.5.394 Forge 10.13.2.1291 tick trace",
+                                     (item, 1000) if fluid else None))
+    return recipes
+
+
 def machine_recipes(namespace: str, entries: list[CatalogEntry], *,
                     mode: DecomposerMode = DecomposerMode.BATCH) -> list[MachineRecipe]:
     if mode == DecomposerMode.RELEASE_394:
-        # Only the deterministic iron recipe has a strict .394 runtime oracle.
-        # Do not import FINAL's starter rules or infer synthesis from formulas.
-        if not any(item.path == "element_fe" and item.legacy.get("legacy_metadata") == 26 for item in entries):
-            raise InputError("The .394 decomposer requires the original iron element (metadata 26).")
-        return [MachineRecipe("decomposer", "minecraft:iron_ingot", (("minecraft:iron_ingot", 1),),
-                              ((f"{namespace}:element_fe", 16),), 1_000, 16, "5.0.5.394 Forge iron-ingot oracle")]
+        return _release394_recipes(namespace, entries)
     recipes = []
     for entry in sorted(entries, key=lambda item: item.path):
         if not entry.components:
@@ -89,9 +141,10 @@ def _java_recipes(package: str, namespace: str, entries: list[CatalogEntry], rec
     def parts(values: tuple[tuple[str, int], ...]) -> str:
         return "List.of(" + ", ".join(f'new Part("{item}", {count})' for item, count in values) + ")"
 
-    def rows(machine: str) -> str:
-        return ",\n".join(f'        new Recipe("{r.id}", {r.energy}, {r.ticks}, {parts(r.inputs)}, {parts(r.outputs)})'
-                           for r in recipes if r.machine == machine)
+    def rows(machine: str, *, fluid: bool = False) -> str:
+        return ",\n".join(f'        new Recipe("{r.id}", {r.energy}, {r.ticks}, {r.fluid_input[1] if r.fluid_input else 0}, '
+                           f'{parts(r.inputs)}, {parts(r.outputs)})' for r in recipes
+                           if r.machine == machine and bool(r.fluid_input) == fluid)
 
     chemical_ids = ",\n".join(f'        "{namespace}:{entry.path}"' for entry in entries)
     return f'''package {package};
@@ -110,7 +163,7 @@ final class ChemistryRecipes {{
         Item item() {{ return BuiltInRegistries.ITEM.get(ResourceLocation.parse(id)); }}
     }}
 
-    record Recipe(String id, int energy, int ticks, List<Part> inputs, List<Part> outputs) {{}}
+    record Recipe(String id, int energy, int ticks, int fluidAmount, List<Part> inputs, List<Part> outputs) {{}}
 
     static final Set<String> CHEMICALS = Set.of(
 {chemical_ids}
@@ -121,6 +174,9 @@ final class ChemistryRecipes {{
     static final Map<String, Recipe> BY_RESULT = index(SYNTHESIZE);
     static final Map<String, Recipe> DECOMPOSE = index(List.of(
 {rows('decomposer')}
+    ));
+    static final Map<String, Recipe> DECOMPOSE_FLUID = index(List.of(
+{rows('decomposer', fluid=True)}
     ));
 
     private static Map<String, Recipe> index(List<Recipe> recipes) {{
@@ -161,6 +217,7 @@ def machine_project(namespace: str, package: str, entries: list[CatalogEntry], r
         "process": "Process", "auto": "Auto", "manual": "Manual",
         "auto_help": "Toggle repeated processing using the current recipe, input and FE",
         "decompose": "Insert one material to split", "charge": "Optional fuel: Redstone Dust (+500 FE when needed)",
+        "water_tank": "Water: %s/%s mB", "empty_tank": "Empty tank",
         "requirement": "%s × %s", "recipe_help": "Recipe ingredients (hold Shift to skip 10 recipes)",
         "state_0": "Ready · %s FE", "state_1": "Working · %s FE", "state_2": "Need input · %s FE",
         "state_3": "Need power · %s FE", "state_4": "Output full · %s FE", "state_5": "Done · %s FE",

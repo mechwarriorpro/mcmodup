@@ -53,8 +53,8 @@ PROFILES = {profile.name: profile for profile in (
     Profile(RELEASE_394_PROFILE, "minechem", "1.7.10", (ELEMENT, MOLECULE), "minechem_chemistry_394",
             "Minechem .394 Decomposer (Partial Port)", "Don't Be a Jerk (DBaJ) non-commercial license",
             "Minechem and its contributors — https://github.com/iopleke/Minechem/tree/1.7.10-5.0.5.394",
-            "All decomposition recipes except iron ingots, original models and menus, fluids, radiation, synthesis, research, "
-            "other machines, legacy integrations, configuration and old saves.", RELEASE_394_SHA256),
+            "Unmeasured materials, random and recursive decomposition, fluids other than plain water, original menus and models, "
+            "radiation, synthesis, research, other machines, legacy integrations, configuration and old saves.", RELEASE_394_SHA256),
     Profile("thaumcraft-aspects", "thaumcraft", "1.7.10", (ASPECT,), "thaumcraft_aspects", "Thaumcraft Aspects (Partial Port)",
             "Thaumcraft custom license — private use only unless authorized", "Thaumcraft by Azanor — https://www.curseforge.com/minecraft/mc-mods/thaumcraft",
             "Essentia storage and transport, research, wands, infusion, golems, magic, add-on integration, worldgen, and old saves."),

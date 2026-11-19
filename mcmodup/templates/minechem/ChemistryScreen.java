@@ -14,7 +14,7 @@ import net.neoforged.neoforge.client.event.RegisterMenuScreensEvent;
 
 @EventBusSubscriber(modid = CatalogPort.MOD_ID, bus = EventBusSubscriber.Bus.MOD, value = Dist.CLIENT)
 public final class ChemistryScreen extends AbstractContainerScreen<ChemistryMenu> {
-    private Button before, after, run, mode;
+    private Button before, after, run, mode, emptyTank;
 
     ChemistryScreen(ChemistryMenu menu, Inventory player, Component title) {
         super(menu, player, title);
@@ -37,6 +37,8 @@ public final class ChemistryScreen extends AbstractContainerScreen<ChemistryMenu
             .bounds(leftPos + 100, topPos + 78, 20, 20).build());
         run = addRenderableWidget(Button.builder(Component.translatable("gui.@NAMESPACE@.process"), button -> send(ChemistryMenu.RUN))
             .bounds(leftPos + 122, topPos + 78, 46, 20).build());
+        emptyTank = addRenderableWidget(Button.builder(Component.translatable("gui.@NAMESPACE@.empty_tank"), button -> send(ChemistryMenu.EMPTY_TANK))
+            .bounds(leftPos + 111, topPos + 78, 57, 20).build());
     }
 
     private void send(int button) {
@@ -48,6 +50,8 @@ public final class ChemistryScreen extends AbstractContainerScreen<ChemistryMenu
         mode.setMessage(Component.translatable(menu.automatic() ? "gui.@NAMESPACE@.auto" : "gui.@NAMESPACE@.manual"));
         before.visible = after.visible = menu.synthesis();
         run.visible = mode.visible = !menu.bufferedDecomposer();
+        emptyTank.visible = ChemistryMachines.Machine.PREPAID_DECOMPOSER;
+        emptyTank.active = menu.waterVolume() > 0;
         before.active = after.active = run.active = menu.remaining() == 0;
         super.render(gui, mouseX, mouseY, delta);
         renderTooltip(gui, mouseX, mouseY);
@@ -90,6 +94,10 @@ public final class ChemistryScreen extends AbstractContainerScreen<ChemistryMenu
             line = recipe.outputs().getFirst().item().getDescription().getString();
         } else line = Component.translatable("gui.@NAMESPACE@.decompose").getString();
         gui.drawString(font, font.plainSubstrByWidth(line, menu.synthesis() ? 140 : 160), 8, 21, 0x404040, false);
+        if (ChemistryMachines.Machine.PREPAID_DECOMPOSER) {
+            gui.drawString(font, Component.translatable("gui.@NAMESPACE@.water_tank", menu.waterVolume(),
+                ChemistryMachines.Machine.WATER_CAPACITY), 8, 84, 0x404040, false);
+        }
         gui.drawString(font, Component.translatable("gui.@NAMESPACE@.state_" + menu.status(), menu.energy()), 8, 102, 0x404040, false);
     }
 }

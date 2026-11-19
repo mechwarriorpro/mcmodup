@@ -2,6 +2,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import struct
 import subprocess
@@ -16,7 +17,7 @@ from mcmodup.catalogs import (ASPECT, CATEGORY, CHEMICAL, ELEMENT, MOLECULE, PRO
 from mcmodup.classfiles import read_class
 from mcmodup.convert import _project_files, _recipe_files, convert_catalog
 from mcmodup.inputs import InputError
-from mcmodup.machines import FINAL_LEGACY_SHA256, JAVA_CLASSES, DecomposerMode, machine_recipes
+from mcmodup.machines import FINAL_LEGACY_SHA256, JAVA_CLASSES, DecomposerMode, machine_recipes, release394_trace
 from mcmodup.pack import open_pack
 from neoforge_smoke import check_recipes_in_game
 from test_cli import PNG, ROOT, run_cli
@@ -201,10 +202,18 @@ class ConvertTests(unittest.TestCase):
 
     def test_394_profile_is_hash_bound_and_does_not_duplicate_final_recipes(self):
         profile = PROFILES[RELEASE_394_PROFILE]
-        iron = CatalogEntry("element_fe", "Iron", "test.png", (), {"legacy_metadata": 26})
-        water = CatalogEntry("molecule_water", "Water", "test.png", (), {}, (("element_h", 2), ("element_o", 1)))
-        files, count = _project_files(profile, [iron, water], {"test.png": PNG}, RELEASE_394_SHA256, {}, [])
-        self.assertEqual(count, 1)
+        trace = release394_trace()
+        symbols = sorted({key for outputs in trace.values() for key, _ in outputs} | {key for key in trace if re.fullmatch(r"m\d+", key)})
+        entries = [CatalogEntry({"e26": "element_fe", "m1": "molecule_water"}.get(key,
+                                ("element_" if key[0] == "e" else "molecule_") + key[1:]),
+                                key, "test.png", (), {"legacy_metadata": int(key[1:])}) for key in symbols]
+        files, count = _project_files(profile, entries, {"test.png": PNG}, RELEASE_394_SHA256, {}, [])
+        self.assertEqual(count, 199)
+        self.assertEqual(len([key for key in trace if re.fullmatch(r"m\d+", key)]), 173)
+        with self.assertRaisesRegex(InputError, "catalog does not match"):
+            _project_files(profile, [row for row in entries if row.path != "molecule_water"], {"test.png": PNG}, RELEASE_394_SHA256, {}, [])
+        with self.assertRaisesRegex(InputError, "Could not map original .394 chemical metadata e26"):
+            _project_files(profile, [row for row in entries if row.path != "element_fe"], {"test.png": PNG}, RELEASE_394_SHA256, {}, [])
         package = "src/main/java/mcmodup/generated/minechem_chemistry_394"
         self.assertIn("PREPAID_DECOMPOSER = true;", files[f"{package}/ChemistryMachines.java"])
         self.assertNotIn("ChemistryResearch.register", files[f"{package}/CatalogPort.java"])
@@ -215,12 +224,23 @@ class ConvertTests(unittest.TestCase):
         catalog = json.loads(files[f"{resources}/mcmodup/catalog.json"])
         self.assertFalse(catalog["full_port"])
         self.assertEqual(catalog["decomposer_mode"], DecomposerMode.RELEASE_394)
-        self.assertEqual(catalog["machine_recipes"][0]["energy_fe"], 1_000)
-        self.assertEqual(catalog["machine_recipes"][0]["outputs"], [{"id": "minechem_chemistry_394:element_fe", "count": 16}])
-        self.assertEqual(catalog["entries"][1]["recipe_status"], "catalog_only")
+        rows = {row["id"]: row for row in catalog["machine_recipes"]}
+        self.assertEqual({row["energy_fe"] for row in rows.values()}, {1_000})
+        self.assertEqual({row["machine"] for row in rows.values()}, {"decomposer"})
+        self.assertEqual(rows["minecraft:iron_ingot"]["outputs"], [{"id": "minechem_chemistry_394:element_fe", "count": 16}])
+        self.assertEqual(rows["minecraft:iron_block"]["outputs"][0]["count"], 144)
+        self.assertEqual(rows["minecraft:water_bucket"]["outputs"], [
+            {"id": "minechem_chemistry_394:molecule_water", "count": 16},
+            {"id": "minechem_chemistry_394:element_fe", "count": 48},
+        ])
+        self.assertEqual(rows["minecraft:water"]["fluid_input"], {"id": "minecraft:water", "millibuckets": 1000})
+        self.assertFalse(rows["minecraft:water"]["inputs"])
+        self.assertEqual(next(row for row in catalog["entries"] if row["new_id"].endswith(":molecule_water"))["recipe_status"],
+                         "powered_decomposition")
+        self.assertNotIn("minecraft:stone", rows)  # A chance-based recipe is not direct.
         for digest in (FINAL_LEGACY_SHA256, "0" * 64):
             with self.assertRaisesRegex(InputError, "requires the exact original archive"):
-                _project_files(profile, [iron, water], {}, digest, {}, [])
+                _project_files(profile, entries, {}, digest, {}, [])
         counterfeit = jar(self.root / "Minechem-1.7.10-5.0.5.394.jar", **{
             "mcmod.info": '[{"modid":"minechem","mcversion":"1.7.10","version":"5.0.5.394"}]',
             f"{ELEMENT}.class": element_class(factory=True),

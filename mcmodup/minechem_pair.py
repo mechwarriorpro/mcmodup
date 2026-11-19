@@ -9,12 +9,12 @@ from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
 
 from . import NEOFORGE_VERSION
 from .api import ClassLocation
-from .catalogs import PROFILES, RELEASE_394_PROFILE, RELEASE_394_SHA256, Profile
+from .catalogs import PROFILES, RELEASE_394_PROFILE, RELEASE_394_SHA256, CatalogEntry, Profile
 from .classfiles import CLASS_LIMIT
 from .convert import _catalog_entries, _icon_paths, _project_files
 from .assets import PNG_SIGNATURE
 from .inputs import InputError, open_input
-from .machines import FINAL_LEGACY_SHA256
+from .machines import FINAL_LEGACY_SHA256, DecomposerMode, machine_recipes
 from .method_ports import parse_method_ports, transplant
 from .port import TEMPLATES, empty_test_structure, write_workspace
 from .source_ports import digest
@@ -25,7 +25,22 @@ STACK = "net/minecraft/item/ItemStack"
 RESOURCE = "src/main/resources/"
 FINAL = PROFILES["minechem-chemistry"]
 RELEASE_394 = PROFILES[RELEASE_394_PROFILE]
-VERSIONS = {FINAL.namespace: "1.3.1-partial", RELEASE_394.namespace: "1.1.0-partial"}
+VERSIONS = {FINAL.namespace: "1.3.1-partial", RELEASE_394.namespace: "1.2.0-partial"}
+FEATURES = {"Buffered iron decomposition and saved remaining output": "savedbufferdrains",
+            "Original decomposer output-slot method": "linkedslotrule"}
+FEATURES_394 = FEATURES | {"All 198 measured item and molecule decomposition rules": "materialdecompositionmatchestrace",
+                           "5,000 mB water tank, shared input priority and buffer save": "watertankroundtripandpriority"}
+
+
+def release394_checks(package: str, test_namespace: str, entries: list[CatalogEntry]) -> str:
+    cases = []
+    for rule in machine_recipes(RELEASE_394.namespace, entries, mode=DecomposerMode.RELEASE_394):
+        if not rule.fluid_input:
+            products = ",".join(f"{key}@{count}" for key, count in rule.outputs)
+            cases.append(f"        {json.dumps(f'{rule.id}={products}')}")
+    return ((TEMPLATES / "minechem/Release394Checks.java").read_text(encoding="utf-8")
+            .replace("@PACKAGE@", package).replace("@TEST_NAMESPACE@", test_namespace)
+            .replace("@TRACE@", ",\n".join(cases)))
 
 
 def method_group(profile: Profile) -> dict:
@@ -96,9 +111,13 @@ def _recipe(original: Path, profile: Profile, checksum: str, output: Path) -> di
     # image bytes and method bodies from the same fingerprinted original.
     for target in icons.values():
         files.pop(RESOURCE + target)
-    tests = f"mcmodup/generated/{namespace}/DecomposerChecks"
+    package = f"mcmodup.generated.{namespace}"
+    java_root = package.replace(".", "/")
+    tests = f"{java_root}/DecomposerChecks"
     files[f"src/main/java/{tests}.java"] = ((TEMPLATES / "minechem/DecomposerChecks.java").read_text(encoding="utf-8")
         .replace("@NAMESPACE@", namespace).replace("@PREPAID@", str(prepaid).lower()))
+    if prepaid:
+        files[f"src/main/java/{java_root}/Release394Checks.java"] = release394_checks(package, namespace, entries)
     files[f"src/main/java/mcmodup_kernel/{namespace}/DecomposerAccess.java"] = _adapter(namespace, prepaid)
     structure = f"data/{namespace}/structure/test_room.nbt"
     files[RESOURCE + structure] = empty_test_structure()
@@ -109,7 +128,7 @@ def _recipe(original: Path, profile: Profile, checksum: str, output: Path) -> di
 tasks.named('compileJava') {{ classpath += files('src/main/resources') }}
 tasks.named('jar') {{
     archiveFileName = '{artifact}'
-    exclude '{tests}.class', '{structure}'
+    exclude '{tests}.class', '{java_root}/Release394Checks*.class', '{structure}'
 }}
 neoForge.runs.create('gameTestServer') {{
     type = 'gameTestServer'
@@ -134,8 +153,7 @@ neoForge.runs.create('gameTestServer') {{
     return {"legacy_sha256": checksum, "source_zip": archive.name, "source_sha256": digest(archive),
             "ids": aliases, "legacy_ids": {"minechem": namespace}, "neoforge": f"[{NEOFORGE_VERSION}]",
             "artifact": f"build/libs/{artifact}", "tasks": ["jar", "runGameTestServer"], "game_report": "build/gametest.xml",
-            "minimum_tests": 2, "features": {"Buffered iron decomposition and saved remaining output": "savedbufferdrains",
-                                              "Original decomposer output-slot method": "linkedslotrule"},
+            "minimum_tests": len(FEATURES_394 if prepaid else FEATURES), "features": FEATURES_394 if prepaid else FEATURES,
             "status": "preview", "limitations": [profile.not_ported, "Fresh worlds only; no legacy ID/save migration or add-on API.",
                 "Native FE, menus and item components replace legacy power, GUI and stack APIs; no original client comparison."],
             "method_imports": [methods],

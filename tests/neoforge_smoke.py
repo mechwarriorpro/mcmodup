@@ -7,8 +7,9 @@ import subprocess
 import zipfile
 
 from mcmodup.audit import ModMetadata
-from mcmodup.catalogs import RELEASE_394_SHA256
-from mcmodup.machines import FINAL_LEGACY_SHA256, DecomposerMode
+from mcmodup.catalogs import RELEASE_394_SHA256, CatalogEntry
+from mcmodup.machines import FINAL_LEGACY_SHA256, DecomposerMode, machine_recipes
+from mcmodup.minechem_pair import RELEASE_394, release394_checks
 from mcmodup.port import _build_gradle, _metadata, empty_test_structure, write_workspace
 
 
@@ -19,7 +20,7 @@ NATIVE_CONTROL_SHA512 = {
 }
 
 
-def check_minechem_artifacts(final: Path, release394: Path) -> None:
+def check_minechem_artifacts(final: Path, release394: Path) -> list[CatalogEntry]:
     def resources(jar):
         return {name for name in jar.namelist() if name.endswith(".class") or name.startswith("assets/") and not name.endswith("/")}
 
@@ -29,9 +30,13 @@ def check_minechem_artifacts(final: Path, release394: Path) -> None:
         assert catalog["decomposer_mode"] == DecomposerMode.RELEASE_394 and not catalog["full_port"]
         assert sum("atomic_number" in entry for entry in catalog["entries"]) == 113
         assert sum(entry["new_id"].startswith("minechem_chemistry_394:molecule_") for entry in catalog["entries"]) == 173
-        assert len(catalog["machine_recipes"]) == 1
+        entries = [CatalogEntry(row["new_id"].split(":", 1)[1], "", "", (), row) for row in catalog["entries"]]
+        rules = machine_recipes(RELEASE_394.namespace, entries, mode=DecomposerMode.RELEASE_394)
+        assert len(rules) == 199 and catalog["machine_recipes"] == [rule.describe() for rule in rules]
         assert not (resources(left) & resources(right)), "Minechem releases share bytecode or named assets"
         assert not any(name.endswith(".jar") for archive in (left, right) for name in archive.namelist())
+        assert not any("Release394Checks" in name for name in right.namelist()), "Production .394 JAR contains test code"
+        return entries
 
 
 def check_recipes_in_game(project: Path, outputs: list[Path], *, minechem_394: Path | None = None,
@@ -71,8 +76,9 @@ neoForge.runs.create('gameTestServer') {{
         tests["src/main/java/mcmodup/test/CatalogAspectSmoke.java"] = (FIXTURES / "CatalogAspectSmoke.java").read_bytes()
     if minechem_394:
         assert buffered, "The paired tests require the actual FINAL-based build"
-        check_minechem_artifacts(outputs[0], minechem_394)
+        entries = check_minechem_artifacts(outputs[0], minechem_394)
         tests["src/main/java/mcmodup/test/MinechemPairChecks.java"] = (FIXTURES / "MinechemPairChecks.java").read_bytes()
+        tests["src/main/java/mcmodup/test/Release394Checks.java"] = release394_checks("mcmodup.test", namespace, entries)
     def integrate_fixture(filename, code, package, own_namespace):
         # The standalone fixtures normally own independent test mod IDs.
         name = filename.removesuffix(".java")
@@ -120,7 +126,7 @@ neoForge.runs.create('gameTestServer') {{
     })
     run = subprocess.run(["./gradlew", "--no-daemon", "--console=plain", "runGameTestServer"],
                          cwd=project, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=420)
-    count = (7 + include_aspects + (2 if minechem_394 else 0) + bool(controls)
+    count = (7 + include_aspects + (4 if minechem_394 else 0) + bool(controls)
              + (3 if icbm_plate else 0) + bool(atomic_thermometer) + (2 if mimicry else 0))
     if run.returncode or f"All {count} required tests passed" not in run.stdout:
         raise AssertionError(run.stdout[-8000:])

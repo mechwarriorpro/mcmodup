@@ -5,6 +5,8 @@ on:
   push:
     paths:
       - '.github/workflows/minechem-original-parity.yml'
+      - 'mcmodup/machines.py'
+      - 'mcmodup/templates/minechem/release394-decomposition.txt'
       - 'tests/minechem_original_smoke.py'
       - 'tests/fixtures/LegacyMinechemDecomposer.java'
       - 'tests/fixtures/LegacyMinechemMaterials.java'

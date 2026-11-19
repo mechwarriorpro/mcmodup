@@ -14,12 +14,12 @@ import net.neoforged.neoforge.items.SlotItemHandler;
 import static @PACKAGE@.ChemistryMachines.Machine.*;
 
 final class ChemistryMenu extends AbstractContainerMenu {
-    static final int RUN = 0, PREVIOUS = 1, NEXT = 2, BACK_TEN = 3, FORWARD_TEN = 4, TOGGLE_AUTO = 5;
+    static final int RUN = 0, PREVIOUS = 1, NEXT = 2, BACK_TEN = 3, FORWARD_TEN = 4, TOGGLE_AUTO = 5, EMPTY_TANK = 6;
     private final ChemistryMachines.Machine machine;
     private final ContainerData values;
 
     ChemistryMenu(int id, Inventory player) {
-        this(id, player, null, new ItemStackHandler(SLOTS), new SimpleContainerData(6));
+        this(id, player, null, new ItemStackHandler(SLOTS), new SimpleContainerData(PREPAID_DECOMPOSER ? 7 : 6));
     }
 
     ChemistryMenu(int id, Inventory player, ChemistryMachines.Machine machine) {
@@ -65,6 +65,7 @@ final class ChemistryMenu extends AbstractContainerMenu {
     int status() { return values.get(3); }
     int remaining() { return values.get(4); }
     boolean automatic() { return values.get(5) != 0; }
+    int waterVolume() { return PREPAID_DECOMPOSER ? values.get(6) : 0; }
 
     @Override
     public boolean clickMenuButton(Player player, int button) {
@@ -76,6 +77,7 @@ final class ChemistryMenu extends AbstractContainerMenu {
             case BACK_TEN -> machine.advance(-10);
             case FORWARD_TEN -> machine.advance(10);
             case TOGGLE_AUTO -> machine.toggleAutomatic();
+            case EMPTY_TANK -> machine.emptyTank();
             default -> false;
         };
     }
