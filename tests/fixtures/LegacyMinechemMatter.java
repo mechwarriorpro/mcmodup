@@ -70,7 +70,8 @@ final class LegacyMinechemMatter {
                 if (!elements && id == 1) waterChemical = value;
             }
         }
-        require(iron != null && waterChemical != null, "Could not find original iron and water fluids");
+        if (!old && waterChemical == null) waterChemical = Class.forName("net.minecraftforge.fluids.FluidRegistry").getField("WATER").get(null);
+        require(iron != null && waterChemical != null, "Could not find original iron and water fluids; e26=" + rows.get("e26") + ", m1=" + rows.get("m1"));
         Class<?> tile = Class.forName("minechem.tileentity.decomposer.DecomposerTileEntity");
         Method fill = tile.getMethod("fill", direction, fluidStack, boolean.class), info = tile.getMethod("getTankInfo", direction);
         Method tick = tile.getMethod(old ? "func_70316_g" : "func_145845_h");
@@ -99,6 +100,13 @@ final class LegacyMinechemMatter {
             for (int i = 0; i < 4; i++) tick.invoke(machine);
             Object product = get.invoke(machine, 1);
             rows.put("tank", first + "/" + before + "/" + second + "/" + paid + "/" + mb.getInt(remainder) + "/" + key(product));
+            Object saved = nbt.newInstance();
+            tile.getMethod("func_145841_b", nbt).invoke(machine, saved);
+            Object reload = tile.newInstance();
+            assignWorld(reload);
+            tile.getMethod("func_145839_a", nbt).invoke(reload, saved);
+            rows.put("reload", name.invoke(fluidStack.getMethod("getFluid").invoke(drain.invoke(reload, side, 125, false))) + ":" +
+                     mb.getInt(drain.invoke(reload, side, 125, false)));
             rows.put("bucket", bucket(container));
         }
         write("fluids", rows);
@@ -161,6 +169,11 @@ final class LegacyMinechemMatter {
         rows.put("catchup", step(uranium, 3, life * 2 + 1));
         rows.put("storage", storage(x, y, z, uranium, life));
         rows.put("ore", ore());
+        Class<?> settings = Class.forName("minechem.Settings");
+        Field generate = settings.getDeclaredField(old ? "WorldGenOre" : "generateOre");
+        Field density = settings.getDeclaredField("UraniumOreDensity"), size = settings.getDeclaredField("UraniumOreClusterSize");
+        for (Field field : Arrays.asList(generate, density, size)) field.setAccessible(true);
+        rows.put("worldgen", generate.getBoolean(null) + "/" + density.getInt(null) + "/" + size.getInt(null));
         write("radiation", rows);
     }
 
