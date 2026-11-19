@@ -104,8 +104,12 @@ final class LegacyMinechemReactors {
             setBlock(x + 10, y + 1, z, reactorBlock, 2);
             Object combiner = tile.invoke(world, x + 10, y + 1, z);
             require(combiner != null && combiner.getClass().getSimpleName().equals("FusionTileEntity"), "Fusion core missing");
-            set(combiner, 1, chemical(1, 2));
-            set(combiner, 2, chemical(1, 2));
+            int left = combiner.getClass().getField("inputLeft").getInt(null);
+            int right = combiner.getClass().getField("inputRight").getInt(null);
+            int output = combiner.getClass().getField("output").getInt(null);
+            require(left == (old ? 1 : 0) && right == left + 1 && output == right + 1, "Unexpected original fusion slot mapping");
+            set(combiner, left, chemical(1, 2));
+            set(combiner, right, chemical(1, 2));
             if (old) set(combiner, 0, stack.getConstructor(int.class, int.class, int.class).newInstance(399, 1, 0));
             else {
                 int need = (Integer) combiner.getClass().getMethod("getEnergyNeeded").invoke(combiner);
@@ -115,21 +119,21 @@ final class LegacyMinechemReactors {
             }
             tick(combiner);
             if (!old) {
-                require(get(combiner, 3) == null && energy(combiner) == 200, ".394 fusion did not wait for strictly more than its cost");
+                require(get(combiner, output) == null && energy(combiner) == 200, ".394 fusion did not wait for strictly more than its cost");
                 fill(combiner, 1);
                 tick(combiner);
                 boolean ready = (Boolean) combiner.getClass().getMethod("func_70300_a", mc("entity.player.EntityPlayer")).invoke(combiner, new Object[]{null});
-                require(get(combiner, 3) != null, ".394 fusion did not yield output; complete=" + ready +
+                require(get(combiner, output) != null, ".394 fusion did not yield output; complete=" + ready +
                         ", energy=" + energy(combiner) + ", need=" + combiner.getClass().getMethod("getEnergyNeeded").invoke(combiner));
             }
-            expect(get(combiner, 3), 2, 1, "Fusion of H + H");
+            expect(get(combiner, output), 2, 1, "Fusion of H + H");
             if (old) {
                 Object spent = get(combiner, 0);
                 Object star = Class.forName("minechem.MinechemItemsGeneration").getField("fusionStar").get(null);
                 require(spent != null && stack.getMethod("func_77973_b").invoke(spent) == star && metadata(spent) == 0,
                         "FINAL did not turn the Nether Star into an undamaged Fusion Star");
                 tick(combiner);
-                expect(get(combiner, 3), 2, 2, "Second FINAL fusion");
+                expect(get(combiner, output), 2, 2, "Second FINAL fusion");
                 require(metadata(get(combiner, 0)) == 1, "FINAL did not wear the Fusion Star on repeat use");
             } else require(energy(combiner) == 1, ".394 fusion did not charge 200 RF");
         } finally {
