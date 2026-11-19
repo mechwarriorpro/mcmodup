@@ -20,6 +20,8 @@ on:
       - 'tests/atomic_thermometer_smoke.py'
       - 'tests/test_atomic_thermometer.py'
       - 'tests/voltz_legacy.py'
+      - 'tests/voltz_infrastructure_original.py'
+      - 'tests/fixtures/LegacyVoltzInfrastructure.java'
       - 'tests/fixtures/LegacyAtomicThermometer.java'
       - 'tests/fixtures/ThermometerMultipartSmoke.java'
       - 'tests/legacy_recipe_fixture.py'
@@ -96,3 +98,6 @@ jobs:
         run: python -m icbm_plate_smoke "$RUNNER_TEMP/icbm-plate" '${{ matrix.side }}'
       - name: Compare the original or staged Atomic Science thermometer
         run: python -m atomic_thermometer_smoke "$RUNNER_TEMP/icbm-plate" '${{ matrix.side }}'
+      - name: Measure the original thermal grid, steam turbine and ICBM infrastructure
+        if: matrix.side == 'legacy'
+        run: python -m voltz_infrastructure_original "$RUNNER_TEMP/icbm-plate"
