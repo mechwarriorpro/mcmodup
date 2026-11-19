@@ -6,6 +6,7 @@ from .inputs import InputError
 from .minechem_materials import TEMPLATES, observations
 
 
+FEATURE_CLASS = "UraniumOreFeature"
 CASES = ("default", "masked", "tuned", "empty_roll", "floor", "ceiling", "disabled", "negative_density")
 
 
@@ -23,7 +24,7 @@ def project(namespace: str, package: str, prepaid: bool) -> dict[str, str]:
     data = "src/main/resources/data"
     ore = f"{namespace}:uranium_ore"
     java = f"src/main/java/{package.replace('.', '/')}"
-    source = ((TEMPLATES / "UraniumOreFeature.java").read_text(encoding="utf-8")
+    source = ((TEMPLATES / f"{FEATURE_CLASS}.java").read_text(encoding="utf-8")
               .replace("@PACKAGE@", package).replace("@RELEASE_394@", str(prepaid).lower())
               .replace("@ENABLED@", enabled).replace("@DENSITY@", density).replace("@CLUSTER@", cluster))
     files = {
@@ -36,7 +37,7 @@ def project(namespace: str, package: str, prepaid: bool) -> dict[str, str]:
         f"{data}/{namespace}/neoforge/biome_modifier/uranium_ore.json": {"type": "neoforge:add_features", "biomes": "#minecraft:is_overworld",
                                                                     "features": ore, "step": "underground_ores"},
     }
-    return {f"{java}/UraniumOreFeature.java": source, **{key: json.dumps(value, indent=2) + "\n" for key, value in files.items()}}
+    return {f"{java}/{FEATURE_CLASS}.java": source, **{key: json.dumps(value, indent=2) + "\n" for key, value in files.items()}}
 
 
 def check_name(prepaid: bool) -> str:

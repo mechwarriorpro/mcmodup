@@ -12,6 +12,7 @@ from .minechem_materials import PRODUCT, TEMPLATES, chemical_id, observations
 JAVA = ("ChemistryFluids", "FluidPresentation", "ChemicalBucketRecipe", "ChemistryRadiation",
         "ShieldedStorage", "ShieldedStorageScreen", "FinalFluidCollector", "TubeWorldUse", "FluidDispensing", "FluidReactions",
         "ChemicalFuels", "ChemicalFlow394")
+GENERATED_CLASSES = (*JAVA, minechem_ore.FEATURE_CLASS)
 RELEASE_394_ONLY = {"TubeWorldUse", "FluidDispensing", "FluidReactions", "ChemicalFuels", "ChemicalFlow394"}
 AUTOMATION_TRACE = "release394-fluid-automation.txt"
 RESOURCES = "src/main/resources"

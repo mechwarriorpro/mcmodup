@@ -30,7 +30,7 @@ class DecomposerMode(StrEnum):
 def machine_classes(mode: DecomposerMode) -> tuple[str, ...]:
     research = () if mode == DecomposerMode.BATCH else ("JournalClone", "MaterialRules", *minechem_effects.JAVA, *minechem_polytool.JAVA)
     synthesis = {DecomposerMode.FINAL: SYNTHESIS_FINAL_CLASSES, DecomposerMode.RELEASE_394: SYNTHESIS_394_CLASSES}.get(mode, ())
-    matter = tuple(name for name in minechem_matter.JAVA if (name != "FinalFluidCollector" or mode == DecomposerMode.FINAL)
+    matter = tuple(name for name in minechem_matter.GENERATED_CLASSES if (name != "FinalFluidCollector" or mode == DecomposerMode.FINAL)
                    and (name not in minechem_matter.RELEASE_394_ONLY or mode == DecomposerMode.RELEASE_394)) if research else ()
     return JAVA_CLASSES + research + synthesis + matter
 
@@ -326,7 +326,7 @@ def machine_project(namespace: str, package: str, entries: list[CatalogEntry], r
                       + ("ChemistryFluids.displayId(waterTank.getFluid().getFluid())" if prepaid else "1"))
              .replace("@RADIATION_MENU@", radiation_menu).replace("@MACHINE_SHIELD@", shield)
              .replace("@FLUID_LABEL@", "ChemistryFluids.displayName(values.get(7))" if prepaid else "Component.empty()")
-             for name in machine_classes(mode) if name not in ("ChemistryRecipes", *SYNTHESIS_394_CLASSES, *SYNTHESIS_FINAL_CLASSES, *minechem_polytool.JAVA, *minechem_matter.JAVA)}
+             for name in machine_classes(mode) if name not in ("ChemistryRecipes", *SYNTHESIS_394_CLASSES, *SYNTHESIS_FINAL_CLASSES, *minechem_polytool.JAVA, *minechem_matter.GENERATED_CLASSES)}
     files[f"{java}/ChemistryRecipes.java"] = _java_recipes(package, namespace, entries, recipes, mode)
     if clone_journal:
         ids = minechem_final_synthesis.chemical_ids(namespace, entries)

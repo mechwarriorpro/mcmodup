@@ -18,7 +18,7 @@ from mcmodup.classfiles import read_class
 from mcmodup.convert import _project_files, _recipe_files, convert_catalog
 from mcmodup.inputs import InputError
 from mcmodup.minechem_final_synthesis import observations
-from mcmodup.machines import FINAL_LEGACY_SHA256, JAVA_CLASSES, DecomposerMode, machine_recipes, release394_trace
+from mcmodup.machines import FINAL_LEGACY_SHA256, JAVA_CLASSES, DecomposerMode, machine_classes, machine_recipes, release394_trace
 from mcmodup.pack import open_pack
 from neoforge_smoke import check_recipes_in_game
 from test_cli import PNG, ROOT, run_cli
@@ -216,6 +216,8 @@ class ConvertTests(unittest.TestCase):
         with self.assertRaisesRegex(InputError, "Could not map original Minechem chemical metadata e26"):
             _project_files(profile, [row for row in entries if row.path != "element_fe"], {"test.png": PNG}, RELEASE_394_SHA256, {}, [])
         package = "src/main/java/mcmodup/generated/minechem_chemistry_394"
+        self.assertEqual({Path(name).stem for name in files if name.startswith(package + "/") and name.endswith(".java")},
+                         {"CatalogPort", *machine_classes(DecomposerMode.RELEASE_394)})
         self.assertIn("PREPAID_DECOMPOSER = true;", files[f"{package}/ChemistryMachines.java"])
         self.assertIn("ChemistryResearch.register", files[f"{package}/CatalogPort.java"])
         self.assertIn(f"{package}/ResearchScreens.java", files)
@@ -304,6 +306,9 @@ class ConvertTests(unittest.TestCase):
                 entries = [CatalogEntry(("element_" if key[0] == "e" else "molecule_") + key[1:], key, "test.png", (),
                                         {"legacy_metadata": int(key[1:])}) for key in sorted(keys)] if mode == DecomposerMode.FINAL else []
                 files, _ = _project_files(profile, entries, {"test.png": PNG} if entries else {}, checksum, {}, [])
+                java = path.rsplit("/", 1)[0] + "/"
+                self.assertEqual({Path(name).stem for name in files if name.startswith(java) and name.endswith(".java")},
+                                 {"CatalogPort", *machine_classes(mode)})
                 expected = path.replace("ChemistryMachines", "SynthesizerFinal")
                 self.assertEqual(expected in files, mode == DecomposerMode.FINAL)
                 self.assertIn(f"ORIGINAL_DECOMPOSER = {enabled};", files[path])
