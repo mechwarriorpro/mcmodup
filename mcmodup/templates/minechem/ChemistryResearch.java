@@ -72,6 +72,7 @@ final class ChemistryResearch {
         BLOCKS.register(bus);
         ENTITIES.register(bus);
         MENUS.register(bus);
+@REGISTER_CLONING@
         return List.of(items.registerSimpleBlockItem(MICROSCOPE), journal);
     }
 
@@ -137,7 +138,7 @@ final class ChemistryResearch {
     }
 
     static final class JournalItem extends Item {
-        JournalItem() { super(new Item.Properties().stacksTo(1)); }
+        JournalItem() { super(new Item.Properties().stacksTo(@JOURNAL_LIMIT@)); }
 
         @Override
         public InteractionResultHolder<ItemStack> use(Level level, Player player, InteractionHand hand) {

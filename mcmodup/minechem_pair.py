@@ -25,14 +25,21 @@ STACK = "net/minecraft/item/ItemStack"
 RESOURCE = "src/main/resources/"
 FINAL = PROFILES["minechem-chemistry"]
 RELEASE_394 = PROFILES[RELEASE_394_PROFILE]
-VERSIONS = {FINAL.namespace: "1.3.1-partial", RELEASE_394.namespace: "1.4.0-partial"}
+VERSIONS = {FINAL.namespace: "1.3.2-partial", RELEASE_394.namespace: "1.4.1-partial"}
 FEATURES = {"Buffered iron decomposition and saved remaining output": "savedbufferdrains",
-            "Original decomposer output-slot method": "linkedslotrule"}
+            "Original decomposer output-slot method": "linkedslotrule",
+            "Journal cloning preserves discovery and selection components": "journalcloningpreservescomponents"}
 FEATURES_394 = FEATURES | {"All 198 measured item and molecule decomposition rules": "materialdecompositionmatchestrace",
                            "5,000 mB water tank, shared input priority and buffer save": "watertankroundtripandpriority",
                            "Measured .394 synthesis batches with exact ghost slot counts and extraction cost": "exactsynthesisbatches",
                            "Ghost editing and saved synthesis, no unpaid extraction": "ghosteditingandsavedsynthesis",
                            "Microscope research, journal selection, and saved synthesis template": "discoveredjournalrestoresactivesynthesis"}
+
+
+def journal_clone_checks(package: str, test_namespace: str, namespace: str, name: str = "JournalCloneChecks") -> str:
+    return ((TEMPLATES / "minechem/JournalCloneChecks.java").read_text(encoding="utf-8")
+            .replace("@PACKAGE@", package).replace("@TEST_NAMESPACE@", test_namespace).replace("@NAMESPACE@", namespace)
+            .replace("@CLASS@", name))
 
 
 def release394_checks(package: str, test_namespace: str, entries: list[CatalogEntry]) -> str:
@@ -130,6 +137,7 @@ def _recipe(original: Path, profile: Profile, checksum: str, output: Path) -> di
     tests = f"{java_root}/DecomposerChecks"
     files[f"src/main/java/{tests}.java"] = ((TEMPLATES / "minechem/DecomposerChecks.java").read_text(encoding="utf-8")
         .replace("@NAMESPACE@", namespace).replace("@PREPAID@", str(prepaid).lower()))
+    files[f"src/main/java/{java_root}/JournalCloneChecks.java"] = journal_clone_checks(package, namespace, namespace)
     if prepaid:
         files[f"src/main/java/{java_root}/Release394Checks.java"] = release394_checks(package, namespace, entries)
         files[f"src/main/java/{java_root}/Synthesis394Checks.java"] = synthesis394_checks(package, namespace, entries)
@@ -145,7 +153,7 @@ def _recipe(original: Path, profile: Profile, checksum: str, output: Path) -> di
 tasks.named('compileJava') {{ classpath += files('src/main/resources') }}
 tasks.named('jar') {{
     archiveFileName = '{artifact}'
-    exclude '{tests}.class', '{java_root}/Release394Checks*.class', '{java_root}/Synthesis394Checks*.class', 'data/{namespace}/structure/*.nbt'
+    exclude '{tests}.class', '{java_root}/Release394Checks*.class', '{java_root}/Synthesis394Checks*.class', '{java_root}/JournalCloneChecks*.class', 'data/{namespace}/structure/*.nbt'
 }}
 neoForge.runs.create('gameTestServer') {{
     type = 'gameTestServer'
@@ -172,7 +180,8 @@ neoForge.runs.create('gameTestServer') {{
             "artifact": f"build/libs/{artifact}", "tasks": ["jar", "runGameTestServer"], "game_report": "build/gametest.xml",
             "minimum_tests": len(FEATURES_394 if prepaid else FEATURES), "features": FEATURES_394 if prepaid else FEATURES,
             "status": "preview", "limitations": [profile.not_ported, "Fresh worlds only; no legacy ID/save migration or add-on API.",
-                "Native FE, menus and item components replace legacy power, GUI and stack APIs; no original client comparison."],
+                "Native FE, menus and item components replace legacy power, GUI and stack APIs; no original client comparison.",
+                "Journal cloning is ordered within the trimmed crafting grid; unlike the originals it does not consume extra ingredients."],
             "method_imports": [methods],
             "import_assets": {old: RESOURCE + new for old, new in icons.items()},
             "asset_map": {old: {"path": new, "sha256": hashlib.sha256(textures[old]).hexdigest()} for old, new in icons.items()}}

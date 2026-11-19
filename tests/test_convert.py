@@ -232,6 +232,8 @@ class ConvertTests(unittest.TestCase):
         self.assertEqual(len(synth), 182)
         self.assertNotIn("minechem_chemistry_394:molecule_140", synth)
         self.assertNotIn("minechem_chemistry_394:molecule_143", synth)
+        self.assertEqual(json.loads(files[f"{resources}/recipe/journal_clone.json"]),
+                         {"type": "minechem_chemistry_394:journal_clone", "category": "misc"})
         for block in ("decomposer", "synthesizer", "microscope"):
             recipe = json.loads(files[f"{resources}/recipe/{block}.json"])
             self.assertEqual(recipe["key"]["I"], {"item": "minecraft:copper_ingot"})

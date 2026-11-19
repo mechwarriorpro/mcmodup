@@ -26,7 +26,9 @@ class DecomposerMode(StrEnum):
 
 
 def machine_classes(mode: DecomposerMode) -> tuple[str, ...]:
-    return JAVA_CLASSES + SYNTHESIS_394_CLASSES if mode == DecomposerMode.RELEASE_394 else JAVA_CLASSES
+    research = () if mode == DecomposerMode.BATCH else ("JournalClone",)
+    synthesis = SYNTHESIS_394_CLASSES if mode == DecomposerMode.RELEASE_394 else ()
+    return JAVA_CLASSES + research + synthesis
 
 
 @dataclass(frozen=True)
@@ -253,6 +255,7 @@ def machine_project(namespace: str, package: str, entries: list[CatalogEntry], r
     assets = f"{source}/assets/{namespace}"
     data = f"{source}/data"
     prepaid = mode == DecomposerMode.RELEASE_394
+    clone_journal = mode != DecomposerMode.BATCH
     if linked_decomposer and mode == DecomposerMode.BATCH:
         raise InputError("Linked decomposer methods require an exact Minechem release")
     bridge = f"mcmodup_kernel.{namespace}.DecomposerAccess"
@@ -261,12 +264,16 @@ def machine_project(namespace: str, package: str, entries: list[CatalogEntry], r
     files = {f"{java}/{name}.java": (TEMPLATES / f"{name}.java").read_text(encoding="utf-8")
              .replace("@PACKAGE@", package).replace("@NAMESPACE@", namespace)
              .replace("@BUFFERED_DECOMPOSER@", str(mode != DecomposerMode.BATCH).lower())
+             .replace("@REGISTER_CLONING@", "        JournalClone.register(bus);" if clone_journal else "")
+             .replace("@JOURNAL_LIMIT@", "64" if clone_journal else "1")
              .replace("@PREPAID_DECOMPOSER@", str(prepaid).lower())
              .replace("@REGISTER_MACHINES@", ("List.of(decomposer, Synthesizer394.register(bus, items))" if prepaid else
                                                "List.of(items.registerSimpleBlockItem(SYNTHESIZER), decomposer)"))
              .replace("@FINAL_CAN_UNJAM@", jam_test).replace("@COMPACT_PREPAID@", compact)
              for name in machine_classes(mode) if name not in ("ChemistryRecipes", *SYNTHESIS_394_CLASSES)}
     files[f"{java}/ChemistryRecipes.java"] = _java_recipes(package, namespace, entries, recipes)
+    if clone_journal:
+        files[f"{data}/{namespace}/recipe/journal_clone.json"] = document({"type": f"{namespace}:journal_clone", "category": "misc"})
     if prepaid:
         for name in SYNTHESIS_394_CLASSES:
             code = (TEMPLATES / f"{name}.java").read_text(encoding="utf-8")

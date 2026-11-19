@@ -54,10 +54,14 @@ public final class Turbine extends BaseEntityBlock {
         bus.addListener((RegisterCapabilitiesEvent event) -> {
             event.registerBlockEntity(Capabilities.FluidHandler.BLOCK, ThermometerMod.ROTOR.get(), (tile, side) ->
                 side == Direction.DOWN ? tile.steam : null);
+            event.registerBlockEntity(SteamFunnel.BOIL_RECEIVER, ThermometerMod.ROTOR.get(), (tile, side) ->
+                side == Direction.DOWN ? tile.steam : null);
             event.registerBlockEntity(Capabilities.EnergyStorage.BLOCK, ThermometerMod.ROTOR.get(), (tile, side) ->
                 side == Direction.UP ? tile.output : null);
         });
     }
+
+    static FluidStack steam(int amount) { return new FluidStack(STEAM.get(), amount); }
 
     private static BaseFlowingFluid.Properties steamProperties() {
         // Gas in transport pipes/tanks only. Do not register a bucket or liquid block.

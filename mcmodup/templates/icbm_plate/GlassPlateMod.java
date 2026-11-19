@@ -17,6 +17,7 @@ public final class GlassPlateMod {
         var items = DeferredRegister.createItems(ID);
         var plate = blocks.register("glass_pressure_plate", GlassPlate::new);
         var item = items.registerSimpleBlockItem(plate);
+        BuildingBlocks.register(bus, blocks, items);
         blocks.register(bus);
         items.register(bus);
         SentryPlatform.register(bus);

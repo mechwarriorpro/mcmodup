@@ -48,13 +48,13 @@ class Profile:
 PROFILES = {profile.name: profile for profile in (
     Profile("minechem-chemistry", "minechem", "1.6.4", (ELEMENT, MOLECULE), "minechem_chemistry", "Minechem Chemistry (Partial Port)",
             "CC-BY-SA-3.0", "Minechem and its contributors — https://github.com/iopleke/Minechem/tree/1.6.4-5.0.5-FINAL",
-            "Most material recipes, original microscope and journal graphics, journal cloning, the rest of the machines "
+            "Most material recipes, original microscope and journal graphics, the rest of the machines "
             "and lens chain, reactors, fluids, radiation effects, legacy power integrations, and old saves."),
     Profile(RELEASE_394_PROFILE, "minechem", "1.7.10", (ELEMENT, MOLECULE), "minechem_chemistry_394",
             "Minechem .394 Chemistry (Partial Port)", "Don't Be a Jerk (DBaJ) non-commercial license",
             "Minechem and its contributors — https://github.com/iopleke/Minechem/tree/1.7.10-5.0.5.394",
             "Unmeasured materials, random and recursive decomposition, fluids other than plain water, original menus and models, "
-            "radiation, unmeasured synthesis and the nondeterministic m140/m143 ghost collision, journal cloning and automation, "
+            "radiation, unmeasured synthesis and the nondeterministic m140/m143 ghost collision, journal automation, "
             "the original lens chain, other machines, legacy integrations, configuration and old saves.", RELEASE_394_SHA256),
     Profile("thaumcraft-aspects", "thaumcraft", "1.7.10", (ASPECT,), "thaumcraft_aspects", "Thaumcraft Aspects (Partial Port)",
             "Thaumcraft custom license — private use only unless authorized", "Thaumcraft by Azanor — https://www.curseforge.com/minecraft/mc-mods/thaumcraft",

@@ -37,6 +37,11 @@ public final class ThermometerMod {
         () -> new Turbine(BlockBehaviour.Properties.of().strength(3.5F).requiresCorrectToolForDrops()));
     static final DeferredHolder<BlockEntityType<?>, BlockEntityType<Turbine.Rotor>> ROTOR = ENTITIES.register("steam_turbine",
         () -> BlockEntityType.Builder.of(Turbine.Rotor::new, TURBINE.get()).build(null));
+    private static final DeferredBlock<SteamFunnel> FUNNEL = BLOCKS.register("steam_funnel",
+        () -> new SteamFunnel(BlockBehaviour.Properties.of().strength(0.6F).requiresCorrectToolForDrops()));
+    static final DeferredHolder<BlockEntityType<?>, BlockEntityType<SteamFunnel.Collector>> COLLECTOR = ENTITIES.register("steam_funnel",
+        () -> BlockEntityType.Builder.of(SteamFunnel.Collector::new, FUNNEL.get()).build(null));
+    private static final DeferredItem<BlockItem> FUNNEL_ITEM = ITEMS.registerSimpleBlockItem(FUNNEL);
     private static final DeferredItem<BlockItem> TURBINE_ITEM = ITEMS.registerSimpleBlockItem(TURBINE);
     static final DeferredItem<TrackingItem> ITEM = ITEMS.register("thermometer", TrackingItem::new);
 
@@ -46,9 +51,13 @@ public final class ThermometerMod {
         ENTITIES.register(bus);
         HeatGrid.register();
         Turbine.register(bus);
+        SteamFunnel.register(bus);
         bus.addListener((BuildCreativeModeTabContentsEvent event) -> {
             if (event.getTabKey() == CreativeModeTabs.REDSTONE_BLOCKS) event.accept(ITEM);
-            if (event.getTabKey() == CreativeModeTabs.FUNCTIONAL_BLOCKS) event.accept(TURBINE_ITEM);
+            if (event.getTabKey() == CreativeModeTabs.FUNCTIONAL_BLOCKS) {
+                event.accept(TURBINE_ITEM);
+                event.accept(FUNNEL_ITEM);
+            }
         });
     }
 

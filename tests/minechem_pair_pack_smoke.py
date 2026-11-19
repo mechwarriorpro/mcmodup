@@ -18,7 +18,7 @@ from mcmodup.icbm_plate import ARCHIVE as PLATE, prepare as prepare_plate
 from mcmodup.method_ports import PROVENANCE
 from mcmodup.mimicry_catalyst import ARCHIVE as CATALYST, LEGACY_TEXTURE as CATALYST_ICON, MOD_ID as CATALYST_ID
 from mcmodup.mimicry_catalyst import TEXTURE as PORTED_ICON, prepare as prepare_mimicry
-from mcmodup.minechem_pair import FINAL, RELEASE_394, VERSIONS
+from mcmodup.minechem_pair import FEATURES, FEATURES_394, FINAL, RELEASE_394, VERSIONS
 from mcmodup.native_pack import REPORT_NAME
 from mcmodup.runtime import file_digest
 from mixed_legacy_pack_smoke import ORIGINALS, PACK_MODS, fingerprints, note, summary
@@ -91,7 +91,7 @@ def check(root: Path) -> None:
     assert set((out / "mods").iterdir()) == {*artifacts, *controls, plate, sensor, catalyst, rocks}
     for split_row, path, label, method in zip(split["archives"], artifacts, labels, ("canUnjam()Z", "pushQueue()V")):
         evidence = report["native_builds"][path.name]
-        tests_passed = 7 if method == "pushQueue()V" else 2
+        tests_passed = len(FEATURES_394 if method == "pushQueue()V" else FEATURES)
         assert evidence["status"] == "preview" and evidence["gametests"]["passed"] == tests_passed, evidence
         assert evidence["original_sha256"] == split_row["sha256"] == before[source / label], split_row
         assert evidence["legacy_ids"] == {"minechem": split_row["native_id"]}, evidence
@@ -128,8 +128,9 @@ def check(root: Path) -> None:
         assert not any(name.startswith(("Reika/", "assets/geostrata/")) or name.endswith(".jar") or "GeoRockChecks" in name or name.endswith("vein_room.nbt")
                        for name in jar.namelist())
     boot(out, report["instance_runtime"]["launch"]["unix"])
-    check_recipes_in_game(root / "preview-staged-smoke", [artifacts[0]], minechem_394=artifacts[1],
+    staged_count = check_recipes_in_game(root / "preview-staged-smoke", [artifacts[0]], minechem_394=artifacts[1],
                           multipart_control=controls, icbm_plate=plate, atomic_thermometer=sensor, mimicry=catalyst, geostrata=rocks)
+    source_count = sum(evidence["gametests"]["passed"] for evidence in report["native_builds"].values())
     assert fingerprints(full_source, target) == all_before and fingerprints(source) == before
     # Opting in must not silently stage previews if the rest of the full selection is blocked.
     delta = root / "mixed-with-linked-previews-must-not-stage"
@@ -141,12 +142,12 @@ def check(root: Path) -> None:
     assert code == 1 and not report["ready"] and not delta.exists() and not report["native_builds"], report["problems"]
     assert not report["legacy_selection_conflicts"] and report["legacy_identity_splits"], report["legacy_selection_conflicts"]
     note("Combined native previews booted", "Both Minechem previews, ICBM glass plate and platform, the Atomic Science thermal machines, GeoStrata rocks "
-         "and the Mimicry catalyst reached dedicated server ready with unchanged Multipart and CCL. Twenty-two source and 29 staged-JAR tests passed. "
+         f"and the Mimicry catalyst reached dedicated server ready with unchanged Multipart and CCL. {source_count} source and {staged_count} staged-JAR tests passed. "
          "All eight still block without writing a pack.")
     summary(["## Combined native previews", "",
              "Six previews built in one updater invocation and staged with unchanged CB Multipart and CodeChickenLib: both Minechem releases, "
-             "ICBM glass plate and platform, Atomic Science thermal machines, GeoStrata rocks, and Mimicry catalyst. Twenty-two source GameTests, stock dedicated boot, "
-             "and 29 staged-JAR GameTests (including turbine → platform → receiver FE) passed. These are bounded previews, not full ports. The all-eight selection staged nothing.", ""])
+             f"ICBM utilities, Atomic Science thermal machines, GeoStrata rocks, and Mimicry catalyst. {source_count} source GameTests, stock dedicated boot, "
+             f"and {staged_count} staged-JAR GameTests (including turbine → platform → receiver FE) passed. These are bounded previews, not full ports. The all-eight selection staged nothing.", ""])
 
 
 if __name__ == "__main__":

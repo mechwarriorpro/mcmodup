@@ -15,7 +15,7 @@ from .source_ports import digest
 
 LEGACY_SHA256 = "34a0efec6a1d078d2d0f1b7681c1040d4d68cb096330f4db79bf569a00f75130"
 MOD_ID = "icbm_glass_plate"
-VERSION = "1.4.1.344-preview.3"
+VERSION = "1.4.1.344-preview.4"
 ARCHIVE = f"{MOD_ID}-{VERSION}.jar"
 PACKAGE = "mcmodup.icbmplate"
 KERNEL = f"mcmodup_kernel/{MOD_ID}"
@@ -31,7 +31,21 @@ PLATFORM_TEXTURES = {
     f"assets/icbm/textures/blocks/turretPlatform_{side}.png": f"assets/{MOD_ID}/textures/block/sentry_platform_{side}.png"
     for side in ("top", "side", "bottom")
 }
-TEXTURES = {TEXTURE: f"assets/{MOD_ID}/textures/block/glass_pressure_plate.png", **PLATFORM_TEXTURES}
+BUILDING = (
+    ("concrete", "concrete", ("SGS", "GWG", "SGS"), {"S": "minecraft:sand", "G": "minecraft:gravel", "W": "minecraft:water_bucket"}),
+    ("compact_concrete", "concreteCompact", ("COC", "OCO", "COC"), {"C": f"{MOD_ID}:concrete", "O": "minecraft:obsidian"}),
+    ("reinforced_concrete", "concreteReinforced", ("COC", "OCO", "COC"), {"C": f"{MOD_ID}:compact_concrete", "O": "minecraft:iron_ingot"}),
+    ("reinforced_glass", "glassReinforced", ("IGI", "GIG", "IGI"), {"I": "minecraft:iron_ingot", "G": "minecraft:glass"}),
+)
+TEXTURES = {TEXTURE: f"assets/{MOD_ID}/textures/block/glass_pressure_plate.png", **PLATFORM_TEXTURES,
+            **{f"assets/icbm/textures/blocks/{old}.png": f"assets/{MOD_ID}/textures/block/{name}.png" for name, old, _, _ in BUILDING}}
+FEATURES = {
+    "Glass plate recipe and break behavior": "craftinganddrop",
+    "Original pressure-plate redstone updates and release timing": "contactandrelease",
+    "Passive platform forwarding, direction order, simulation and no extraction": "passivesentrytransfer",
+    "Platform GUI storage, sided extraction and save/load": "storedsentryinventory",
+    "Four building blocks with exact recipes, drops and physical properties": "measuredbuildingblocks",
+}
 
 
 def method_group() -> dict:
@@ -79,6 +93,28 @@ def platform_checks(package: str, namespace: str) -> str:
             .replace("@PACKAGE@", package).replace("@TEST_NAMESPACE@", namespace))
 
 
+def building_checks(package: str, namespace: str) -> str:
+    return ((TEMPLATES / "icbm_plate/BuildingChecks.java").read_text(encoding="utf-8")
+            .replace("@PACKAGE@", package).replace("@TEST_NAMESPACE@", namespace))
+
+
+def _building_resources(assets: str, data: str) -> dict[str, str]:
+    files = {}
+    for name, _, pattern, keys in BUILDING:
+        model, item = f"{MOD_ID}:block/{name}", f"{MOD_ID}:{name}"
+        files[f"{assets}/blockstates/{name}.json"] = _json({"variants": {"": {"model": model}}})
+        cube = {"parent": "minecraft:block/cube_all", "textures": {"all": model}}
+        if name == "reinforced_glass":
+            cube["render_type"] = "minecraft:translucent"
+        files[f"{assets}/models/block/{name}.json"] = _json(cube)
+        files[f"{assets}/models/item/{name}.json"] = _json({"parent": model})
+        files[f"{data}/recipe/{name}.json"] = _json({"type": "minecraft:crafting_shaped", "category": "building",
+            "pattern": pattern, "key": {symbol: {"item": material} for symbol, material in keys.items()}, "result": {"id": item, "count": 8}})
+        files[f"{data}/loot_table/blocks/{name}.json"] = _json({"type": "minecraft:block", "pools": [{"rolls": 1,
+            "conditions": [{"condition": "minecraft:survives_explosion"}], "entries": [{"type": "minecraft:item", "name": item}]}]})
+    return files
+
+
 def _project(workspace: Path) -> None:
     item, platform = "glass_pressure_plate", "sentry_platform"
     assets, java = f"src/main/resources/assets/{MOD_ID}", "src/main/java"
@@ -88,8 +124,8 @@ def _project(workspace: Path) -> None:
     models = {f"{assets}/models/block/{name}.json": _json({"parent": f"minecraft:block/{parent}", "render_type": "minecraft:translucent",
                                                         "textures": {"texture": prefix}})
               for name, parent in ((item, "pressure_plate_up"), (item + "_down", "pressure_plate_down"))}
-    title = "ICBM Glass Plate and Sentry Platform (Preview)"
-    desc = "Glass plate and passive Sentry platform from Voltz ICBM 1.4.1.344. Not a replacement for ICBM or its add-ons."
+    title = "ICBM Utilities and Building Blocks (Preview)"
+    desc = "Building blocks, glass plate and passive Sentry platform from Voltz ICBM 1.4.1.344. Not a replacement for ICBM or its add-ons."
     meta = _metadata(ModMetadata("", description=desc), MOD_ID, title, VERSION, "Original ICBM license applies (local conversion)")
     write_workspace(workspace, {
         "settings.gradle": f"rootProject.name = '{MOD_ID}'\n",
@@ -112,7 +148,9 @@ neoForge.runs.create('gameTestServer') {{
         "src/main/resources/META-INF/neoforge.mods.toml": meta.replace(f"[{NEOFORGE_VERSION},21.2)", f"[{NEOFORGE_VERSION}]"),
         **{f"{java}/{KERNEL}/{name}.java": (TEMPLATES / f"icbm_plate/{name}.java").read_bytes()
            for name in ("GlassPlate", "SentryBridge", "SentryMenu", "SentryPlatform", "SentryScreen")},
-        f"{java}/mcmodup/icbmplate/GlassPlateMod.java": (TEMPLATES / "icbm_plate/GlassPlateMod.java").read_bytes(),
+        **{f"{java}/mcmodup/icbmplate/{name}.java": (TEMPLATES / f"icbm_plate/{name}.java").read_bytes()
+           for name in ("GlassPlateMod", "BuildingBlocks")},
+        f"{java}/mcmodup/icbmplate/BuildingChecks.java": building_checks(PACKAGE, MOD_ID),
         f"{java}/mcmodup/icbmplate/PlateChecks.java": checks(MOD_ID),
         f"{java}/mcmodup/icbmplate/PlatformChecks.java": platform_checks(PACKAGE, MOD_ID),
         f"src/main/resources/data/{MOD_ID}/structure/empty.nbt": empty_test_structure(4),
@@ -121,11 +159,12 @@ neoForge.runs.create('gameTestServer') {{
             {"rolls": 1, "entries": [{"type": "minecraft:item", "name": f"{MOD_ID}:{platform}",
                 "conditions": [{"condition": "minecraft:survives_explosion"}]}]}],
         }),
-        "src/main/resources/data/minecraft/tags/block/mineable/pickaxe.json": _json({"replace": False, "values": [f"{MOD_ID}:{platform}"]}),
+        "src/main/resources/data/minecraft/tags/block/mineable/pickaxe.json": _json({"replace": False, "values": [f"{MOD_ID}:{platform}", *(f"{MOD_ID}:{name}" for name, _, _, _ in BUILDING if name != "reinforced_glass")]}),
         f"src/main/resources/data/{MOD_ID}/recipe/{item}.json": _json({"type": "minecraft:crafting_shaped", "category": "redstone",
                 "pattern": ["##"], "key": {"#": {"item": "minecraft:glass"}}, "result": {"id": f"{MOD_ID}:{item}", "count": 1}}),
         f"{assets}/lang/en_us.json": _json({f"block.{MOD_ID}.{item}": "Glass Pressure Plate",
-                                             f"block.{MOD_ID}.{platform}": "Sentry Platform"}),
+                                             f"block.{MOD_ID}.{platform}": "Sentry Platform",
+                                             **{f"block.{MOD_ID}.{name}": name.replace("_", " ").title() for name, _, _, _ in BUILDING}}),
         f"{assets}/blockstates/{item}.json": _json({"variants": {"powered=false": {"model": prefix},
                                                               "powered=true": {"model": prefix + "_down"}}}),
         f"{assets}/models/item/{item}.json": _json({"parent": prefix}),
@@ -134,6 +173,7 @@ neoForge.runs.create('gameTestServer') {{
             side: f"{MOD_ID}:block/{platform}_{side}" for side in ("top", "side", "bottom")}}),
         f"{assets}/models/item/{platform}.json": _json({"parent": f"{MOD_ID}:block/{platform}"}),
         **models,
+        **_building_resources(assets, f"src/main/resources/data/{MOD_ID}"),
     })
 
 
@@ -158,13 +198,9 @@ def prepare(output: Path) -> Path:
         recipe = {"legacy_sha256": LEGACY_SHA256, "source_zip": source.name, "source_sha256": digest(source),
                   "ids": {MOD_ID: VERSION}, "legacy_ids": {"icbm": MOD_ID, "icbm|explosion": None, "icbm|sentry": None},
                   "neoforge": f"[{NEOFORGE_VERSION}]", "artifact": f"build/libs/{ARCHIVE}", "tasks": ["jar", "runGameTestServer"],
-                  "game_report": "build/gametest.xml", "minimum_tests": 4, "features": {
-                      "Glass plate recipe and break behavior": "craftinganddrop",
-                      "Original pressure-plate redstone updates and release timing": "contactandrelease",
-                      "Passive platform forwarding, direction order, simulation and no extraction": "passivesentrytransfer",
-                      "Platform GUI storage, sided extraction and save/load": "storedsentryinventory"},
+                  "game_report": "build/gametest.xml", "minimum_tests": len(FEATURES), "features": FEATURES,
                   "status": "preview", "limitations": [
-                      "Only the Core glass plate and passive Sentry platform are implemented. No turret behaviors, ammunition or structures, Explosion or other Core blocks.",
+                      "Only Core building blocks, the glass plate and the passive Sentry platform are implemented. No radiation shielding, other Core features, Explosion or active Sentry.",
                       "The creative-only platform forwards FE only to native receivers advertising the dedicated Sentry capability. The legacy crafting prerequisites and receivers are not included.",
                       "Separate registry IDs for fresh worlds. Old saves and add-ons expecting ICBM are not supported.",
                       "No graphical client comparison; modern material, collision and redstone APIs are used at the boundary."],

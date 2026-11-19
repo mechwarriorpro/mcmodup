@@ -9,7 +9,7 @@ import zipfile
 from mcmodup.audit import ModMetadata
 from mcmodup.catalogs import RELEASE_394_SHA256, CatalogEntry
 from mcmodup.machines import FINAL_LEGACY_SHA256, DecomposerMode, machine_recipes
-from mcmodup.minechem_pair import RELEASE_394, release394_checks, synthesis394_checks
+from mcmodup.minechem_pair import FINAL, RELEASE_394, journal_clone_checks, release394_checks, synthesis394_checks
 from mcmodup.port import _build_gradle, _metadata, empty_test_structure, write_workspace
 
 
@@ -38,13 +38,16 @@ def check_minechem_artifacts(final: Path, release394: Path) -> list[CatalogEntry
         assert not (resources(left) & resources(right)), "Minechem releases share bytecode or named assets"
         assert not any(name.endswith(".jar") for archive in (left, right) for name in archive.namelist())
         assert not any("Release394Checks" in name or "Synthesis394Checks" in name for name in right.namelist()), "Production .394 JAR contains test code"
+        for jar, profile in ((left, FINAL), (right, RELEASE_394)):
+            assert not any("JournalCloneChecks" in name for name in jar.namelist())
+            assert f"data/{profile.namespace}/recipe/journal_clone.json" in jar.namelist()
         return entries
 
 
 def check_recipes_in_game(project: Path, outputs: list[Path], *, minechem_394: Path | None = None,
                           multipart_control: list[Path] | None = None, icbm_plate: Path | None = None,
                           atomic_thermometer: Path | None = None, mimicry: Path | None = None,
-                          geostrata: Path | None = None) -> None:
+                          geostrata: Path | None = None) -> int:
     namespace = "mcmodup_smoke"
     assert len(outputs) in (1, 2), "Supply the FINAL-based (or fixture) JAR with an optional aspect JAR"
     include_aspects = len(outputs) == 2
@@ -78,12 +81,16 @@ neoForge.runs.create('gameTestServer') {{
     if include_aspects:
         tests["src/main/java/mcmodup/test/CatalogAspectSmoke.java"] = (FIXTURES / "CatalogAspectSmoke.java").read_bytes()
     research_rooms = {}
+    if buffered:
+        tests["src/main/java/mcmodup/test/JournalCloneChecks.java"] = journal_clone_checks("mcmodup.test", namespace, FINAL.namespace)
     if minechem_394:
         assert buffered, "The paired tests require the actual FINAL-based build"
         entries = check_minechem_artifacts(outputs[0], minechem_394)
         tests["src/main/java/mcmodup/test/MinechemPairChecks.java"] = (FIXTURES / "MinechemPairChecks.java").read_bytes()
         tests["src/main/java/mcmodup/test/Release394Checks.java"] = release394_checks("mcmodup.test", namespace, entries)
         tests["src/main/java/mcmodup/test/Synthesis394Checks.java"] = synthesis394_checks("mcmodup.test", namespace, entries)
+        tests["src/main/java/mcmodup/test/JournalCloneChecks394.java"] = journal_clone_checks(
+            "mcmodup.test", namespace, RELEASE_394.namespace, "JournalCloneChecks394")
         research_rooms[f"src/main/resources/data/{namespace}/structure/journal_room.nbt"] = empty_test_structure(5)
     def integrate_fixture(filename, code, package, own_namespace):
         # The standalone fixtures normally own independent test mod IDs.
@@ -109,9 +116,10 @@ neoForge.runs.create('gameTestServer') {{
     platform_rooms = {}
     if icbm_plate:
         assert controls, "Plate integration checks require the unchanged native controls"
-        from mcmodup.icbm_plate import checks, platform_checks
+        from mcmodup.icbm_plate import building_checks, checks, platform_checks
 
         tests["src/main/java/mcmodup/test/PlatformChecks.java"] = platform_checks("mcmodup.test", namespace)
+        tests["src/main/java/mcmodup/test/BuildingChecks.java"] = building_checks("mcmodup.test", namespace)
         platform_rooms[f"src/main/resources/data/{namespace}/structure/platform_room.nbt"] = empty_test_structure(5)
 
         integrate_fixture("PlateChecks.java", checks(namespace), "mcmodup.icbmplate", namespace)
@@ -119,9 +127,10 @@ neoForge.runs.create('gameTestServer') {{
                           "mcmodup.plateintegration", "mcmodup_plate_integration")
     thermal_rooms = {}
     if atomic_thermometer:
-        from mcmodup.atomic_thermometer import turbine_checks
+        from mcmodup.atomic_thermometer import steam_checks, turbine_checks
 
         tests["src/main/java/mcmodup/test/TurbineChecks.java"] = turbine_checks("mcmodup.test", namespace)
+        tests["src/main/java/mcmodup/test/SteamChecks.java"] = steam_checks("mcmodup.test", namespace)
         thermal_rooms[f"src/main/resources/data/{namespace}/structure/turbine_room.nbt"] = empty_test_structure(5)
         integrate_fixture("ThermometerMultipartSmoke.java", (FIXTURES / "ThermometerMultipartSmoke.java").read_text(encoding="utf-8"),
                           "mcmodup.atomicintegration", "mcmodup_atomic_integration")
@@ -156,15 +165,17 @@ neoForge.runs.create('gameTestServer') {{
     })
     run = subprocess.run(["./gradlew", "--no-daemon", "--console=plain", "runGameTestServer"],
                          cwd=project, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=420)
-    count = (7 + include_aspects + (7 if minechem_394 else 0) + bool(controls)
-             + (5 if icbm_plate else 0) + (3 if atomic_thermometer else 0) + cross_voltz
+    count = (7 + buffered + include_aspects + (8 if minechem_394 else 0) + bool(controls)
+             + (6 if icbm_plate else 0) + (5 if atomic_thermometer else 0) + cross_voltz
              + (2 if mimicry else 0) + (3 if geostrata else 0))
     if run.returncode or f"All {count} required tests passed" not in run.stdout:
-        raise AssertionError(run.stdout[-8000:])
+        issues = [line for line in run.stdout.splitlines() if any(word in line for word in ("error:", " failed!", "Exception:"))]
+        raise AssertionError("\n".join(issues[:12]) + "\n" + run.stdout[-6500:])
     parsing_errors = [line for line in run.stdout.splitlines() if "Parsing error loading recipe" in line
-                      and any(f"{mod}:" in line for mod in ("minechem_chemistry", "minechem_chemistry_394", "geostrata_rocks", "thaumcraft_aspects"))]
+                      and any(f"{mod}:" in line for mod in ("minechem_chemistry", "minechem_chemistry_394", "geostrata_rocks", "thaumcraft_aspects", "atomic_thermometer", "icbm_glass_plate"))]
     if parsing_errors:
         raise AssertionError("Generated recipe errors:\n" + "\n".join(parsing_errors[:5]))
+    return count
 
 
 if __name__ == "__main__":

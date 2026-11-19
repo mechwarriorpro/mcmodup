@@ -168,8 +168,8 @@ def _project_files(profile: Profile, entries: list[CatalogEntry], textures: dict
     namespace = profile.namespace
     package = f"mcmodup.generated.{namespace}"
     mode = _decomposer_mode(profile, digest)
-    version = project_version or {DecomposerMode.FINAL: "1.3.0-partial", DecomposerMode.BATCH: "1.2.0-partial",
-                                  DecomposerMode.RELEASE_394: "1.3.0-partial"}.get(mode, "1.0.0-partial")
+    version = project_version or {DecomposerMode.FINAL: "1.3.1-partial", DecomposerMode.BATCH: "1.2.0-partial",
+                                  DecomposerMode.RELEASE_394: "1.3.1-partial"}.get(mode, "1.0.0-partial")
     machine_rules = machine_recipes(namespace, entries, mode=mode) if mode else []
     if mode:
         recipe_files, extra_locales = machine_project(namespace, package, entries, machine_rules, mode=mode,
@@ -195,6 +195,8 @@ def _project_files(profile: Profile, entries: list[CatalogEntry], textures: dict
         extra_locales = {}
         count = len(recipe_files)
         features = "Recovered aspect items and crafting-table combinations. This is not the original research system."
+    if mode in (DecomposerMode.FINAL, DecomposerMode.RELEASE_394):
+        features += " Journal cloning preserves item components in an ordered two-item craft."
     description = f"Partial mod with new IDs. {features} Not ported: {profile.not_ported}"
     code_notice = ("Includes only selected, rewritten legacy method bodies; no original classes or legacy dependencies are bundled."
                    if linked_decomposer else "This JAR contains no legacy JVM classes or dependencies.")

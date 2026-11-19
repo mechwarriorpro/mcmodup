@@ -18,7 +18,7 @@ from voltz_legacy import FIXTURES, FORGE_SHA256, VOLTZ_SHA256, probe, unpack
 
 from mcmodup.audit import ModMetadata
 from mcmodup.classfiles import read_class
-from mcmodup.icbm_plate import ARCHIVE, KERNEL, LEGACY_SHA256, MOD_ID, PLATFORM, TEXTURES, checks, platform_checks
+from mcmodup.icbm_plate import ARCHIVE, FEATURES, KERNEL, LEGACY_SHA256, MOD_ID, PLATFORM, TEXTURES, building_checks, checks, platform_checks
 from mcmodup.method_ports import PROVENANCE
 from mcmodup.native_pack import REPORT_NAME
 from mcmodup.port import _build_gradle, _metadata, empty_test_structure, write_workspace
@@ -70,13 +70,13 @@ def modern(root: Path) -> None:
     assert fingerprints(source, target) == before
     boot(out, report["instance_runtime"]["launch"]["unix"])
     integration(root / "integration", out)
-    note("Staged executable preview passed", "Four source GameTests and five staged-JAR GameTests passed. The exact glass plate and passive "
+    note("Staged executable preview passed", "Five source GameTests and six staged-JAR GameTests passed. Four Core building blocks matched recipes, drops and properties. The exact glass plate and passive "
          "Sentry platform methods ran on NeoForge. Native CB Multipart read 0 → 15 → 0. The platform forwarded 5 then 12 FE with no retained "
          "charge and restored 20-slot storage. Both native dependencies were unchanged. Not full ICBM.")
 
 
 def check_artifact(path: Path, original_path: Path, built: dict) -> None:
-    assert built["status"] == "preview" and built["gametests"]["passed"] == 4, built
+    assert built["status"] == "preview" and built["gametests"]["passed"] == len(FEATURES), built
     assert built["original_sha256"] == LEGACY_SHA256 == file_digest(original_path), built
     assert built["jar_sha256"] == file_digest(path)
     plate, sentry = built["method_imports"]
@@ -91,7 +91,7 @@ def check_artifact(path: Path, original_path: Path, built: dict) -> None:
         assert proof["imports"] == built["method_imports"] and proof["preview"] and not proof["parity_verified"]
         assert all(artifact.read(new) == original.read(old) for old, new in TEXTURES.items())
         assert not any(name.startswith(("icbm/", "calclavia/", "universalelectricity/")) or
-                       name.endswith((".jar", "platform_room.nbt")) or "PlatformChecks" in name or "PlateChecks" in name
+                       name.endswith((".jar", "platform_room.nbt")) or "PlatformChecks" in name or "PlateChecks" in name or "BuildingChecks" in name
                        for name in artifact.namelist())
         for name, methods in (("PlateLogic", {"update", "delay"}), ("SentryPlatformLogic", {"forward", "extract"})):
             info = read_class(artifact.read(f"{KERNEL}/{name}.class"))
@@ -110,6 +110,7 @@ def integration(project: Path, staged: Path) -> None:
         f"src/main/resources/data/{check}/structure/platform_room.nbt": empty_test_structure(5),
         f"{java}/PlateChecks.java": checks(check).replace("package mcmodup.icbmplate;", f"package {package};"),
         f"{java}/PlatformChecks.java": platform_checks(package, check),
+        f"{java}/BuildingChecks.java": building_checks(package, check),
         f"{java}/PlateMultipartSmoke.java": (FIXTURES / "PlateMultipartSmoke.java").read_bytes(),
         "build.gradle": _build_gradle(check, package, "1.0.0") + f"""
 dependencies {{ compileOnly fileTree(dir: 'run/mods', include: ['*.jar']) }}
@@ -122,7 +123,7 @@ neoForge.runs.create('gameTestServer') {{
     })
     shutil.copytree(staged / "mods", project / "run/mods")
     result = run_gradle(project, "runGameTestServer")
-    assert "All 5 required tests passed" in result, result[-4000:]
+    assert "All 6 required tests passed" in result, result[-4000:]
 
 
 if __name__ == "__main__":

@@ -8,6 +8,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.Blocks;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.level.LevelEvent;
 import net.neoforged.neoforge.event.tick.LevelTickEvent;
@@ -79,8 +80,14 @@ public final class HeatGrid {
                 cells.remove(pos);
                 continue;
             }
-            float delta = ambient(level, pos) - temperature(level, pos);
-            float loss = level.getBlockState(pos).isAir() ? AIR_LOSS : SOLID_LOSS;
+            float current = temperature(level, pos);
+            float delta = ambient(level, pos) - current;
+            var state = level.getBlockState(pos);
+            float loss = state.isAir() ? AIR_LOSS : SOLID_LOSS;
+            if (state.is(Blocks.WATER) && current >= SteamFunnel.BOILING_POINT) {
+                SteamFunnel.boil(level, pos, current, state.getFluidState().isSource());
+                loss = 0.2F;
+            }
             add(level, pos, Math.copySign(Math.min(Math.abs(delta), loss), delta));
             if (!cells.containsKey(pos)) continue;
             for (var side : Direction.values()) {

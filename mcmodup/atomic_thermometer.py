@@ -15,7 +15,7 @@ from .source_ports import digest
 
 LEGACY_SHA256 = "80cf5bd9d485377ecde3822154a5db47804fab3e8f78c388cfcf529239655938"
 MOD_ID = "atomic_thermometer"
-VERSION = "1.2.0-preview.2"
+VERSION = "1.2.0-preview.3"
 ARCHIVE = f"{MOD_ID}-{VERSION}.jar"
 PACKAGE = "mcmodup_kernel.atomic_thermometer"
 KERNEL = PACKAGE.replace(".", "/")
@@ -25,6 +25,17 @@ VECTOR = "universalelectricity/api/vector/Vector3"
 TEXTURES = {
     f"assets/atomicscience/textures/{kind}s/{name}.png": f"assets/{MOD_ID}/textures/{kind}/{name}.png"
     for kind, name in (("block", "thermometer"), ("item", "thermometer"), ("block", "machine"), ("block", "steam"))
+}
+
+TEXTURES.update({f"assets/atomicscience/textures/blocks/{old}.png": f"assets/{MOD_ID}/textures/block/{new}.png"
+                 for old, new in (("funnel", "steam_funnel"), ("funnel_top", "steam_funnel_top"))})
+FEATURES = {
+    "Original threshold adjustment and wrapping rules": "thresholdandsettings",
+    "Ten-tick thermal samples, tracked coordinates and redstone": "trackedheatandsignal",
+    "Measured single-source heat transfer through stone and air": "measuredheatspread",
+    "One-cell steam consumption, spin, stored FE and sided transfer": "standalonesteamturbine",
+    "Heated water boils and supplies turbine via a steam funnel": "heatedwaterfeedsturbine",
+    "Funnel recipe, sided gas tank and native persistence": "funnelcraftsidesandsave",
 }
 
 
@@ -63,13 +74,20 @@ def turbine_checks(package: str, namespace: str) -> str:
             .replace("@PACKAGE@", package).replace("@NAMESPACE@", namespace))
 
 
+def steam_checks(package: str, namespace: str) -> str:
+    return ((TEMPLATES / "atomic_thermometer/SteamChecks.java").read_text(encoding="utf-8")
+            .replace("@PACKAGE@", package).replace("@NAMESPACE@", namespace))
+
+
 def _project(workspace: Path) -> None:
     templates = TEMPLATES / "atomic_thermometer"
     name = "Atomic Science Thermal Machines (Preview)"
-    description = "Voltz 1.2.0 thermometer and standalone turbine with a limited, native heat grid. Not full Atomic Science."
+    description = "Voltz 1.2.0 thermometer, steam funnel and standalone turbine with a limited, native heat grid. Not full Atomic Science."
     prefix, rotor = f"{MOD_ID}:block/thermometer", f"{MOD_ID}:block/steam_turbine"
+    funnel = f"{MOD_ID}:block/steam_funnel"
     java, resources = f"src/main/java/{KERNEL}", "src/main/resources"
     assets = f"{resources}/assets/{MOD_ID}"
+    data = f"{resources}/data/{MOD_ID}"
     meta = _metadata(ModMetadata("", description=description), MOD_ID, name, VERSION, "Original Atomic Science license applies (local conversion)")
     write_workspace(workspace, {
         "settings.gradle": f"rootProject.name = '{MOD_ID}'\n",
@@ -78,7 +96,7 @@ def _project(workspace: Path) -> None:
 tasks.named('compileJava') {{ classpath += files('src/main/resources') }}
 tasks.named('jar') {{
     archiveFileName = '{ARCHIVE}'
-    exclude '{KERNEL}/ThermometerChecks*.class', '{KERNEL}/TurbineChecks*.class', 'data/{MOD_ID}/structure/*.nbt'
+    exclude '{KERNEL}/ThermometerChecks*.class', '{KERNEL}/TurbineChecks*.class', '{KERNEL}/SteamChecks*.class', 'data/{MOD_ID}/structure/*.nbt'
 }}
 neoForge.runs.create('gameTestServer') {{
     type = 'gameTestServer'
@@ -89,13 +107,14 @@ neoForge.runs.create('gameTestServer') {{
 """,
         f"{resources}/META-INF/neoforge.mods.toml": meta.replace(f"[{NEOFORGE_VERSION},21.2)", f"[{NEOFORGE_VERSION}]"),
         **{f"{java}/{name}.java": (templates / f"{name}.java").read_bytes()
-           for name in ("Thermometer", "ThermometerMod", "HeatGrid", "Turbine", "TurbineClient")},
+           for name in ("Thermometer", "ThermometerMod", "HeatGrid", "Turbine", "TurbineClient", "SteamFunnel")},
         f"{java}/ThermometerChecks.java": checks(MOD_ID),
         f"{java}/TurbineChecks.java": turbine_checks(PACKAGE, MOD_ID),
+        f"{java}/SteamChecks.java": steam_checks(PACKAGE, MOD_ID),
         f"{resources}/data/{MOD_ID}/structure/empty.nbt": empty_test_structure(5),
         f"{resources}/data/{MOD_ID}/structure/turbine_room.nbt": empty_test_structure(5),
         f"{resources}/data/c/tags/fluid/steam.json": _json({"replace": False, "values": [f"{MOD_ID}:steam"]}),
-        f"{resources}/data/minecraft/tags/block/mineable/pickaxe.json": _json({"replace": False, "values": [f"{MOD_ID}:steam_turbine"]}),
+        f"{resources}/data/minecraft/tags/block/mineable/pickaxe.json": _json({"replace": False, "values": [f"{MOD_ID}:steam_turbine", f"{MOD_ID}:steam_funnel"]}),
         f"{resources}/data/{MOD_ID}/loot_table/blocks/steam_turbine.json": _json({
             "type": "minecraft:block", "pools": [{"rolls": 1, "conditions": [{"condition": "minecraft:survives_explosion"}],
                 "entries": [{"type": "minecraft:item", "name": f"{MOD_ID}:steam_turbine"}]}],
@@ -103,7 +122,7 @@ neoForge.runs.create('gameTestServer') {{
         f"{assets}/lang/en_us.json": _json({f"block.{MOD_ID}.thermometer": "Thermometer", f"itemGroup.{MOD_ID}": name,
             f"info.{MOD_ID}.status": "Threshold: %s K · Reading: %s K", f"info.{MOD_ID}.tracked": "Tracking %s, %s, %s",
             f"info.{MOD_ID}.untracked": "Not tracking a remote position",
-            f"block.{MOD_ID}.steam_turbine": "Steam Turbine", f"fluid.{MOD_ID}.steam": "Steam",
+            f"block.{MOD_ID}.steam_turbine": "Steam Turbine", f"fluid.{MOD_ID}.steam": "Steam", f"block.{MOD_ID}.steam_funnel": "Steam Funnel",
             f"info.{MOD_ID}.turbine": "Steam: %s mB · Stored: %s FE · Rotor: %s rad/s"}),
         f"{assets}/blockstates/thermometer.json": _json({"variants": {"": {"model": prefix}}}),
         f"{assets}/models/block/thermometer.json": _json({"parent": "minecraft:block/cube_all", "textures": {"all": prefix}}),
@@ -112,6 +131,16 @@ neoForge.runs.create('gameTestServer') {{
         f"{assets}/models/block/steam_turbine.json": _json({"parent": "minecraft:block/cube_bottom_top", "textures": {
             "side": f"{MOD_ID}:block/machine", "bottom": "minecraft:block/iron_block", "top": "minecraft:block/cut_copper"}}),
         f"{assets}/models/item/steam_turbine.json": _json({"parent": rotor}),
+        f"{assets}/blockstates/steam_funnel.json": _json({"variants": {"": {"model": funnel}}}),
+        f"{assets}/models/block/steam_funnel.json": _json({"parent": "minecraft:block/cube_column", "textures": {
+            "side": funnel, "end": funnel + "_top"}}),
+        f"{assets}/models/item/steam_funnel.json": _json({"parent": funnel}),
+        f"{data}/recipe/steam_funnel.json": _json({"type": "minecraft:crafting_shaped", "category": "misc",
+            "pattern": [" I ", "I I", "I I"], "key": {"I": {"tag": "c:ingots/iron"}},
+            "result": {"id": f"{MOD_ID}:steam_funnel", "count": 2}}),
+        f"{data}/loot_table/blocks/steam_funnel.json": _json({"type": "minecraft:block", "pools": [{"rolls": 1,
+            "conditions": [{"condition": "minecraft:survives_explosion"}],
+            "entries": [{"type": "minecraft:item", "name": f"{MOD_ID}:steam_funnel"}]}]}),
     })
 
 
@@ -135,15 +164,11 @@ def prepare(output: Path) -> Path:
         recipe = {"legacy_sha256": LEGACY_SHA256, "source_zip": source.name, "source_sha256": digest(source),
                   "ids": {MOD_ID: VERSION}, "legacy_ids": {"atomicscience": MOD_ID},
                   "neoforge": f"[{NEOFORGE_VERSION}]", "artifact": f"build/libs/{ARCHIVE}", "tasks": ["jar", "runGameTestServer"],
-                  "game_report": "build/gametest.xml", "minimum_tests": 4, "features": {
-                      "Original threshold adjustment and wrapping rules": "thresholdandsettings",
-                      "Ten-tick thermal samples, tracked coordinates and redstone": "trackedheatandsignal",
-                      "Measured single-source heat transfer through stone and air": "measuredheatspread",
-                      "One-cell steam consumption, spin, stored FE and sided transfer": "standalonesteamturbine"},
+                  "game_report": "build/gametest.xml", "minimum_tests": len(FEATURES), "features": FEATURES,
                   "status": "preview", "limitations": [
-                      "Limited loaded-chunk server heat grid. No legacy thermal events, persistent heat or fluid phase changes.",
-                      "Standalone turbine only: no multiblock, steam producers, original geometry, animation or audio.",
-                      "Adapted blocks and creative items: no survival crafting, legacy circuits or wrench items.",
+                      "Loaded-chunk server heat grid and water vaporization only. No legacy thermal events, persistent heat, ice or other phase changes.",
+                      "Water can produce gas with externally supplied heat. Reactors, multiblock turbine, legacy boil effects and original geometry are absent.",
+                      "Iron funnel recipe only. The native funnel saves its tank, unlike the original reversed persistence callbacks. Thermometer and turbine still lack survival crafting.",
                       "No ComputerCraft/OpenComputers, Universal Electricity, old saves or legacy add-ons."],
                   "import_assets": {old: f"src/main/resources/{new}" for old, new in TEXTURES.items()},
                   "asset_map": {old: {"path": new} for old, new in TEXTURES.items()}, "method_imports": [method_group()]}
