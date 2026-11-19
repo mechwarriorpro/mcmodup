@@ -262,8 +262,23 @@ final class LegacyMinechemChemistry {
     }
 
     private Object player() throws Exception {
-        if (old) return Class.forName("net.minecraftforge.common.FakePlayer").getConstructor(mc("world.World"), String.class)
-                .newInstance(world, "[Chemistry]");
+        if (old) {
+            Object fake = Class.forName("net.minecraftforge.common.FakePlayer").getConstructor(mc("world.World"), String.class)
+                    .newInstance(world, "[Chemistry]");
+            Class<?> server = mc("server.MinecraftServer"), manager = mc("network.INetworkManager"), mp = mc("entity.player.EntityPlayerMP");
+            Object sink = java.lang.reflect.Proxy.newProxyInstance(manager.getClassLoader(), new Class<?>[]{manager},
+                    new java.lang.reflect.InvocationHandler() {
+                        @Override public Object invoke(Object proxy, Method method, Object[] args) {
+                            if (method.getReturnType() == boolean.class) return false;
+                            if (method.getReturnType() == int.class) return 0;
+                            return null;
+                        }
+                    });
+            Object connection = mc("network.NetServerHandler").getConstructor(server, manager, mp)
+                    .newInstance(server.getMethod("func_71276_C").invoke(null), sink, fake);
+            mp.getField("field_71135_a").set(fake, connection);
+            return fake;
+        }
         Object fake = Class.forName("net.minecraftforge.common.util.FakePlayer").getConstructor(mc("world.WorldServer"), Class.forName("com.mojang.authlib.GameProfile"))
                 .newInstance(world, Class.forName("com.mojang.authlib.GameProfile").getConstructor(java.util.UUID.class, String.class)
                         .newInstance(java.util.UUID.randomUUID(), "[Chemistry]"));
