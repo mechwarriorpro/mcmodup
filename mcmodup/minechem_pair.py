@@ -25,7 +25,7 @@ STACK = "net/minecraft/item/ItemStack"
 RESOURCE = "src/main/resources/"
 FINAL = PROFILES["minechem-chemistry"]
 RELEASE_394 = PROFILES[RELEASE_394_PROFILE]
-VERSIONS = {FINAL.namespace: "1.3.8-partial", RELEASE_394.namespace: "1.4.6-partial"}
+VERSIONS = {FINAL.namespace: "1.3.8-partial", RELEASE_394.namespace: "1.4.7-partial"}
 FEATURES = minechem_reactors.FEATURES | {"Buffered iron decomposition and saved remaining output": "savedbufferdrains",
             "Original decomposer output-slot method": "linkedslotrule",
             "Journal cloning preserves discovery and selection components": "journalcloningpreservescomponents"}
@@ -205,6 +205,7 @@ def _recipe(original: Path, profile: Profile, checksum: str, output: Path) -> di
     files[RESOURCE + structure] = empty_test_structure()
     if prepaid:
         files[RESOURCE + f"data/{namespace}/structure/journal_room.nbt"] = empty_test_structure(5)
+        files[RESOURCE + f"data/{namespace}/structure/fluid_room.nbt"] = empty_test_structure(15)
     metadata = RESOURCE + "META-INF/neoforge.mods.toml"
     files[metadata] = files[metadata].replace(f"[{NEOFORGE_VERSION},21.2)", f"[{NEOFORGE_VERSION}]")
     files["build.gradle"] += f"""

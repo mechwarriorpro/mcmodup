@@ -46,6 +46,11 @@ def check_minechem_artifacts(final: Path, release394: Path) -> list[CatalogEntry
             assert not any("MatterChecks" in name for name in jar.namelist())
             assert set(minechem_matter.asset_paths(profile.namespace, profile == RELEASE_394).values()) <= set(jar.namelist())
             assert f"data/{profile.namespace}/mcmodup/chemical_fluids.json" in jar.namelist()
+            automation = f"data/{profile.namespace}/mcmodup/fluid_automation.json"
+            assert (automation in jar.namelist()) == (profile == RELEASE_394)
+            if profile == RELEASE_394:
+                assert json.loads(jar.read(automation)) == json.loads(json.dumps(minechem_matter.automation_rows(
+                    minechem_final_synthesis.chemical_ids(profile.namespace, entries))))
             assert not any("JournalCloneChecks" in name or "ChemistryGameplayChecks" in name for name in jar.namelist())
             effect_data = json.loads(jar.read(f"data/{profile.namespace}/mcmodup/pharmacology.json"))
             assert len(effect_data) == (52 if profile == RELEASE_394 else 147)
@@ -119,6 +124,7 @@ neoForge.runs.create('gameTestServer') {{
         tests["src/main/java/mcmodup/test/MatterChecks394.java"] = minechem_matter.checks("mcmodup.test", namespace, RELEASE_394.namespace,
             minechem_final_synthesis.chemical_ids(RELEASE_394.namespace, entries), True)
         research_rooms[f"src/main/resources/data/{namespace}/structure/journal_room.nbt"] = empty_test_structure(5)
+        research_rooms[f"src/main/resources/data/{namespace}/structure/fluid_room.nbt"] = empty_test_structure(15)
     def integrate_fixture(filename, code, package, own_namespace):
         # The standalone fixtures normally own independent test mod IDs.
         name = filename.removesuffix(".java")

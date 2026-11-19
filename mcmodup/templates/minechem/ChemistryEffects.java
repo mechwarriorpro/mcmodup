@@ -185,6 +185,7 @@ final class ChemistryEffects {
     }
 
     static final class MoleculeItem extends Item {
+@FUEL_OVERRIDE@
         MoleculeItem(Properties properties) { super(properties); }
         @Override public UseAnim getUseAnimation(ItemStack stack) { return UseAnim.DRINK; }
         @Override public int getUseDuration(ItemStack stack, LivingEntity user) { return 16; }

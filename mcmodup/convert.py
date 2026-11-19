@@ -87,6 +87,9 @@ def _java(package: str, namespace: str, entries: list[CatalogEntry], mode: Decom
         definitions.append("        ChemistryRadiation.register(bus, mod);")
         definitions.append("        entries.addAll(ShieldedStorage.register(bus, items));")
         definitions.append("        entries.addAll(ChemistryFluids.register(bus, items));")
+        if mode == DecomposerMode.RELEASE_394:
+            definitions.append("        FluidDispensing.register(bus);")
+            definitions.append("        FluidReactions.register(mod);")
         definitions.extend(('        var polytool = items.registerItem("polytool", PolytoolItem::new);',
                             '        PolytoolItem.register(bus, polytool);', '        entries.add(polytool);'))
     if mode is not None:
@@ -189,7 +192,7 @@ def _project_files(profile: Profile, entries: list[CatalogEntry], textures: dict
     package = f"mcmodup.generated.{namespace}"
     mode = _decomposer_mode(profile, digest)
     version = project_version or {DecomposerMode.FINAL: "1.3.5-partial", DecomposerMode.BATCH: "1.2.0-partial",
-                                  DecomposerMode.RELEASE_394: "1.3.4-partial"}.get(mode, "1.0.0-partial")
+                                  DecomposerMode.RELEASE_394: "1.3.5-partial"}.get(mode, "1.0.0-partial")
     machine_rules = machine_recipes(namespace, entries, mode=mode, linked=linked_decomposer) if mode else []
     if mode:
         recipe_files, extra_locales = machine_project(namespace, package, entries, machine_rules, mode=mode,
@@ -225,9 +228,9 @@ def _project_files(profile: Profile, entries: list[CatalogEntry], textures: dict
     if mode in (DecomposerMode.FINAL, DecomposerMode.RELEASE_394):
         features += (" Includes release-local Polytool infusion and selected modules, molecule drinking, coating and spiked food, "
                      "journal cloning, uranium ore, radioactive decay, and shielded storage.")
-        features += (" .394 includes native chemical fluid blocks, tubes and buckets." if mode == DecomposerMode.RELEASE_394 else
+        features += (" .394 includes native chemical fluid blocks, dispenser exchanges, contact reactions and furnace fuels." if mode == DecomposerMode.RELEASE_394 else
                      " FINAL registers its non-placeable fluids in a volatile, fill-only collector.")
-        not_ported = ("Unmapped materials, full chemical fluid reactions and rendering, legacy radiation hooks, "
+        not_ported = ("Unmapped materials, optional third-party fluids, exact solid/gas flow and rendering, legacy radiation hooks, "
                       "legacy power or add-on integrations, and old saves. Some materials, recipes and effect interactions "
                       "use native substitutions. Other machines and the original lens chain require a paired or expanded build. "
                       + minechem_polytool.LIMIT)

@@ -9,7 +9,9 @@ from .minechem_materials import PRODUCT, TEMPLATES, chemical_id, observations
 
 
 JAVA = ("ChemistryFluids", "FluidPresentation", "ChemicalBucketRecipe", "ChemistryRadiation",
-        "ShieldedStorage", "ShieldedStorageScreen", "FinalFluidCollector", "TubeWorldUse")
+        "ShieldedStorage", "ShieldedStorageScreen", "FinalFluidCollector", "TubeWorldUse", "FluidDispensing", "FluidReactions", "ChemicalFuels")
+RELEASE_394_ONLY = {"TubeWorldUse", "FluidDispensing", "FluidReactions", "ChemicalFuels"}
+AUTOMATION_TRACE = "release394-fluid-automation.txt"
 RESOURCES = "src/main/resources"
 ANIMATED_PNGS = {"assets/minechem/textures/blocks/fluid_still.png": (16, 128),
                  "assets/minechem/textures/blocks/fluid_flow.png": (32, 512)}
@@ -86,6 +88,62 @@ def radiation_rows(prepaid: bool, ids: dict[str, str], fluids: tuple[Fluid, ...]
     return result
 
 
+def automation_rows(ids: dict[str, str]) -> dict:
+    rows = observations(AUTOMATION_TRACE)
+    item_contact, fluid_contact = rows["config"].split("/")
+    if {item_contact, fluid_contact} - {"true", "false"} or rows["fire_sources"] != "fire,flowing_lava,lava":
+        raise InputError("Invalid Minechem reaction triggers")
+    reactions, ignition, fuels = [], {}, {}
+    for key, value in rows.items():
+        if key.startswith("rule_"):
+            a, b = key[5:].split("+")
+            power, parts = value.split(";")
+            products = parts.split(",")
+            if not (a < b and 0 <= float(power) <= 4 and 1 <= len(products) <= 4):
+                raise InputError(f"Invalid Minechem fluid reaction {key}={value}")
+            reactions.append({"inputs": (chemical_id(a, ids), chemical_id(b, ids)), "power": float(power),
+                              "products": [chemical_id(part, ids) for part in products]})
+        elif key.startswith("ignite_") and re.fullmatch(r"[em]\d{1,3}", key[7:]):
+            power = float(value)
+            if not 0 < power <= 4:
+                raise InputError(f"Invalid Minechem ignition strength {key}={value}")
+            ignition[chemical_id(key[7:], ids)] = power
+        elif key.startswith("fuel_"):
+            chemical = key[5:]
+            name = chemical_id(chemical.removeprefix("b"), ids)
+            if chemical.startswith("b"):
+                namespace, path = name.split(":", 1)
+                name = f"{namespace}:bucket_{path}"
+            if not 0 < int(value) <= 64_000:
+                raise InputError(f"Invalid Minechem furnace fuel {key}={value}")
+            fuels[name] = int(value)
+    return {"reactionItemMeetFluid": item_contact == "true", "reactionFluidMeetFluid": fluid_contact == "true",
+            "reactions": reactions, "ignition": ignition, "furnace_fuels": fuels}
+
+
+REACTION_HOOKS = """        @Override protected void onPlace(BlockState state, Level level, BlockPos pos, BlockState old, boolean moved) {
+            super.onPlace(state, level, pos, old, moved);
+            if (!level.isClientSide()) level.scheduleTick(pos, this, 1);
+        }
+        @Override protected void neighborChanged(BlockState state, Level level, BlockPos pos, Block neighbor, BlockPos changed, boolean moved) {
+            super.neighborChanged(state, level, pos, neighbor, changed, moved);
+            if (!level.isClientSide()) level.scheduleTick(pos, this, 1);
+        }
+        @Override protected void tick(BlockState state, net.minecraft.server.level.ServerLevel level, BlockPos pos, net.minecraft.util.RandomSource random) {
+            FluidReactions.touch(level, pos);
+        }
+        @Override public void onBlockExploded(BlockState state, Level level, BlockPos pos, net.minecraft.world.level.Explosion explosion) {
+            super.onBlockExploded(state, level, pos, explosion);
+            if (level instanceof net.minecraft.server.level.ServerLevel server && !level.getBlockState(pos).is(this))
+                FluidReactions.onExplosion(server, pos, type.chemical());
+        }"""
+
+
+def fuel_override(indent: int) -> str:
+    return (" " * indent + "@Override public int getBurnTime(ItemStack stack, net.minecraft.world.item.crafting.RecipeType<?> type) {\n"
+            + " " * (indent + 4) + "return ChemicalFuels.burnTime(stack);\n" + " " * indent + "}")
+
+
 def asset_paths(namespace: str, prepaid: bool) -> dict[str, str]:
     mapping = [("blocks/leadedchest", "block/leaded_chest"), ("blocks/uraniumOre", "block/uranium_ore"),
                ("gui/LeadedChestGUI", "gui/leaded_chest")]
@@ -115,9 +173,10 @@ def project(namespace: str, package: str, ids: dict[str, str], names: dict[str, 
     for item, tier, products in radiation:
         parts = ", ".join(f"new ChemistryRecipes.Part({json.dumps(product)}, {amount})" for product, amount in products)
         rad_java.append(f"        Map.entry({json.dumps(item)}, new Rule({tier}, List.of({parts})))")
+    automation = automation_rows(ids) if prepaid else {}
     files: dict[str, str] = {}
     for name in JAVA:
-        if (name == "FinalFluidCollector" and prepaid) or (name == "TubeWorldUse" and not prepaid):
+        if (name == "FinalFluidCollector" and prepaid) or (name in RELEASE_394_ONLY and not prepaid):
             continue
         files[f"{java}/{name}.java"] = ((TEMPLATES / f"{name}.java").read_text(encoding="utf-8")
             .replace("@PACKAGE@", package).replace("@NAMESPACE@", namespace).replace("@RELEASE_394@", str(prepaid).lower())
@@ -126,7 +185,24 @@ def project(namespace: str, package: str, ids: dict[str, str], names: dict[str, 
             .replace("@STILL_TEXTURE@", f"{namespace}:block/fluid_still" if prepaid else "minecraft:block/water_still")
             .replace("@FLOW_TEXTURE@", f"{namespace}:block/fluid_flow" if prepaid else "minecraft:block/water_flow")
             .replace("@REGISTER_EMPTY_TUBE@", '        buckets.add(items.registerItem("test_tube", p -> new TubeWorldUse.TubeItem(p, true)));' if prepaid else "")
-            .replace("@WATER_BUCKET_CRAFT@", observations(trace_name(True, "fluids")).get("water", "false").split("/", 1)[0]))
+            .replace("@WATER_BUCKET_CRAFT@", observations(trace_name(True, "fluids")).get("water", "false").split("/", 1)[0])
+            .replace("@FLUID_REACTION_HOOKS@", REACTION_HOOKS if prepaid else "")
+            .replace("@BUCKET_FUEL_OVERRIDE@", fuel_override(8) if automation.get("furnace_fuels") and
+                     any(":bucket_" in key for key in automation["furnace_fuels"]) else ""))
+    if prepaid:
+        rules = []
+        for row in automation["reactions"]:
+            a, b = map(json.dumps, row["inputs"])
+            products = ", ".join(map(json.dumps, row["products"]))
+            rules.append(f"        Map.entry(Pair.of({a}, {b}), new Rule({row['power']}F, List.of({products})))")
+        files[f"{java}/FluidReactions.java"] = (files[f"{java}/FluidReactions.java"]
+            .replace("@REACTION_RULES@", ",\n".join(rules))
+            .replace("@IGNITION_RULES@", ",\n".join(f"        Map.entry({json.dumps(key)}, {power}F)" for key, power in automation["ignition"].items()))
+            .replace("@ITEM_CONTACT@", str(automation["reactionItemMeetFluid"]).lower())
+            .replace("@FLUID_CONTACT@", str(automation["reactionFluidMeetFluid"]).lower()))
+        files[f"{java}/ChemicalFuels.java"] = files[f"{java}/ChemicalFuels.java"].replace("@FURNACE_FUELS@", ",\n".join(
+            f"        Map.entry(ResourceLocation.parse({json.dumps(key)}), {ticks})" for key, ticks in automation["furnace_fuels"].items()))
+        files[f"{data}/mcmodup/fluid_automation.json"] = out(automation)
     locales = {f"gui.{namespace}.tank_empty": "Empty", f"item.{namespace}.radioactive": "Radioactivity %s · %s s to decay"}
     blocks = [("leaded_chest", "Leaded Chest", "leaded_chest"), ("uranium_ore", "Uranium Ore", "uranium_ore")]
     if not prepaid:
@@ -209,7 +285,12 @@ def features(prepaid: bool) -> dict[str, str]:
             f"{prefix} shielded storage, save, and uranium ore yield": f"{prefix}storageandore",
             f"{prefix} radioactive lifetime boundary and catch-up": f"{prefix}decayboundaryandcatchup",
             **({".394 crafting, no-loss fluid transfer, and contact effects": "release394tubebucketandcontact",
-                ".394 split tube payment and radioactive source reload": "release394radioactivetubesource"} if prepaid else {})}
+                ".394 split tube payment and radioactive source reload": "release394radioactivetubesource",
+                ".394 dispenser transfer, split payment, and vanilla fallback": "release394dispensertransfers",
+                ".394 block fluid reactions, source/flow output and ignition": "release394fluidreactions",
+                ".394 dropped chemical bucket contact and config guards": "release394itemcontact",
+                ".394 original furnace fuel values and actual furnace consumption": "release394furnacefuels"} if prepaid else
+               {"FINAL does not inherit .394 furnace fuels": "finalfurnaceisolation"})}
 
 
 def checks(package: str, test_namespace: str, namespace: str, ids: dict[str, str], prepaid: bool) -> str:
@@ -220,4 +301,22 @@ def checks(package: str, test_namespace: str, namespace: str, ids: dict[str, str
             .replace("@CLASS@", "MatterChecks394" if prepaid else "MatterChecksFinal")
             .replace("@PREFIX@", "release394" if prepaid else "final").replace("@RELEASE_394@", str(prepaid).lower())
             .replace("@LIFETIME@", lifetime).replace("@FLUIDS@", flows)
-            .replace("@BUCKET_CHECKS@", (TEMPLATES / "Matter394Checks.java").read_text(encoding="utf-8") if prepaid else ""))
+            .replace("@BUCKET_CHECKS@", (TEMPLATES / "Matter394Checks.java").read_text(encoding="utf-8") if prepaid else "")
+            .replace("@AUTOMATION_CHECKS@", automation_checks(ids) if prepaid else FINAL_FUEL_CHECK))
+
+
+def automation_checks(ids: dict[str, str]) -> str:
+    fuels = automation_rows(ids)["furnace_fuels"]
+    fuel_checks = "\n".join(f"        fuel(test, {json.dumps(key.split(':', 1)[1])}, {ticks});" for key, ticks in fuels.items())
+    return (TEMPLATES / "FluidAutomation394Checks.java").read_text(encoding="utf-8").replace("@FUEL_CHECKS@", fuel_checks)
+
+
+FINAL_FUEL_CHECK = """
+    @GameTest(template = "test_room")
+    public static void finalFurnaceIsolation(GameTestHelper test) {
+        test.assertTrue(item("element_c", 1).getBurnTime(RecipeType.SMELTING) == 0 &&
+            item("molecule_tnt", 1).getBurnTime(RecipeType.SMELTING) == 0,
+            "The .394 fuel registry leaked into FINAL");
+        test.succeed();
+    }
+"""

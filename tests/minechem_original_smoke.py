@@ -14,7 +14,7 @@ from legacy_recipe_fixture import java8, legacy_command, prepare, run_server
 from mixed_legacy_pack_smoke import note
 from mcmodup.minechem_final_synthesis import TRACE
 from mcmodup.minechem_materials import observations
-from mcmodup.minechem_matter import trace_name as matter_trace_name
+from mcmodup.minechem_matter import AUTOMATION_TRACE, trace_name as matter_trace_name
 from mcmodup.minechem_polytool import trace_name
 from mcmodup.machines import SYNTHESIS_394_COLLISION, release394_synthesis_trace, release394_trace
 from mcmodup.runtime import file_digest
@@ -119,7 +119,15 @@ def original(root: Path, version: str, matter_only: bool = False) -> None:
         note(f"Pinned Minechem {version} {kind}", f"{len(expected)} original rows re-observed")
     if matter_only:
         path = server / "minechem-fluid-automation.txt"
-        note("Original .394 fluid automation", path.read_text(encoding="utf-8"))
+        text = path.read_text(encoding="utf-8")
+        actual = dict(line.split("=", 1) for line in text.splitlines())
+        expected = observations(AUTOMATION_TRACE)
+        mismatched = [(key, expected.get(key), actual.get(key)) for key in sorted(expected.keys() | actual.keys())
+                      if expected.get(key) != actual.get(key)]
+        if os.environ.get("MCMODUP_CAPTURE_CHEMISTRY") == "1" or mismatched:
+            note("Original .394 fluid automation", text)
+        assert not mismatched, f".394 fluid automation changed: {mismatched}"
+        note("Pinned .394 fluid automation", f"{len(expected)} furnace, dispenser, reaction and ignition rows re-observed")
         return
     verify_chemistry(server, version)
     polytool = (server / "minechem-polytool.txt").read_text(encoding="utf-8").splitlines()

@@ -87,6 +87,10 @@ final class ChemistryFluids {
         }
     }
     static boolean localFluid(Fluid fluid) { return SOURCES.containsKey(fluid); }
+    static Chemical worldType(Fluid fluid) {
+        var spec = SOURCES.get(fluid instanceof FlowingFluid flowing ? flowing.getSource() : fluid);
+        return spec != null && spec.placeable() ? spec : null;
+    }
     static Chemical bucketType(ItemStack stack) { return BUCKETS.get(stack.getItem()); }
     static Item bucketForTube(Item tube) {
         if (tube == BuiltInRegistries.ITEM.get(WATER_TUBE)) return @WATER_BUCKET_CRAFT@ ? Items.WATER_BUCKET : Items.AIR;
@@ -243,6 +247,7 @@ final class ChemistryFluids {
             super(fluid, BlockBehaviour.Properties.ofFullCopy(Blocks.WATER));
             this.type = type;
         }
+@FLUID_REACTION_HOOKS@
         @Override protected void entityInside(BlockState state, Level level, BlockPos pos, Entity entity) {
             super.entityInside(state, level, pos, entity);
             if (level.isClientSide() || !ChemistryRadiation.fluidEffects() || !(entity instanceof LivingEntity target)) return;
@@ -253,6 +258,7 @@ final class ChemistryFluids {
     }
 
     private static final class ChemicalBucket extends BucketItem {
+@BUCKET_FUEL_OVERRIDE@
         ChemicalBucket(Fluid fluid, Properties properties) { super(fluid, properties); }
         @Override public void checkExtraContent(Player player, Level level, ItemStack stack, BlockPos pos) {
             if (!level.isClientSide()) rememberSource(level, pos, stack.get(ChemistryRadiation.CLOCK.get()));

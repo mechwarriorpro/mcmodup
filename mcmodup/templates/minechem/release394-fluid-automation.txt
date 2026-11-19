@@ -1,0 +1,50 @@
+# Exact Minechem 5.0.5.394 / Forge 10.13.2.1291; Java 7.
+# https://github.com/mechwarriorpro/mcmodup/actions/runs/44517029043/job/135535582699
+config=true/true
+dispense_blocked_bucket=ok/stone/{be26=1}/{}
+dispense_bucket=ok/e26:0/{bucket=1}/{}
+dispense_element_air=ok/air/{e26=8}/{}
+dispense_element_source=ok/air/{m1=8}/{}
+dispense_element_split=ok/air/{m1=8}/{}
+dispense_empty_tube=NullPointerException/air/{e0=8}/{}
+dispense_molecule_short=ok/air/{m0=4}/{}
+dispense_molecule_split=ok/m0:0/{e0=8}/{}
+dispense_pickup_flow=ok/air/{be26=1}/{}
+dispense_pickup_source=ok/air/{be26=1}/{}
+dispense_water_fallback=ok/air/{vanilla=1}/{}
+fire_sources=fire,flowing_lava,lava
+fuel_e1=100
+fuel_e15=250
+fuel_e16=300
+fuel_e6=200
+fuel_m0=65
+fuel_m107=500
+fuel_m127=1400
+fuel_m28=1800
+fuel_m29=1600
+fuel_m4=2200
+fuel_m49=5700
+fuel_m6=4000
+fuel_m62=1100
+fuel_m92=800
+ignite_disabled_reactions=air
+ignite_lava=air
+ignite_m6=2.0
+react_flow=[e1:1@1]
+react_item=true/[e1:0@1, m148:0@-1, m1:0@0]/{bucket=1}
+react_item_disabled=false/[m1:0@0]/{}
+react_source=[e1:0@1, m148:0@-1]
+react_source_disabled=[e3:0@0, m1:0@0]
+rule_e1+e17=0.1;m99
+rule_e11+m1=0.15;e1,m149
+rule_e16+m77=0.1;e1,e1,m168
+rule_e19+m1=0.2;e1,m150
+rule_e29+m77=0.1;e1,e1,m55
+rule_e3+m1=0.1;e1,m148
+rule_e37+m1=0.25;e1,m151
+rule_e55+m1=0.3;e1,m152
+rule_e87+m1=0.4;e1,m153
+rule_m149+m99=0.1;m83,m1
+rule_m169+m77=0.1;e16,m168,m1,m1
+rule_m170+m83=0.1;m171,m99,m99
+rule_m77+m83=0.1;m170,m99

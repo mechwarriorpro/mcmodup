@@ -31,7 +31,7 @@ def machine_classes(mode: DecomposerMode) -> tuple[str, ...]:
     research = () if mode == DecomposerMode.BATCH else ("JournalClone", "MaterialRules", *minechem_effects.JAVA, *minechem_polytool.JAVA)
     synthesis = {DecomposerMode.FINAL: SYNTHESIS_FINAL_CLASSES, DecomposerMode.RELEASE_394: SYNTHESIS_394_CLASSES}.get(mode, ())
     matter = tuple(name for name in minechem_matter.JAVA if (name != "FinalFluidCollector" or mode == DecomposerMode.FINAL)
-                   and (name != "TubeWorldUse" or mode == DecomposerMode.RELEASE_394)) if research else ()
+                   and (name not in minechem_matter.RELEASE_394_ONLY or mode == DecomposerMode.RELEASE_394)) if research else ()
     return JAVA_CLASSES + research + synthesis + matter
 
 
@@ -337,7 +337,8 @@ def machine_project(namespace: str, package: str, entries: list[CatalogEntry], r
                 if (poured.getResult() != net.minecraft.world.InteractionResult.PASS) return poured;
             }""" if prepaid else ""
         files[effects_java] = (files[effects_java].replace("@EFFECT_ROWS@", minechem_effects.java_rows(ids, prepaid=prepaid))
-                               .replace("@POUR_MOLECULE@", pour))
+                               .replace("@POUR_MOLECULE@", pour)
+                               .replace("@FUEL_OVERRIDE@", minechem_matter.fuel_override(8) if prepaid else ""))
         files[f"{data}/{namespace}/mcmodup/pharmacology.json"] = document(effects)
         files[f"{assets}/textures/mob_effect/delirium.png"] = minechem_effects.delirium_icon()
         for recipe in ("weapon_coating", "food_spiking"):

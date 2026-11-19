@@ -3,6 +3,7 @@ package @PACKAGE@;
 import net.minecraft.core.BlockPos;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
+import net.minecraft.world.Container;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResultHolder;
 import net.minecraft.world.entity.player.Player;
@@ -17,6 +18,9 @@ import net.minecraft.world.phys.HitResult;
 /** .394 survival exchanges: eight matching vials per source, never partial world transfers. */
 final class TubeWorldUse {
     static final class TubeItem extends Item {
+        @Override public int getBurnTime(ItemStack stack, net.minecraft.world.item.crafting.RecipeType<?> type) {
+            return ChemicalFuels.burnTime(stack);
+        }
         private final boolean empty;
         TubeItem(Properties properties, boolean empty) { super(properties); this.empty = empty; }
         @Override public InteractionResultHolder<ItemStack> use(Level level, Player player, InteractionHand hand) {
@@ -32,12 +36,12 @@ final class TubeWorldUse {
         var target = hit.getBlockPos().relative(hit.getDirection());
         // Do not destroy an existing fluid or replace a machine/plant just to pour a tube.
         if (!allowed(level, player, hit, target, held) || !level.getBlockState(target).isAir()) return InteractionResultHolder.pass(held);
-        if (!player.isCreative() && available(player, held) < 8) return InteractionResultHolder.pass(held);
+        if (!player.isCreative() && available(player.getInventory(), held) < 8) return InteractionResultHolder.pass(held);
         if (level.isClientSide()) return InteractionResultHolder.success(held);
         var state = chemical.source().defaultFluidState().createLegacyBlock();
         if (!level.setBlockAndUpdate(target, state)) return InteractionResultHolder.fail(held);
         if (!player.isCreative()) {
-            var clock = payEight(player, held);
+            var clock = payEight(player.getInventory(), held);
             ChemistryFluids.rememberSource(level, target, clock);
             return give(player, hand, held, new ItemStack(ChemistryFluids.emptyTube(), 8));
         }
@@ -53,12 +57,12 @@ final class TubeWorldUse {
         var tube = ChemistryFluids.tubeForFluid(fluid.getType());
         if (hit.getType() != HitResult.Type.BLOCK || !fluid.isSource() || tube == net.minecraft.world.item.Items.AIR ||
                 !(state.getBlock() instanceof BucketPickup source) || !allowed(level, player, hit, target, held)) return InteractionResultHolder.pass(held);
-        if (!player.isCreative() && available(player, held) < 8) return InteractionResultHolder.fail(held);
+        if (!player.isCreative() && available(player.getInventory(), held) < 8) return InteractionResultHolder.fail(held);
         if (level.isClientSide()) return InteractionResultHolder.success(held);
         var recovered = source.pickupBlock(player, level, target, state);
         if (recovered.isEmpty()) return InteractionResultHolder.fail(held);
         if (player.isCreative()) return InteractionResultHolder.consume(held);
-        payEight(player, held);
+        payEight(player.getInventory(), held);
         var filled = new ItemStack(tube, 8);
         var clock = recovered.get(ChemistryRadiation.CLOCK.get());
         if (clock != null) filled.set(ChemistryRadiation.CLOCK.get(), clock);
@@ -69,21 +73,19 @@ final class TubeWorldUse {
         return level.getWorldBorder().isWithinBounds(pos) && level.mayInteract(player, hit.getBlockPos()) && level.mayInteract(player, pos)
             && player.mayUseItemAt(pos, hit.getDirection(), held);
     }
-    private static int available(Player player, ItemStack held) {
+    static int available(Container inventory, ItemStack held) {
         int count = held.getCount();
-        var inventory = player.getInventory();
         for (int i = 0; i < inventory.getContainerSize() && count < 8; i++) {
             var stack = inventory.getItem(i);
             if (stack != held && stack.is(held.getItem())) count += stack.getCount();
         }
         return count;
     }
-    private static ChemistryRadiation.Clock payEight(Player player, ItemStack held) {
+    static ChemistryRadiation.Clock payEight(Container inventory, ItemStack held) {
         var type = held.getItem();
         var oldest = held.get(ChemistryRadiation.CLOCK.get());
         int needed = 8 - Math.min(8, held.getCount());
         held.shrink(8 - needed);
-        var inventory = player.getInventory();
         for (int i = 0; i < inventory.getContainerSize() && needed > 0; i++) {
             var stack = inventory.getItem(i);
             if (stack == held || !stack.is(type)) continue;

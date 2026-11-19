@@ -7,7 +7,7 @@ from mcmodup.assets import PNG_SIGNATURE
 from mcmodup.inputs import InputError
 from mcmodup.minechem_final_synthesis import read_assets
 from mcmodup.minechem_materials import observations, release
-from mcmodup.minechem_matter import ANIMATED_PNGS, asset_paths, checks, fluid_rows, project, radiation_rows, trace_name
+from mcmodup.minechem_matter import ANIMATED_PNGS, AUTOMATION_TRACE, asset_paths, checks, fluid_rows, project, radiation_rows, trace_name
 
 
 class MatterTests(unittest.TestCase):
@@ -47,6 +47,27 @@ class MatterTests(unittest.TestCase):
         self.assertIn('return false ? Items.WATER_BUCKET', files['src/main/java/mcmodup/example/ChemistryFluids.java'])
         with self.assertRaisesRegex(InputError, 'does not match'):
             fluid_rows(True, {key: item for key, item in ids.items() if key != 'e26'})
+
+    def test_observed_automation_and_fuels_only_render_for_release_394(self):
+        ns, ids = self.ids(True)
+        paths, _ = project(ns, "test.port", ids, {}, True)
+        trace = observations(AUTOMATION_TRACE)
+        data = json.loads(paths[f"src/main/resources/data/{ns}/mcmodup/fluid_automation.json"])
+        self.assertEqual(len(data["reactions"]), 13)
+        self.assertEqual(len(data["furnace_fuels"]), 14)
+        self.assertEqual(data["ignition"], {ids["m6"]: 2.0})
+        self.assertIn({"inputs": [ids["e3"], ids["m1"]], "power": 0.1, "products": [ids["e1"], ids["m148"]]}, data["reactions"])
+        self.assertEqual(data["furnace_fuels"][ids["e6"]], 200)
+        self.assertFalse(any(":bucket_" in item for item in data["furnace_fuels"]))
+        self.assertEqual(trace["dispense_molecule_short"], "ok/air/{m0=4}/{}")
+        self.assertTrue(data["reactionFluidMeetFluid"] and data["reactionItemMeetFluid"])
+        for code in ("FluidReactions", "ChemicalFuels", "ChemistryFluids"):
+            self.assertNotRegex(paths[f"src/main/java/test/port/{code}.java"], r"@[A-Z_]+@")
+        final_ns, final_ids = self.ids(False)
+        final, _ = project(final_ns, "test.port", final_ids, {}, False)
+        self.assertFalse(any(path.endswith(("FluidReactions.java", "ChemicalFuels.java", "FluidDispensing.java", "fluid_automation.json"))
+                             for path in final))
+        self.assertNotIn("FluidReactions", final["src/main/java/test/port/ChemistryFluids.java"])
 
     def test_only_pinned_fluid_animation_layouts_are_accepted(self):
         name = "assets/minechem/textures/blocks/fluid_still.png"
