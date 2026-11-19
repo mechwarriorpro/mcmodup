@@ -182,7 +182,7 @@ public final class LegacyMinechemDecomposer {
                         "Intake should fill 60→64, leave six tubes in the trailing slot, and emit none");
                 jam = "; receive_limit=100; compacts_at_intake_and_keeps_merge_remainder; merge_before_empty_when_active; paid_jam_resumes_without_more_charge";
             }
-            String materials = FINAL_164 ? "; " + finalWater(tile, world) : "; " + LegacyMinechemMaterials.survey(machine, world) +
+            String materials = FINAL_164 ? "; " + finalWater(tile, world) + " | " + LegacyMinechemSynthesisFinal.survey(world, x, y + 27, z) : "; " + LegacyMinechemMaterials.survey(machine, world) +
                     " | " + LegacyMinechemSynthesis394.survey(world) + " | " + LegacyMinechemJournal394.survey(world, x, y, z);
             System.out.println("MCMODUP_MINECHEM_ORIGINAL_PASS slots=" + slots + "; start_charge=" + capacity + "; start_cost=" + paidAtStart
                     + "; input_consumed_on_start; saved_queue_emits_16_iron_tubes_one_per_tick; remaining_charge=0" + jam + materials + " | " + cloning(world) +

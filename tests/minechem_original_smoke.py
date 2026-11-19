@@ -1,12 +1,14 @@
-"""Exercise the decomposer on each checksum-pinned original, in separate Forge worlds."""
+"""Exercise the checksum-pinned originals in separate Forge worlds."""
 
 import argparse
+import base64
 import os
 from pathlib import Path
 import shutil
 import subprocess
 import traceback
 from zipfile import ZipFile
+import zlib
 
 from legacy_recipe_fixture import java8, legacy_command, prepare, run_server
 from mixed_legacy_pack_smoke import note
@@ -28,7 +30,8 @@ def compile_probe(root: Path, server: Path, forge: Path, javac: str) -> None:
     fixtures = Path(__file__).with_name("fixtures")
     subprocess.run([javac, "-proc:none", "-encoding", "UTF-8", "-classpath", str(forge), "-d", str(probe),
                     *(str(fixtures / name) for name in ("LegacyMinechemDecomposer.java", "LegacyMinechemMaterials.java",
-                                                        "LegacyMinechemSynthesis394.java", "LegacyMinechemJournal394.java", "LegacyMinechemReactors.java"))], check=True, timeout=60)
+                                                        "LegacyMinechemSynthesis394.java", "LegacyMinechemJournal394.java",
+                                                        "LegacyMinechemReactors.java", "LegacyMinechemSynthesisFinal.java"))], check=True, timeout=60)
     with ZipFile(server / "mods/mcmodup-minechemoracle.jar", "x") as jar:
         for compiled in probe.rglob("*.class"):
             jar.write(compiled, compiled.relative_to(probe).as_posix())
@@ -80,6 +83,12 @@ def original(root: Path, version: str) -> None:
     shape = (server / "minechem-blueprints.txt").read_text(encoding="utf-8")
     expected_shape = Path(__file__).resolve().parents[1] / "mcmodup/templates/minechem/reactor-blueprints.txt"
     assert shape.splitlines() == expected_shape.read_text(encoding="utf-8").splitlines(), "Blueprint geometry in the original binary changed"
+    if version == "1.6.4":
+        trace = (server / "minechem-final-synthesis.txt").read_bytes()
+        encoded = base64.b64encode(zlib.compress(trace, level=9)).decode("ascii")
+        # Bootstrap the small behavioral transcript without publishing any JAR or assets.
+        for offset in range(0, len(encoded), 1700):
+            note(f"FINAL synthesis trace {offset // 1700}", f"FINAL_SYNTHESIS_TRACE:{offset // 1700}:{encoded[offset:offset + 1700]}")
     if version == "1.7.10":
         observations = (server / "minechem-materials.txt").read_text(encoding="utf-8").splitlines()
         expected = [f"{key}=" + ",".join(f"{part}x{amount}" for part, amount in products)
