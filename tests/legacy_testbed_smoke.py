@@ -66,6 +66,7 @@ neoForge.runs.create('gameTestServer') {{
 }}
 {settings_runs}
 """,
+        f"{resources}/META-INF/neoforge.mods.toml": _metadata(ModMetadata(""), CHECK, "Staged JAR test probe", "1.0.0", "Unlicense"),
         f"run/mods/{JAR_NAME}": jar_data,
         f"{resources}/data/{SETTINGS}/structure/empty.nbt": empty_test_structure(5),
         f"{resources}/data/{SETTINGS}/structure/reactor_room.nbt": empty_test_structure(29),
@@ -180,9 +181,12 @@ if __name__ == "__main__":
         check(args.root.resolve(), fetch=args.fetch_originals, client=args.client)
     except Exception as error:
         details = re.sub(r"\x1b\[[0-9;]*m", "", str(error)).splitlines()
-        key_lines = ["\n".join(details[i:i+5]) for i, line in enumerate(details)
-                     if " error:" in line or "Failed test cases:" in line or "AssertionError:" in line]
         marker = next((line for line in details if "expected " in line and "passed cases" in line), "")
-        diagnosis = "\n".join([marker, *key_lines]) if key_lines else "\n".join(details[:22])
+        if marker:
+            end = details.index(marker) + 1
+            diagnosis = "\n".join([marker, *details[end:end + 22]])
+        else:
+            named = [line for line in details if "Failed test cases:" in line or " failed at " in line or "Caused by:" in line or " error:" in line]
+            diagnosis = "\n".join(named or details[:22])
         note("One-JAR testbed failed", (diagnosis or traceback.format_exc()[-3500:])[:3800], level="error")
         raise
