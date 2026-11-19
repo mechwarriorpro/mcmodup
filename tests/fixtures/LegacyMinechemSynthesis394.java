@@ -123,8 +123,43 @@ final class LegacyMinechemSynthesis394 {
             for (Map.Entry<String, String> row : observed.entrySet()) file.println(row.getKey() + "=" + row.getValue());
             require(!file.checkError(), "Could not write observed synthesis rows");
         }
+        String ports = automation(recipes, lookup, candidates.get("iron_ingot"));
         return "synthesis slots=29 (9 ghost + 18 storage + output + journal); capacity=" + capacity + "; receive=" + receiveLimit +
-                "; " + observed.size() + " exact extraction traces; unresolved ghost collisions=" + mismatches;
+                "; " + observed.size() + " exact extraction traces; unresolved ghost collisions=" + mismatches + " | " + ports;
+    }
+
+    private String automation(Object recipes, Method lookup, Object iron) throws Exception {
+        Object machine = fresh(), rule = lookup.invoke(recipes, iron);
+        Object journalItem = Class.forName("minechem.MinechemItemsRegistration").getField("journal").get(null);
+        Object journal = makeStack.newInstance(journalItem, 1, 0);
+        Object tubes = makeStack.newInstance(element, 16, 26);
+        Method insert = tile.getMethod("func_102007_a", int.class, stack, int.class);
+        Method take = tile.getMethod("func_102008_b", int.class, stack, int.class);
+        Method remove = tile.getMethod("func_70298_a", int.class, int.class);
+        for (int side = 0; side < 6; side++) {
+            int[] idle = (int[]) sided.invoke(machine, side);
+            require(idle.length == 19 && idle[0] == 10 && idle[18] == 28, "Idle .394 side is not storage plus journal: " + side);
+            require((Boolean) insert.invoke(machine, 28, journal, side) &&
+                    (Boolean) insert.invoke(machine, 10, tubes, side) == (side != 0), "Wrong .394 input advice: " + side);
+        }
+        set.invoke(machine, 28, journal);
+        choose.invoke(machine, rule);
+        set.invoke(machine, 10, tubes);
+        charge(machine, (Integer) recipe.getMethod("energyCost").invoke(rule));
+        for (int side = 0; side < 6; side++) {
+            int[] active = (int[]) sided.invoke(machine, side);
+            require(active[active.length - 1] == 28 && active.length == (side == 1 ? 19 : 2) && active[0] == (side == 1 ? 10 : 0),
+                    "Wrong .394 ready side: " + side);
+            require((Boolean) take.invoke(machine, 0, iron, side) == (side == 0) &&
+                    (Boolean) take.invoke(machine, 28, journal, side) == (side != 0) &&
+                    !(Boolean) insert.invoke(machine, 28, journal, side), "Wrong .394 output or filled-journal advice: " + side);
+        }
+        Object result = remove.invoke(machine, 0, 1);
+        require(same(result, iron) && quantity(result) == 1 && get.invoke(machine, 10) == null && (Integer) stored.invoke(machine) == 0,
+                "Original sided output extraction did not consume one iron batch");
+        require(same(remove.invoke(machine, 28, 1), journal), "Could not extract original journal");
+        for (int slot = 1; slot <= 9; slot++) require(get.invoke(machine, slot) == null, "Original journal extraction left a ghost");
+        return "automation: journal on all sides (extract except bottom); storage except ready non-top faces, chemical insert except bottom; bottom result only, paid on take";
     }
 
     private Object fresh() throws Exception {

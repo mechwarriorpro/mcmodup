@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 import sys
 
-from . import MINECRAFT_VERSION, SOURCE_VERSIONS
+from . import MINECRAFT_VERSION, NEOFORGE_VERSION, SOURCE_VERSIONS
 from .api import ApiContext, ApiIndex
 from .audit import audit, render_audit
 from .catalogs import PROFILES
@@ -160,6 +160,15 @@ def _parser() -> argparse.ArgumentParser:
     build.add_argument("--keep-recipe", type=Path, metavar="NEW_DIR", help="preserve the generated recipe and its local sources for review")
     build.add_argument("--json", action="store_true", help="emit the staged build report as JSON")
 
+    testbed = commands.add_parser("build-legacy-testbed", help="build the exact Minechem, Voltz and GeoStrata previews into one private NeoForge JAR")
+    testbed.add_argument("final", type=Path, help="original Minechem 1.6.4 5.0.5 FINAL JAR")
+    testbed.add_argument("release394", type=Path, help="original Minechem 1.7.10 5.0.5.394 JAR")
+    testbed.add_argument("voltz", type=Path, help="exact Voltz_Server_v3.0.0c.zip containing Atomic, ICBM and CalclaviaCore")
+    testbed.add_argument("geostrata", type=Path, help="original GeoStrata 1.6 v23b ZIP")
+    testbed.add_argument("-o", "--output", type=Path, required=True, help="new output folder for the single mod JAR and scan report")
+    testbed.add_argument("--allow-preview-ports", action="store_true", help="explicitly accept incomplete native gameplay and private-use terms")
+    testbed.add_argument("--build-timeout", type=int, default=600, metavar="SECONDS", help="timeout per source build (default: 600)")
+
     plate = commands.add_parser("prepare-icbm-plate", help="prepare the local source recipe for the exact Voltz ICBM glass plate and passive platform preview")
     plate.add_argument("--output", "-o", required=True, type=Path, help="new directory for a reviewable source ZIP and recipe")
     thermometer = commands.add_parser("prepare-atomic-thermometer", help="prepare a local source recipe for the Voltz Atomic Science thermometer and standalone turbine")
@@ -213,6 +222,13 @@ def main(argv: list[str] | None = None) -> int:
 
             manifest = prepare(args.final, args.release394, args.output)
             print(f"Prepared {manifest}. Local previews only; use update-pack --source-ports with --allow-preview-ports and --output-pack.")
+        elif args.command == "build-legacy-testbed":
+            from .legacy_testbed import REPORT_NAME, build_testbed
+
+            jar = build_testbed(args.final, args.release394, args.voltz, args.geostrata, args.output,
+                               allow_preview=args.allow_preview_ports, timeout=args.build_timeout)
+            print(f"Built {jar}. Put only this testbed JAR in a fresh NeoForge {NEOFORGE_VERSION} instance's mods folder.")
+            print(f"Incomplete private-use preview. See {REPORT_NAME} for exact inputs, tests and gaps.")
         elif args.command == "build-jars":
             from .builtin_ports import build_jars
             from .native_pack import REPORT_NAME

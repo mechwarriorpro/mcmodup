@@ -182,7 +182,7 @@ public final class LegacyMinechemDecomposer {
                         "Intake should fill 60→64, leave six tubes in the trailing slot, and emit none");
                 jam = "; receive_limit=100; compacts_at_intake_and_keeps_merge_remainder; merge_before_empty_when_active; paid_jam_resumes_without_more_charge";
             }
-            String materials = FINAL_164 ? "" : "; " + LegacyMinechemMaterials.survey(machine, world) +
+            String materials = FINAL_164 ? "; " + finalWater(tile, world) : "; " + LegacyMinechemMaterials.survey(machine, world) +
                     " | " + LegacyMinechemSynthesis394.survey(world) + " | " + LegacyMinechemJournal394.survey(world, x, y, z);
             System.out.println("MCMODUP_MINECHEM_ORIGINAL_PASS slots=" + slots + "; start_charge=" + capacity + "; start_cost=" + paidAtStart
                     + "; input_consumed_on_start; saved_queue_emits_16_iron_tubes_one_per_tick; remaining_charge=0" + jam + materials + " | " + cloning(world));
@@ -193,6 +193,48 @@ public final class LegacyMinechemDecomposer {
                     " (probe: " + failure.getStackTrace()[0] + ")");
             failure.printStackTrace();
         }
+    }
+
+    private static String finalWater(Class<?> tile, Object world) throws Exception {
+        Class<?> fluid = Class.forName("net.minecraftforge.fluids.Fluid"), stack = Class.forName("net.minecraftforge.fluids.FluidStack");
+        Object water = Class.forName("net.minecraftforge.fluids.FluidRegistry").getField("WATER").get(null);
+        Method fillTank = tile.getMethod("fill", direction(), stack, boolean.class);
+        Method info = tile.getMethod("getTankInfo", direction());
+        Method get = tile.getMethod("func_70301_a", int.class), tick = tile.getMethod("func_70316_g");
+        Method damage = type("item.ItemStack").getMethod("func_77960_j");
+        java.lang.reflect.Field count = type("item.ItemStack").getField("field_77994_a");
+        java.lang.reflect.Field amount = stack.getField("amount");
+        java.lang.reflect.Field stored = Class.forName("net.minecraftforge.fluids.FluidTankInfo").getField("fluid");
+        StringBuilder outcomes = new StringBuilder();
+        for (int mb : new int[]{144, 145, 10000, 10001, 10145}) {
+            Object machine = tile.newInstance();
+            tile.getField("field_70331_k").set(machine, world);
+            Object waterStack = stack.getConstructor(fluid, int.class).newInstance(water, mb);
+            require((Integer) fillTank.invoke(machine, unknown(), waterStack, false) == mb && Array.getLength(info.invoke(machine, unknown())) == 1,
+                    "FINAL water fill simulation added a fluid");
+            require((Integer) fillTank.invoke(machine, unknown(), waterStack, true) == mb, "FINAL fluid intake refused water");
+            tick.invoke(machine);
+            Object contents = stored.get(Array.get(info.invoke(machine, unknown()), 0));
+            int remaining = amount.getInt(contents);
+            Object input = get.invoke(machine, 0);
+            require(get.invoke(machine, 1) == null && (input == null || remaining < mb), "FINAL fluid conversion duplicated a charge or output");
+            Object nbt = type("nbt.NBTTagCompound").newInstance();
+            tile.getMethod("func_70310_b", nbt.getClass()).invoke(machine, nbt);
+            Object restored = tile.newInstance();
+            tile.getField("field_70331_k").set(restored, world);
+            tile.getMethod("func_70307_a", nbt.getClass()).invoke(restored, nbt);
+            require(Array.getLength(info.invoke(restored, unknown())) == 1 && (get.invoke(restored, 0) != null) == (input != null),
+                    "FINAL fluid or converted input save behavior changed");
+            fill(restored, 1);
+            for (int i = 0; i < 6; i++) tick.invoke(restored);
+            outcomes.append(mb).append("->").append(remaining).append("/input=").append(input != null).append("/out=");
+            for (int i = 1; i <= 9; i++) {
+                Object result = get.invoke(restored, i);
+                if (result != null) outcomes.append(damage.invoke(result)).append('x').append(count.getInt(result)).append(',');
+            }
+            outcomes.append(';');
+        }
+        return "FINAL water probes (offered to retained after one unpowered tick / converted input / outputs after reload with 1 charge): " + outcomes;
     }
 
     private static String cloning(Object world) throws Exception {
