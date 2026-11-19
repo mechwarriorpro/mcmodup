@@ -65,7 +65,7 @@ neoForge.runs.create('gameTestServer') {{
     result = run_gradle(root, "runGameTestServer")
     marker = next((line.split("required tests passed", 1)[0].rsplit("All ", 1)[-1].strip()
                    for line in result.splitlines() if "All " in line and "required tests passed" in line), None)
-    assert marker == str(22 + len(minechem_final_synthesis.FEATURES) + 6 + 3), result[-5400:]
+    assert marker == str(22 + len(minechem_final_synthesis.FEATURES) + 6 + 5), result[-5400:]
     assert digest(root / "run/mods" / JAR_NAME) == digest(jar), "Staged test mutated the JAR"
     return marker
 

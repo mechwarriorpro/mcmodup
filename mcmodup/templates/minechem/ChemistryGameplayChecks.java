@@ -54,7 +54,7 @@ public final class @CLASS@ {
         test.assertTrue(coated.is(Items.IRON_SWORD) && coated.getDamageValue() == 7 && coated.getHoverName().getString().equals("Coating check") &&
                 !ItemStack.isSameItemSameComponents(coated, sword) && sugar.getCount() == 1, "Coating didn't copy components or altered the inputs");
         var registry = test.getLevel().registryAccess();
-        var saved = ItemStack.parseOptional(registry, coated.saveOptional(registry));
+        var saved = ItemStack.parse(registry, coated.save(registry)).orElse(ItemStack.EMPTY);
         test.assertTrue(ItemStack.matches(coated, saved), "Coating didn't serialize");
         test.assertTrue(craft(test, sword, sugar, new ItemStack(Items.DIAMOND)).isEmpty(), "Coating must reject extra ingredients");
         test.assertTrue(craft(test, new ItemStack(Items.IRON_PICKAXE), sugar).isEmpty(), "Only swords can be coated");

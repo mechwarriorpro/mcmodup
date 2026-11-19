@@ -88,6 +88,58 @@ public final class Synthesis394Checks {
     }
 
     @GameTest(template = "test_room")
+    public static void release394BulkPaymentAndRoom(GameTestHelper test) {
+        var machine = place(test, BlockPos.ZERO);
+        var player = machine.player();
+        var inventory = player.getInventory();
+        var template = item(ID + ":element_fe", 16);
+        machine.menu().setCarried(template);
+        machine.menu().clicked(4, 0, ClickType.PICKUP, player);
+        machine.menu().setCarried(ItemStack.EMPTY);
+        test.assertTrue(machine.input().insertItem(0, template.copyWithCount(48), false).isEmpty(), "Missing bulk FE inputs");
+        charge(test, machine, 9000);
+        for (int slot = 0; slot < 36; slot++) inventory.setItem(slot, new ItemStack(Items.DIRT, 64));
+        test.assertTrue(machine.menu().quickMoveStack(player, OUTPUT).isEmpty() && machine.power().getEnergyStored() == 9000 &&
+                machine.input().getStackInSlot(0).getCount() == 48, "A full inventory charged the machine");
+        inventory.setItem(0, new ItemStack(Items.IRON_INGOT, 63));
+        machine.menu().clicked(OUTPUT, 0, ClickType.QUICK_MOVE, player);
+        test.assertTrue(inventory.getItem(0).getCount() == 64 && machine.power().getEnergyStored() == 6000 &&
+                machine.input().getStackInSlot(0).getCount() == 32, "Limited room must only pay for one batch");
+        inventory.setItem(1, ItemStack.EMPTY);
+        machine.menu().clicked(OUTPUT, 0, ClickType.QUICK_MOVE, player);
+        test.assertTrue(inventory.getItem(1).is(Items.IRON_INGOT) && inventory.getItem(1).getCount() == 2 &&
+                machine.power().getEnergyStored() == 0 && machine.input().getStackInSlot(0).isEmpty(), "Shift-click did not craft both affordable batches");
+        test.succeed();
+    }
+
+    @GameTest(template = "test_room")
+    public static void release394ExplicitCollisionChoice(GameTestHelper test) {
+        var machine = place(test, BlockPos.ZERO);
+        var leucine = item(ID + ":molecule_leucine", 1);
+        var isoleucine = item(ID + ":molecule_isoleucine", 1);
+        boolean first = false, alternate = false;
+        for (int step = 0; step < TRACE.length; step++) {
+            machine.menu().clickMenuButton(machine.player(), NEXT);
+            var result = machine.menu().getSlot(OUTPUT).getItem();
+            first |= result.is(leucine.getItem());
+            if (result.is(isoleucine.getItem())) { alternate = true; break; }
+        }
+        test.assertTrue(first && alternate, "Recipe browsing hid one product of the identical ghost pattern");
+        var saved = machine.entity().saveWithFullMetadata(test.getLevel().registryAccess());
+        var loaded = place(test, new BlockPos(2, 0, 0));
+        loaded.entity().loadWithComponents(saved, test.getLevel().registryAccess());
+        checkStack(test, loaded.menu().getSlot(OUTPUT).getItem(), isoleucine, "Explicit .394 choice did not reload");
+        for (int slot = 0; slot < OUTPUT; slot++) {
+            var tube = loaded.menu().getSlot(slot).getItem().copy();
+            if (!tube.isEmpty()) test.assertTrue(loaded.input().insertItem(slot, tube, false).isEmpty(), "Cannot fill chosen recipe input");
+        }
+        charge(test, loaded, 100);
+        checkStack(test, loaded.output().extractItem(0, 1, false), isoleucine, "Identical ghost pattern dispensed the wrong result");
+        test.assertTrue(loaded.power().getEnergyStored() == 0, "Chosen output was free");
+        test.succeed();
+    }
+
+    @GameTest(template = "test_room")
     public static void ghostEditingAndSavedSynthesis(GameTestHelper test) {
         var machine = place(test, BlockPos.ZERO);
         var fe = item(ID + ":element_fe", 16);

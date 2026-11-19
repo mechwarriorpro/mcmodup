@@ -48,6 +48,8 @@ FEATURES_394 = FEATURES | gameplay_features(True) | {"All 198 measured item and 
                            "5,000 mB water tank, shared input priority and buffer save": "watertankroundtripandpriority",
                            "Measured .394 synthesis batches with exact ghost slot counts and extraction cost": "exactsynthesisbatches",
                            "Ghost editing and saved synthesis, no unpaid extraction": "ghosteditingandsavedsynthesis",
+                           "Bulk shift-click with inventory preflight and exact payments": "release394bulkpaymentandroom",
+                           "Explicit .394 collision choice and restoration": "release394explicitcollisionchoice",
                            "Microscope research, journal selection, and saved synthesis template": "discoveredjournalrestoresactivesynthesis",
                            "Sided journal automation and on-extraction payment": "sidedjournalandpaidextraction"}
 
