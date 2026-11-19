@@ -186,6 +186,7 @@ public final class LegacyMinechemDecomposer {
                     " | " + LegacyMinechemSynthesis394.survey(world) + " | " + LegacyMinechemJournal394.survey(world, x, y, z);
             if (Boolean.getBoolean("mcmodup.minechem.matter")) LegacyMinechemOre.survey(world, FINAL_164);
             LegacyMinechemMining.survey(world, FINAL_164, x - 24, y + 48, z);
+            LegacyMinechemCombat.survey(world, FINAL_164, x + 48, y + 48, z);
             System.out.println("MCMODUP_MINECHEM_ORIGINAL_PASS slots=" + slots + "; start_charge=" + capacity + "; start_cost=" + paidAtStart
                     + "; input_consumed_on_start; saved_queue_emits_16_iron_tubes_one_per_tick; remaining_charge=0" + jam + materials + " | " + cloning(world) +
                     " | " + LegacyMinechemPolytool.survey(world, FINAL_164, x + 24, y + 8, z) +

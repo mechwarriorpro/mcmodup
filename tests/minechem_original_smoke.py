@@ -15,7 +15,7 @@ from mixed_legacy_pack_smoke import note
 from mcmodup.minechem_final_synthesis import TRACE
 from mcmodup.minechem_materials import observations
 from mcmodup.minechem_matter import AUTOMATION_TRACE, trace_name as matter_trace_name
-from mcmodup.minechem_polytool import mining_trace_name, trace_name
+from mcmodup.minechem_polytool import combat_trace_name, mining_trace_name, trace_name
 from mcmodup.machines import SYNTHESIS_394_COLLISION, release394_synthesis_trace, release394_trace
 from mcmodup.runtime import file_digest
 
@@ -38,6 +38,7 @@ def compile_probe(root: Path, server: Path, forge: Path, javac: str) -> None:
                                                                  "LegacyMinechemReactors.java", "LegacyMinechemSynthesisFinal.java",
                                                                  "LegacyMinechemChemistry.java", "LegacyMinechemPolytool.java",
                                                                  "LegacyMinechemMatter.java", "LegacyMinechemPlayerDecay.java", "LegacyMinechemMining.java",
+                                                                 "LegacyMinechemCombat.java",
                                                                  "LegacyMinechemFluidAutomation.java", "LegacyMinechemOre.java"))],
                             capture_output=True, text=True, timeout=60)
     assert result.returncode == 0, result.stderr
@@ -119,16 +120,17 @@ def original(root: Path, version: str, matter_only: bool = False) -> None:
             capture(path, f"Minechem {version} matter {kind}")
         assert not mismatch, f"{version} {kind} differs at {[(key, expected.get(key), actual.get(key)) for key in mismatch[:12]]}"
         note(f"Pinned Minechem {version} {kind}", f"{len(expected)} original rows re-observed")
-    path = server / "minechem-polytool-mining.txt"
-    text = path.read_text(encoding="utf-8")
-    actual = dict(line.split("=", 1) for line in text.splitlines())
-    expected = observations(mining_trace_name(version == "1.7.10"))
-    mismatched = [(key, expected.get(key), actual.get(key)) for key in sorted(expected.keys() | actual.keys())
-                  if expected.get(key) != actual.get(key)]
-    if os.environ.get("MCMODUP_CAPTURE_CHEMISTRY") == "1" or mismatched:
-        note(f"Original Minechem {version} Polytool mining", text)
-    assert not mismatched, f"{version} Polytool mining changed: {mismatched}"
-    note(f"Pinned Minechem {version} Polytool mining", f"{len(expected)} original loot and utility rows re-observed")
+    for kind, trace in (("mining", mining_trace_name), ("combat", combat_trace_name)):
+        path = server / f"minechem-polytool-{kind}.txt"
+        text = path.read_text(encoding="utf-8")
+        actual = dict(line.split("=", 1) for line in text.splitlines())
+        expected = observations(trace(version == "1.7.10"))
+        mismatched = [(key, expected.get(key), actual.get(key)) for key in sorted(expected.keys() | actual.keys())
+                      if expected.get(key) != actual.get(key)]
+        if os.environ.get("MCMODUP_CAPTURE_CHEMISTRY") == "1" or mismatched:
+            note(f"Original Minechem {version} Polytool {kind}", text)
+        assert not mismatched, f"{version} Polytool {kind} changed: {mismatched[:12]}"
+        note(f"Pinned Minechem {version} Polytool {kind}", f"{len(expected)} original rows re-observed")
     if matter_only:
         path = server / "minechem-fluid-automation.txt"
         text = path.read_text(encoding="utf-8")
