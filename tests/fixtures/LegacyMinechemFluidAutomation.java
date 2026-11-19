@@ -27,7 +27,8 @@ final class LegacyMinechemFluidAutomation {
     private final Method meta = w.getMethod("func_72805_g", int.class, int.class, int.class);
     private final Method setBlock = w.getMethod("func_147465_d", int.class, int.class, int.class, block, int.class, int.class);
     private final Method itemOf = stack.getMethod("func_77973_b"), damage = stack.getMethod("func_77960_j");
-    private final Method chemicalOf = Class.forName("minechem.utils.MinechemUtil").getMethod("getChemical", block);
+    private final Class<?> fluidBlock = Class.forName("net.minecraftforge.fluids.IFluidBlock");
+    private final Class<?> minechemFluid = Class.forName("minechem.fluid.MinechemFluid");
     private final Field count = stack.getField("field_77994_a");
     private final Object iron, lithium, exampleMolecule;
     private final Map<String, String> rows = new TreeMap<String, String>();
@@ -174,8 +175,11 @@ final class LegacyMinechemFluidAutomation {
     }
     private String position(int x, int y, int z) throws Exception {
         Object value = getBlock.invoke(world, x, y, z);
-        Object chem = chemicalOf.invoke(null, value);
-        if (chem != null) return chemical(chem) + ":" + meta.invoke(world, x, y, z);
+        if (value == vanilla("water") || value == vanilla("flowing_water")) return "m1:" + meta.invoke(world, x, y, z);
+        if (fluidBlock.isInstance(value)) {
+            Object fluid = fluidBlock.getMethod("getFluid").invoke(value);
+            if (minechemFluid.isInstance(fluid)) return chemical(minechemFluid.getMethod("getChemical").invoke(fluid)) + ":" + meta.invoke(world, x, y, z);
+        }
         for (String name : new String[]{"air", "stone", "fire", "lava", "flowing_lava"}) if (value == vanilla(name)) return name;
         return "other";
     }
