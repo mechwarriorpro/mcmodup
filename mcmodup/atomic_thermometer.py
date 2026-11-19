@@ -15,7 +15,7 @@ from .source_ports import digest
 
 LEGACY_SHA256 = "80cf5bd9d485377ecde3822154a5db47804fab3e8f78c388cfcf529239655938"
 MOD_ID = "atomic_thermometer"
-VERSION = "1.2.0-preview.3"
+VERSION = "1.2.0-preview.4"
 ARCHIVE = f"{MOD_ID}-{VERSION}.jar"
 PACKAGE = "mcmodup_kernel.atomic_thermometer"
 KERNEL = PACKAGE.replace(".", "/")
@@ -29,6 +29,12 @@ TEXTURES = {
 
 TEXTURES.update({f"assets/atomicscience/textures/blocks/{old}.png": f"assets/{MOD_ID}/textures/block/{new}.png"
                  for old, new in (("funnel", "steam_funnel"), ("funnel_top", "steam_funnel_top"))})
+ACCEL_BLOCKS = {"particle_accelerator": "accelerator", "electromagnet": "electromagnet",
+                "electromagnet_glass": "electromagnetGlass", "creative_builder": None}
+TEXTURES |= {f"assets/atomicscience/textures/blocks/{old}.png": f"assets/{MOD_ID}/textures/block/{name}.png"
+             for name, old in ACCEL_BLOCKS.items() if old}
+TEXTURES["assets/atomicscience/textures/items/cellEmpty.png"] = f"assets/{MOD_ID}/textures/item/empty_cell.png"
+
 FEATURES = {
     "Original threshold adjustment and wrapping rules": "thresholdandsettings",
     "Ten-tick thermal samples, tracked coordinates and redstone": "trackedheatandsignal",
@@ -36,6 +42,7 @@ FEATURES = {
     "One-cell steam consumption, spin, stored FE and sided transfer": "standalonesteamturbine",
     "Heated water boils and supplies turbine via a steam funnel": "heatedwaterfeedsturbine",
     "Preview funnel recipe, sided gas tank and native persistence": "funnelcraftsidesandsave",
+    "Creative ring builder and powered accelerator through saved antimatter output": "builderandaccelerator",
 }
 
 
@@ -79,10 +86,41 @@ def steam_checks(package: str, namespace: str) -> str:
             .replace("@PACKAGE@", package).replace("@NAMESPACE@", namespace))
 
 
+def accelerator_checks(package: str, namespace: str) -> str:
+    return ((TEMPLATES / "atomic_thermometer/AcceleratorChecks.java").read_text(encoding="utf-8")
+            .replace("@PACKAGE@", package).replace("@NAMESPACE@", namespace))
+
+
+def _accelerator_resources(assets: str, data: str) -> dict[str, str]:
+    files = {}
+    for name, image in ACCEL_BLOCKS.items():
+        model = f"{MOD_ID}:block/{name}"
+        texture = model if image else "minecraft:block/structure_block"
+        variants = {"": {"model": model}} if name != "particle_accelerator" else {
+            f"facing={side}": {"model": model, "y": rotation} for side, rotation in zip(("north", "east", "south", "west"), (0, 90, 180, 270))}
+        files[f"{assets}/blockstates/{name}.json"] = _json({"variants": variants})
+        files[f"{assets}/models/block/{name}.json"] = _json({"parent": "minecraft:block/cube_all", "textures": {"all": texture},
+            **({"render_type": "minecraft:translucent"} if name == "electromagnet_glass" else {})})
+        files[f"{assets}/models/item/{name}.json"] = _json({"parent": model})
+        files[f"{data}/loot_table/blocks/{name}.json"] = _json({"type": "minecraft:block", "pools": [{"rolls": 1,
+            "conditions": [{"condition": "minecraft:survives_explosion"}], "entries": [{"type": "minecraft:item", "name": f"{MOD_ID}:{name}"}]}]})
+    for name, texture in {"empty_cell": f"{MOD_ID}:item/empty_cell", "antimatter_cell": "minecraft:item/dragon_breath"}.items():
+        files[f"{assets}/models/item/{name}.json"] = _json({"parent": "minecraft:item/generated", "textures": {"layer0": texture}})
+    for name, count, pattern, key in (
+        ("particle_accelerator", 1, ["MCM", "IRI", "MCM"], {"C": "minecraft:copper_ingot", "I": "minecraft:iron_ingot", "M": f"{MOD_ID}:electromagnet", "R": "minecraft:respawn_anchor"}),
+        ("electromagnet", 4, ["ICI", "CRC", "ICI"], {"I": "minecraft:iron_ingot", "C": "minecraft:copper_ingot", "R": "minecraft:redstone"}),
+        ("electromagnet_glass", 4, ["MGM", "GMG", "MGM"], {"G": "minecraft:glass", "M": f"{MOD_ID}:electromagnet"}),
+        ("empty_cell", 8, [" G ", "G G", " G "], {"G": "minecraft:glass"}),
+    ):
+        files[f"{data}/recipe/{name}.json"] = _json({"type": "minecraft:crafting_shaped", "pattern": pattern,
+            "key": {letter: {"item": item} for letter, item in key.items()}, "result": {"id": f"{MOD_ID}:{name}", "count": count}})
+    return files
+
+
 def _project(workspace: Path) -> None:
     templates = TEMPLATES / "atomic_thermometer"
-    name = "Atomic Science Thermal Machines (Preview)"
-    description = "Voltz 1.2.0 thermometer, steam funnel and standalone turbine with a limited, native heat grid. Not full Atomic Science."
+    name = "Atomic Science Machines (Preview)"
+    description = "Voltz 1.2.0 thermometer, steam funnel and standalone turbine and a limited particle accelerator. Not full Atomic Science."
     prefix, rotor = f"{MOD_ID}:block/thermometer", f"{MOD_ID}:block/steam_turbine"
     funnel = f"{MOD_ID}:block/steam_funnel"
     java, resources = f"src/main/java/{KERNEL}", "src/main/resources"
@@ -96,7 +134,7 @@ def _project(workspace: Path) -> None:
 tasks.named('compileJava') {{ classpath += files('src/main/resources') }}
 tasks.named('jar') {{
     archiveFileName = '{ARCHIVE}'
-    exclude '{KERNEL}/ThermometerChecks*.class', '{KERNEL}/TurbineChecks*.class', '{KERNEL}/SteamChecks*.class', 'data/{MOD_ID}/structure/*.nbt'
+    exclude '{KERNEL}/ThermometerChecks*.class', '{KERNEL}/TurbineChecks*.class', '{KERNEL}/SteamChecks*.class', '{KERNEL}/AcceleratorChecks*.class', 'data/{MOD_ID}/structure/*.nbt'
 }}
 neoForge.runs.create('gameTestServer') {{
     type = 'gameTestServer'
@@ -107,10 +145,13 @@ neoForge.runs.create('gameTestServer') {{
 """,
         f"{resources}/META-INF/neoforge.mods.toml": meta.replace(f"[{NEOFORGE_VERSION},21.2)", f"[{NEOFORGE_VERSION}]"),
         **{f"{java}/{name}.java": (templates / f"{name}.java").read_bytes()
-           for name in ("Thermometer", "ThermometerMod", "HeatGrid", "Turbine", "TurbineClient", "SteamFunnel")},
+           for name in ("Thermometer", "ThermometerMod", "HeatGrid", "Turbine", "TurbineClient", "SteamFunnel", "Accelerator")},
         f"{java}/ThermometerChecks.java": checks(MOD_ID),
         f"{java}/TurbineChecks.java": turbine_checks(PACKAGE, MOD_ID),
         f"{java}/SteamChecks.java": steam_checks(PACKAGE, MOD_ID),
+        f"{java}/AcceleratorChecks.java": accelerator_checks(PACKAGE, MOD_ID),
+        f"{data}/structure/accel_room.nbt": empty_test_structure(15),
+        **_accelerator_resources(assets, data),
         f"{resources}/data/{MOD_ID}/structure/empty.nbt": empty_test_structure(5),
         f"{resources}/data/{MOD_ID}/structure/turbine_room.nbt": empty_test_structure(5),
         f"{resources}/data/c/tags/fluid/steam.json": _json({"replace": False, "values": [f"{MOD_ID}:steam"]}),
@@ -122,6 +163,8 @@ neoForge.runs.create('gameTestServer') {{
         f"{assets}/lang/en_us.json": _json({f"block.{MOD_ID}.thermometer": "Thermometer", f"itemGroup.{MOD_ID}": name,
             f"info.{MOD_ID}.status": "Threshold: %s K · Reading: %s K", f"info.{MOD_ID}.tracked": "Tracking %s, %s, %s",
             f"info.{MOD_ID}.untracked": "Not tracking a remote position",
+            **{f"block.{MOD_ID}.{block}": block.replace("_", " ").title() for block in ACCEL_BLOCKS},
+            f"item.{MOD_ID}.empty_cell": "Empty Cell", f"item.{MOD_ID}.antimatter_cell": "Antimatter Cell (125 mg)",
             f"block.{MOD_ID}.steam_turbine": "Steam Turbine", f"fluid.{MOD_ID}.steam": "Steam", f"block.{MOD_ID}.steam_funnel": "Steam Funnel",
             f"info.{MOD_ID}.turbine": "Steam: %s mB · Stored: %s FE · Rotor: %s rad/s"}),
         f"{assets}/blockstates/thermometer.json": _json({"variants": {"": {"model": prefix}}}),
@@ -169,6 +212,8 @@ def prepare(output: Path) -> Path:
                       "Loaded-chunk server heat grid and water vaporization only. No legacy thermal events, persistent heat, ice or other phase changes.",
                       "Water can produce gas with externally supplied heat. Reactors, multiblock turbine, legacy boil effects and original geometry are absent.",
                       "Adapted iron funnel recipe; original recipe availability is not verified. The native funnel saves its tank, unlike the original reversed persistence callbacks. Thermometer and turbine still lack survival crafting.",
+                      "Accelerator uses a bounded planar native beam and adapted recipes. It does not preserve in-flight beams, particle collisions, dark matter or antimatter detonation.",
+                      "Creative Builder supports two fixed accelerator ring sizes only; no other Voltz blueprints or legacy UI.",
                       "No ComputerCraft/OpenComputers, Universal Electricity, old saves or legacy add-ons."],
                   "import_assets": {old: f"src/main/resources/{new}" for old, new in TEXTURES.items()},
                   "asset_map": {old: {"path": new} for old, new in TEXTURES.items()}, "method_imports": [method_group()]}
