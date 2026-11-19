@@ -25,6 +25,7 @@ on:
       - 'tests/fixtures/LegacyMinechemPolytool.java'
       - 'tests/fixtures/LegacyMinechemMining.java'
       - 'tests/fixtures/LegacyMinechemCombat.java'
+      - 'tests/fixtures/minechem_gold/**'
       - 'tests/fixtures/LegacyMinechemMatter.java'
       - 'tests/fixtures/LegacyMinechemPlayerDecay.java'
       - 'tests/fixtures/LegacyMinechemOre.java'

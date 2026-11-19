@@ -26,9 +26,10 @@ FINAL_HASH = "2443c7f91351f0e6c2323636be28a6fe8697704f20edf378dfe1a9d7a3070bea"
 RELEASE_394 = "Minechem-1.7.10-5.0.5.394.jar"
 RELEASE_394_HASH = "ea802167b760d43828a0648de3727a58d5c1f7737613123ae49f2743188cdae7"
 COFH = "CoFHLib-[1.7.10]1.0.1-151.jar"
+UE = "universal-electricity-3.1.0.74-core.jar"
 
 
-def compile_probe(root: Path, server: Path, forge: Path, javac: str) -> None:
+def compile_probe(root: Path, server: Path, forge: Path, javac: str, *, final: bool) -> None:
     probe = root / "probe"
     probe.mkdir()
     fixtures = Path(__file__).with_name("fixtures")
@@ -43,8 +44,21 @@ def compile_probe(root: Path, server: Path, forge: Path, javac: str) -> None:
                                                                  "LegacyMinechemOreInterop.java"))],
                             capture_output=True, text=True, timeout=60)
     assert result.returncode == 0, result.stderr
+    # Only the receiver needs a typed Item. javac sees shells for the obfuscated Minecraft
+    # classes, checks the exact API JAR, and the runtime links to the real Forge classes.
+    signature_dir = root / "signatures/net/minecraft/item"
+    signature_dir.mkdir(parents=True)
+    item = signature_dir / "Item.java"
+    stack = signature_dir / "ItemStack.java"
+    item.write_text("package net.minecraft.item; public class Item { public Item(" + ("int unused" if final else "") + ") {} }\n", encoding="utf-8")
+    stack.write_text("package net.minecraft.item; public class ItemStack {}\n", encoding="utf-8")
+    typed = fixtures / "minechem_gold" / ("FinalGoldReceiver.java" if final else "Release394GoldReceiver.java")
+    api = server / "mods" / (UE if final else COFH)
+    result = subprocess.run([javac, "-proc:none", "-encoding", "UTF-8", "-classpath", os.pathsep.join(map(str, (forge, api))),
+                             "-d", str(probe), str(item), str(stack), str(typed)], capture_output=True, text=True, timeout=60)
+    assert result.returncode == 0, result.stderr
     with ZipFile(server / "mods/mcmodup-minechemoracle.jar", "x") as jar:
-        for compiled in probe.rglob("*.class"):
+        for compiled in (probe / "mcmodup").rglob("*.class"):
             jar.write(compiled, compiled.relative_to(probe).as_posix())
 
 
@@ -63,7 +77,7 @@ def original(root: Path, version: str, matter_only: bool = False, ore_disable: b
         assert file_digest(archive) == VOLTZ
         with ZipFile(archive) as pack:
             files = ["Voltz.jar", "minecraft_server.1.6.4.jar", "config/forge.cfg", "config/UniversalElectricity.cfg",
-                     "mods/universal-electricity-3.1.0.74-core.jar"]
+                     f"mods/{UE}"]
             files += [item for item in pack.namelist() if item.startswith("libraries/") and item.endswith(".jar")]
             for file in files:
                 assert not set(file.split("/")) & {"", ".", ".."}, file
@@ -74,7 +88,7 @@ def original(root: Path, version: str, matter_only: bool = False, ore_disable: b
         if ore_disable:
             (server / "config/minechem.cfg").write_text("general {\n    B:UraniumOreCraftable=false\n}\n", encoding="utf-8")
         forge = server / "Voltz.jar"
-        compile_probe(root, server, forge, str(jdk / "javac"))
+        compile_probe(root, server, forge, str(jdk / "javac"), final=True)
         command = [str(jdk / "java"), "-Xmx1G", "-Djava.awt.headless=true", *options, "-jar", forge.name, "nogui"]
     else:
         name, checksum = RELEASE_394, RELEASE_394_HASH
@@ -86,7 +100,7 @@ def original(root: Path, version: str, matter_only: bool = False, ore_disable: b
         shutil.copyfile(root / COFH, server / "mods" / COFH)
         # .394's molecule decay links to sun.misc.Hashing, removed in Java 8.
         # Retain Java 8 for the existing integration trace: its Forge recipe order differs from Java 7.
-        compile_probe(root, server, forge, str(jdk / "javac") if matter else java8("javac"))
+        compile_probe(root, server, forge, str(jdk / "javac") if matter else java8("javac"), final=False)
         command = legacy_command("1.7.10", options)
         if matter:
             command[0] = str(jdk / "java")

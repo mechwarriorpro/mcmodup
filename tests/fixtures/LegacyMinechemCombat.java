@@ -395,23 +395,59 @@ final class LegacyMinechemCombat {
             }
             rows.put("helium_clears", stopped.toString());
         } finally { discard.invoke(first); discard.invoke(last); }
-        held = equip(79, 1);
+        goldTransfer();
+    }
+
+    private void goldTransfer() throws Exception {
+        Object held = old ? equip(79, 1, 3, 2) : equip(79, 1);
         Field weather = w.getField("field_73007_j");
         List<?> effects = (List<?>)weather.get(world);
-        for (int roll = 0; roll <= 1; roll++) {
-            int before = effects.size();
-            long seed = 0;
-            while (new Random(seed).nextInt(35000) != roll) seed++;
-            worldRandom.setSeed(seed);
-            update.invoke(held, world, actor, 10, false);
-            rows.put("gold_rank1_roll" + roll, Integer.toString(effects.size() - before));
-            while (effects.size() > before) effects.remove(effects.size() - 1);
-        }
-        if (!old) {
-            Field cofh = Class.forName("minechem.item.polytool.types.PolytoolTypeGold").getDeclaredField("canCharge");
-            cofh.setAccessible(true);
-            rows.put("gold_cofh_api", String.valueOf(cofh.getBoolean(null)));
-        }
+        Class<?> receiverType = Class.forName("mcmodup.minechemoracle." + (old ? "FinalGoldReceiver" : "Release394GoldReceiver"));
+        Object receiver;
+        if (old) {
+            Object[] registered = (Object[])item.getField("field_77698_e").get(null);
+            int free = 27000;
+            while (registered[free] != null && free + 1 < registered.length) free++;
+            require(registered[free] == null, "No ID for a scratch Gold receiver");
+            receiver = receiverType.getConstructor(int.class).newInstance(free - 256);
+        } else receiver = receiverType.newInstance();
+        Object sample = stack.getConstructor(item, int.class, int.class).newInstance(receiver, 1, 0);
+        if (!old) receiverType.getField("expected").set(receiver, sample);
+        Method observed = receiverType.getMethod("observed");
+        set(inventory, 10, sample);
+        try {
+            for (int roll = 1; roll >= 0; roll--) {
+                int before = effects.size();
+                goldTick(held, roll);
+                rows.put("gold_rank1_roll" + roll, Integer.toString(effects.size() - before));
+                rows.put("gold_transfer_roll" + roll, String.valueOf(observed.invoke(receiver)));
+                while (effects.size() > before) effects.remove(effects.size() - 1);
+            }
+            if (old) {
+                rows.put("gold_ue_lithium_after", String.valueOf(tool.getClass().getMethod("getEnergy", stack).invoke(tool, held)));
+            } else {
+                Field cofh = Class.forName("minechem.item.polytool.types.PolytoolTypeGold").getDeclaredField("canCharge");
+                cofh.setAccessible(true);
+                boolean loaded = cofh.getBoolean(null);
+                rows.put("gold_cofh_api", String.valueOf(loaded));
+                int before = effects.size();
+                try {
+                    cofh.setBoolean(null, false);
+                    goldTick(held, 0);
+                    rows.put("gold_cofh_disabled", (effects.size() - before) + "/" + observed.invoke(receiver));
+                } finally {
+                    cofh.setBoolean(null, loaded);
+                    while (effects.size() > before) effects.remove(effects.size() - 1);
+                }
+            }
+        } finally { set(inventory, 10, null); }
+    }
+
+    private void goldTick(Object held, int roll) throws Exception {
+        long seed = 0;
+        while (new Random(seed).nextInt(35000) != roll) seed++;
+        worldRandom.setSeed(seed);
+        update.invoke(held, world, actor, 10, false);
     }
 
     private Object equip(int... ranks) throws Exception {
