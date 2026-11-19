@@ -32,7 +32,8 @@
             test.runAfterDelay(5, () -> {
                 var returnedBucket = ((Container) level.getBlockEntity(bucket)).getItem(0);
                 test.assertTrue(returnedBucket.is(item("bucket_element_u", 1).getItem()) && clock(test, returnedBucket).getLong("age") == 37 &&
-                    level.isEmptyBlock(bucket.east()), "Bucket automation reset the stored radioactive source clock");
+                    level.isEmptyBlock(bucket.east()), "Bucket automation reset the stored radioactive source clock: " + returnedBucket +
+                    "; target=" + level.getBlockState(bucket.east()));
                 test.assertTrue(count(level, split, item("element_fe", 1)) == 8 && count(level, split, item("test_tube", 1)) == 0 &&
                     level.isEmptyBlock(split.east()), "Empty tubes couldn't recover the source they placed");
                 test.succeed();
