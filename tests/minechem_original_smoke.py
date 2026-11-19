@@ -39,7 +39,8 @@ def compile_probe(root: Path, server: Path, forge: Path, javac: str) -> None:
                                                                  "LegacyMinechemChemistry.java", "LegacyMinechemPolytool.java",
                                                                  "LegacyMinechemMatter.java", "LegacyMinechemPlayerDecay.java", "LegacyMinechemMining.java",
                                                                  "LegacyMinechemCombat.java",
-                                                                 "LegacyMinechemFluidAutomation.java", "LegacyMinechemOre.java"))],
+                                                                 "LegacyMinechemFluidAutomation.java", "LegacyMinechemOre.java",
+                                                                 "LegacyMinechemOreInterop.java"))],
                             capture_output=True, text=True, timeout=60)
     assert result.returncode == 0, result.stderr
     with ZipFile(server / "mods/mcmodup-minechemoracle.jar", "x") as jar:
@@ -47,10 +48,13 @@ def compile_probe(root: Path, server: Path, forge: Path, javac: str) -> None:
             jar.write(compiled, compiled.relative_to(probe).as_posix())
 
 
-def original(root: Path, version: str, matter_only: bool = False) -> None:
+def original(root: Path, version: str, matter_only: bool = False, ore_disable: bool = False) -> None:
     source, server = root / "original", root / "server"
     matter = matter_only or version == "1.6.4"
     options = [f"-Dmcmodup.minechem.version={version}", f"-Dmcmodup.minechem.matter={str(matter).lower()}"]
+    if ore_disable:
+        assert version == "1.6.4" and not matter_only
+        options.append("-Dmcmodup.minechem.ore_disable=true")
     jdk = Path(os.environ["JAVA_HOME"]) / "bin"
     if version == "1.6.4":
         name, checksum = FINAL, FINAL_HASH
@@ -67,6 +71,8 @@ def original(root: Path, version: str, matter_only: bool = False) -> None:
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_bytes(pack.read(file))
         shutil.copyfile(source / "mods" / name, server / "mods" / name)
+        if ore_disable:
+            (server / "config/minechem.cfg").write_text("general {\n    B:UraniumOreCraftable=false\n}\n", encoding="utf-8")
         forge = server / "Voltz.jar"
         compile_probe(root, server, forge, str(jdk / "javac"))
         command = [str(jdk / "java"), "-Xmx1G", "-Djava.awt.headless=true", *options, "-jar", forge.name, "nogui"]
@@ -96,6 +102,16 @@ def original(root: Path, version: str, matter_only: bool = False) -> None:
         raise
     assert file_digest(server / "mods" / name) == checksum
     note(f"Original Minechem decomposer on Forge {version}", evidence)
+    trace = "final-ore-disabled" if ore_disable else ("release394-ore-interop" if version == "1.7.10" else "final-ore-interop")
+    path = server / "minechem-ore-interop.txt"
+    text = path.read_text(encoding="utf-8")
+    if os.environ.get("MCMODUP_CAPTURE_CHEMISTRY") == "1" or not observations(f"{trace}.txt"):
+        note(f"Original Minechem {version} {trace}", text)
+    expected = observations(f"{trace}.txt")
+    if expected:
+        assert dict(line.split("=", 1) for line in text.splitlines()) == expected, (trace, text)
+    if ore_disable:
+        return
     for kind in (("fluids", "radiation", "player-decay", "uranium-worldgen") if matter else ()):
         path = server / f"minechem-{kind}.txt"
         actual = dict(line.split("=", 1) for line in path.read_text(encoding="utf-8").splitlines())
@@ -238,9 +254,10 @@ if __name__ == "__main__":
     parser.add_argument("root", type=Path)
     parser.add_argument("version", choices=("1.6.4", "1.7.10"))
     parser.add_argument("--matter-only", action="store_true")
+    parser.add_argument("--ore-disable", action="store_true", help="Boot FINAL with the uranium crafting config off")
     args = parser.parse_args()
     try:
-        original(args.root.resolve(), args.version, args.matter_only)
+        original(args.root.resolve(), args.version, args.matter_only, args.ore_disable)
     except Exception:
         if os.environ.get("GITHUB_ACTIONS") == "true":
             note(f"Original Minechem {args.version} check failed", traceback.format_exc()[-5500:], level="error")

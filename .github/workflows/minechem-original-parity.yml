@@ -28,6 +28,7 @@ on:
       - 'tests/fixtures/LegacyMinechemMatter.java'
       - 'tests/fixtures/LegacyMinechemPlayerDecay.java'
       - 'tests/fixtures/LegacyMinechemOre.java'
+      - 'tests/fixtures/LegacyMinechemOreInterop.java'
       - 'tests/fixtures/LegacyMinechemFluidAutomation.java'
       - 'tests/fixtures/LegacyMinechemSynthesis394.java'
       - 'tests/fixtures/LegacyMinechemSynthesisFinal.java'
@@ -115,3 +116,11 @@ jobs:
           mkdir "$root/matter"
           cp -r "$root/original" "$root/CoFHLib-[1.7.10]1.0.1-151.jar" "$root/matter/"
           python -m minechem_original_smoke "$root/matter" 1.7.10 --matter-only
+      - name: Replay FINAL with the uranium crafting config disabled
+        if: matrix.minecraft == '1.6.4'
+        shell: bash
+        run: |
+          root="$RUNNER_TEMP/minechem"
+          mkdir "$root/ore-disabled"
+          cp -r "$root/original" "$root/voltz.zip" "$root/ore-disabled/"
+          python -m minechem_original_smoke "$root/ore-disabled" 1.6.4 --ore-disable

@@ -18,6 +18,10 @@ public final class LegacyMinechemDecomposer {
             Class<?> serverType = type("server.MinecraftServer"), worldType = type("world.World");
             Object server = serverType.getMethod("func_71276_C").invoke(null);
             Object world = serverType.getMethod("func_71218_a", int.class).invoke(server, 0);
+            if (Boolean.getBoolean("mcmodup.minechem.ore_disable")) {
+                System.out.println("MCMODUP_MINECHEM_ORIGINAL_PASS " + LegacyMinechemOreInterop.survey(world, FINAL_164));
+                return;
+            }
             Object spawn = worldType.getMethod("func_72861_E").invoke(world);
             int x = coordinate(spawn, "field_71574_a"), y = coordinate(spawn, "field_71572_b") + 4, z = coordinate(spawn, "field_71573_c");
             Object block = Class.forName("minechem.MinechemBlocksGeneration").getField("decomposer").get(null);
@@ -192,7 +196,8 @@ public final class LegacyMinechemDecomposer {
                     " | " + LegacyMinechemPolytool.survey(world, FINAL_164, x + 24, y + 8, z) +
                     " | " + LegacyMinechemReactors.survey(world, FINAL_164, x, y + 18, z) +
                     " | " + LegacyMinechemChemistry.survey(world, FINAL_164) +
-                    (Boolean.getBoolean("mcmodup.minechem.matter") ? " | " + LegacyMinechemMatter.survey(world, FINAL_164, x + 24, y + 10, z) : ""));
+                    (Boolean.getBoolean("mcmodup.minechem.matter") ? " | " + LegacyMinechemMatter.survey(world, FINAL_164, x + 24, y + 10, z) : "")
+                    + " | " + LegacyMinechemOreInterop.survey(world, FINAL_164));
         } catch (Throwable failure) {
             Throwable cause = failure.getCause() == null ? failure : failure.getCause();
             System.err.println("MCMODUP_MINECHEM_ORIGINAL_FAIL " + cause + " at " +
