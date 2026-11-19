@@ -25,20 +25,33 @@ STACK = "net/minecraft/item/ItemStack"
 RESOURCE = "src/main/resources/"
 FINAL = PROFILES["minechem-chemistry"]
 RELEASE_394 = PROFILES[RELEASE_394_PROFILE]
-VERSIONS = {FINAL.namespace: "1.3.1-partial", RELEASE_394.namespace: "1.2.0-partial"}
+VERSIONS = {FINAL.namespace: "1.3.1-partial", RELEASE_394.namespace: "1.3.0-partial"}
 FEATURES = {"Buffered iron decomposition and saved remaining output": "savedbufferdrains",
             "Original decomposer output-slot method": "linkedslotrule"}
 FEATURES_394 = FEATURES | {"All 198 measured item and molecule decomposition rules": "materialdecompositionmatchestrace",
-                           "5,000 mB water tank, shared input priority and buffer save": "watertankroundtripandpriority"}
+                           "5,000 mB water tank, shared input priority and buffer save": "watertankroundtripandpriority",
+                           "Measured .394 synthesis batches with exact ghost slot counts and extraction cost": "exactsynthesisbatches",
+                           "Ghost editing and saved synthesis, no unpaid extraction": "ghosteditingandsavedsynthesis"}
 
 
 def release394_checks(package: str, test_namespace: str, entries: list[CatalogEntry]) -> str:
     cases = []
     for rule in machine_recipes(RELEASE_394.namespace, entries, mode=DecomposerMode.RELEASE_394):
-        if not rule.fluid_input:
+        if rule.machine == "decomposer" and not rule.fluid_input:
             products = ",".join(f"{key}@{count}" for key, count in rule.outputs)
             cases.append(f"        {json.dumps(f'{rule.id}={products}')}")
     return ((TEMPLATES / "minechem/Release394Checks.java").read_text(encoding="utf-8")
+            .replace("@PACKAGE@", package).replace("@TEST_NAMESPACE@", test_namespace)
+            .replace("@TRACE@", ",\n".join(cases)))
+
+
+def synthesis394_checks(package: str, test_namespace: str, entries: list[CatalogEntry]) -> str:
+    cases = []
+    for rule in machine_recipes(RELEASE_394.namespace, entries, mode=DecomposerMode.RELEASE_394):
+        if rule.machine == "synthesizer":
+            pattern = ",".join(f"{part[0]}@{part[1]}" if part else "_" for part in rule.ghost_pattern)
+            cases.append(f"        {json.dumps(f'{rule.id};{rule.outputs[0][1]};{rule.energy};{pattern}')}")
+    return ((TEMPLATES / "minechem/Synthesis394Checks.java").read_text(encoding="utf-8")
             .replace("@PACKAGE@", package).replace("@TEST_NAMESPACE@", test_namespace)
             .replace("@TRACE@", ",\n".join(cases)))
 
@@ -118,6 +131,7 @@ def _recipe(original: Path, profile: Profile, checksum: str, output: Path) -> di
         .replace("@NAMESPACE@", namespace).replace("@PREPAID@", str(prepaid).lower()))
     if prepaid:
         files[f"src/main/java/{java_root}/Release394Checks.java"] = release394_checks(package, namespace, entries)
+        files[f"src/main/java/{java_root}/Synthesis394Checks.java"] = synthesis394_checks(package, namespace, entries)
     files[f"src/main/java/mcmodup_kernel/{namespace}/DecomposerAccess.java"] = _adapter(namespace, prepaid)
     structure = f"data/{namespace}/structure/test_room.nbt"
     files[RESOURCE + structure] = empty_test_structure()
@@ -128,7 +142,7 @@ def _recipe(original: Path, profile: Profile, checksum: str, output: Path) -> di
 tasks.named('compileJava') {{ classpath += files('src/main/resources') }}
 tasks.named('jar') {{
     archiveFileName = '{artifact}'
-    exclude '{tests}.class', '{java_root}/Release394Checks*.class', '{structure}'
+    exclude '{tests}.class', '{java_root}/Release394Checks*.class', '{java_root}/Synthesis394Checks*.class', '{structure}'
 }}
 neoForge.runs.create('gameTestServer') {{
     type = 'gameTestServer'

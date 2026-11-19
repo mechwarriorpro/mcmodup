@@ -14,6 +14,7 @@ TEMPLATES = Path(__file__).with_name("templates") / "minechem"
 FINAL_LEGACY_SHA256 = "2443c7f91351f0e6c2323636be28a6fe8697704f20edf378dfe1a9d7a3070bea"
 JAVA_CLASSES = ("ChemistryMachines", "ChemistryMenu", "ChemistryScreen", "ChemistryRecipes",
                 "ChemistryResearch", "ResearchMenus", "ResearchScreens")
+SYNTHESIS_394_CLASSES = ("Synthesizer394", "Synthesis394Menu", "Synthesis394Screen", "Synthesis394Rules")
 
 
 class DecomposerMode(StrEnum):
@@ -24,7 +25,7 @@ class DecomposerMode(StrEnum):
 
 def machine_classes(mode: DecomposerMode) -> tuple[str, ...]:
     # No subscriber should try to register screens for unavailable research menus.
-    return tuple(name for name in JAVA_CLASSES if mode != DecomposerMode.RELEASE_394 or name != "ResearchScreens")
+    return JAVA_CLASSES if mode != DecomposerMode.RELEASE_394 else JAVA_CLASSES[:-1] + SYNTHESIS_394_CLASSES
 
 
 @dataclass(frozen=True)
@@ -37,6 +38,8 @@ class MachineRecipe:
     ticks: int
     source: str
     fluid_input: tuple[str, int] | None = None
+    ghost_pattern: tuple[tuple[str, int] | None, ...] = ()
+    shaped: bool = False
 
     def describe(self) -> dict:
         description = {"machine": self.machine, "id": self.id, "energy_fe": self.energy, "ticks": self.ticks,
@@ -46,6 +49,9 @@ class MachineRecipe:
         if self.fluid_input:
             name, volume = self.fluid_input
             description["fluid_input"] = {"id": name, "millibuckets": volume}
+        if self.ghost_pattern:
+            description.update({"shaped": self.shaped, "consumption": "on_extraction", "ghost_pattern": [
+                {"id": part[0], "count": part[1]} if part else None for part in self.ghost_pattern]})
         return description
 
 
@@ -79,6 +85,34 @@ def release394_trace() -> dict[str, tuple[tuple[str, int], ...]]:
     return rows
 
 
+def release394_synthesis_trace() -> dict[str, tuple[int, int, bool, tuple[tuple[str, int] | None, ...]]]:
+    """Read successful original extractions and the ghost slots that selected them."""
+    rows = {}
+    for line in (TEMPLATES / "release394-synthesis.txt").read_text(encoding="utf-8").splitlines():
+        if not line or line.startswith("#"):
+            continue
+        key, _, data = line.partition("=")
+        match = re.fullmatch(r"([1-9]\d{0,5});([1-9]\d?);(shaped|shapeless);(.+)", data)
+        if key in rows or not re.fullmatch(r"(?:m[0-9]+|[a-z][a-z_]+)", key) or match is None:
+            raise InputError(f"Invalid .394 synthesis trace row: {line!r}")
+        cost, result, mode, pattern = match.groups()
+        parts = []
+        for token in pattern.split(","):
+            if token == "_":
+                parts.append(None)
+                continue
+            part = re.fullmatch(r"([em]\d{1,3})x([1-9]\d{0,2})", token)
+            if part is None:
+                raise InputError(f"Invalid .394 synthesis ingredient for {key}: {token!r}")
+            parts.append((part[1], int(part[2])))
+        if len(parts) != 9 or not any(parts) or int(cost) > 100_000 or int(result) > 64:
+            raise InputError(f"Unrepresentable .394 synthesis rule for {key}")
+        rows[key] = (int(cost), int(result), mode == "shaped", tuple(parts))
+    if not rows:
+        raise InputError("The .394 synthesis trace is empty")
+    return rows
+
+
 def _release394_recipes(namespace: str, entries: list[CatalogEntry]) -> list[MachineRecipe]:
     traced = release394_trace()
     ids = {}
@@ -91,19 +125,29 @@ def _release394_recipes(namespace: str, entries: list[CatalogEntry]) -> list[Mac
         ids[key] = f"{namespace}:{entry.path}"
     if {key for key in ids if key.startswith("m")} != {key for key in traced if re.fullmatch(r"m\d+", key)}:
         raise InputError("The .394 molecule catalog does not match the measured decomposition inputs.")
+
     def resolve(key: str) -> str:
         if key not in ids:
             raise InputError(f"Could not map original .394 chemical metadata {key}.")
         return ids[key]
 
+    def result_id(key: str) -> str:
+        return resolve(key) if re.fullmatch(r"m\d+", key) else f"minecraft:{key}"
+
     recipes = []
     for key, parts in traced.items():
         fluid = key == "fluid_water"
-        item = resolve(key) if re.fullmatch(r"m\d+", key) else f"minecraft:{'water' if fluid else key}"
+        item = result_id("water" if fluid else key)
         products = tuple((resolve(part), count) for part, count in parts)
         recipes.append(MachineRecipe("decomposer", item, () if fluid else ((item, 1),), products, 1_000,
                                      sum(count for _, count in products), "5.0.5.394 Forge 10.13.2.1291 tick trace",
                                      (item, 1000) if fluid else None))
+    for key, (cost, result, shaped, pattern) in release394_synthesis_trace().items():
+        out = result_id(key)
+        ghosts = tuple((resolve(part[0]), part[1]) if part else None for part in pattern)
+        recipes.append(MachineRecipe("synthesizer", out, tuple(part for part in ghosts if part), ((out, result),),
+                                     cost, 0, "5.0.5.394 Forge 10.13.2.1291 extraction trace",
+                                     ghost_pattern=ghosts, shaped=shaped))
     return recipes
 
 
@@ -144,7 +188,7 @@ def _java_recipes(package: str, namespace: str, entries: list[CatalogEntry], rec
     def rows(machine: str, *, fluid: bool = False) -> str:
         return ",\n".join(f'        new Recipe("{r.id}", {r.energy}, {r.ticks}, {r.fluid_input[1] if r.fluid_input else 0}, '
                            f'{parts(r.inputs)}, {parts(r.outputs)})' for r in recipes
-                           if r.machine == machine and bool(r.fluid_input) == fluid)
+                           if r.machine == machine and not r.ghost_pattern and bool(r.fluid_input) == fluid)
 
     chemical_ids = ",\n".join(f'        "{namespace}:{entry.path}"' for entry in entries)
     return f'''package {package};
@@ -210,11 +254,28 @@ def machine_project(namespace: str, package: str, entries: list[CatalogEntry], r
              .replace("@PACKAGE@", package).replace("@NAMESPACE@", namespace)
              .replace("@BUFFERED_DECOMPOSER@", str(mode != DecomposerMode.BATCH).lower())
              .replace("@PREPAID_DECOMPOSER@", str(prepaid).lower())
+             .replace("@REGISTER_MACHINES@", ("List.of(decomposer, Synthesizer394.register(bus, items))" if prepaid else
+                                               "List.of(items.registerSimpleBlockItem(SYNTHESIZER), decomposer)"))
              .replace("@FINAL_CAN_UNJAM@", jam_test).replace("@COMPACT_PREPAID@", compact)
-             for name in machine_classes(mode) if name != "ChemistryRecipes"}
+             for name in machine_classes(mode) if name not in ("ChemistryRecipes", *SYNTHESIS_394_CLASSES)}
     files[f"{java}/ChemistryRecipes.java"] = _java_recipes(package, namespace, entries, recipes)
+    if prepaid:
+        for name in SYNTHESIS_394_CLASSES:
+            code = (TEMPLATES / f"{name}.java").read_text(encoding="utf-8")
+            if name == "Synthesis394Rules":
+                cases = []
+                for row in recipes:
+                    if not row.ghost_pattern:
+                        continue
+                    parts = ", ".join(f'new Part("{part[0]}", {part[1]})' if part else "EMPTY" for part in row.ghost_pattern)
+                    cases.append(f'        new Rule(new Part("{row.id}", {row.outputs[0][1]}), {row.energy}, '
+                                 f'{str(row.shaped).lower()}, List.of({parts}))')
+                code = code.replace("@RULES@", ",\n".join(cases))
+            files[f"{java}/{name}.java"] = code.replace("@PACKAGE@", package).replace("@NAMESPACE@", namespace)
     locales = {f"gui.{namespace}.{key}": label for key, label in {
         "process": "Process", "auto": "Auto", "manual": "Manual",
+        "clear_ghosts": "Clear", "ghost_help": "Template slots: copy the held count with left-click, adjust with right-click.",
+        "synthesis_cost": "Batch: %s FE", "synthesis_power": "Stored: %s FE",
         "auto_help": "Toggle repeated processing using the current recipe, input and FE",
         "decompose": "Insert one material to split", "charge": "Optional fuel: Redstone Dust (+500 FE when needed)",
         "water_tank": "Water: %s/%s mB", "empty_tank": "Empty tank",
@@ -250,7 +311,7 @@ def machine_project(namespace: str, package: str, entries: list[CatalogEntry], r
         ("microscope", "Microscope", "minecraft:block/polished_andesite", [" LI", " PI", "III"],
          {"I": "iron_ingot", "L": "spyglass", "P": "glass_pane"}),
     ):
-        if prepaid and block != "decomposer":
+        if prepaid and block == "microscope":
             continue
         blocks.append(block)
         model = f"{namespace}:block/{block}"

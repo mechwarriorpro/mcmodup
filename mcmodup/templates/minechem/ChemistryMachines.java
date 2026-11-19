@@ -70,7 +70,7 @@ public final class ChemistryMachines {
         MENUS.register(bus);
         bus.addListener(ChemistryMachines::registerCapabilities);
         var decomposer = items.registerSimpleBlockItem(DECOMPOSER);
-        return SYNTHESIZER == null ? List.of(decomposer) : List.of(items.registerSimpleBlockItem(SYNTHESIZER), decomposer);
+        return @REGISTER_MACHINES@;
     }
 
     private static void registerCapabilities(RegisterCapabilitiesEvent event) {

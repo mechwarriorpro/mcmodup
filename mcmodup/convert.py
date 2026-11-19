@@ -170,20 +170,22 @@ def _project_files(profile: Profile, entries: list[CatalogEntry], textures: dict
     package = f"mcmodup.generated.{namespace}"
     mode = _decomposer_mode(profile, digest)
     version = project_version or {DecomposerMode.FINAL: "1.3.0-partial", DecomposerMode.BATCH: "1.2.0-partial",
-                                  DecomposerMode.RELEASE_394: "1.1.0-partial"}.get(mode, "1.0.0-partial")
+                                  DecomposerMode.RELEASE_394: "1.2.0-partial"}.get(mode, "1.0.0-partial")
     machine_rules = machine_recipes(namespace, entries, mode=mode) if mode else []
     if mode:
         recipe_files, extra_locales = machine_project(namespace, package, entries, machine_rules, mode=mode,
                                                       linked_decomposer=linked_decomposer)
         count = len(machine_rules)
         if mode == DecomposerMode.RELEASE_394:
-            inputs = {key for recipe in machine_rules for key, _ in recipe.inputs}
-            outputs = {key for recipe in machine_rules for key, _ in recipe.outputs}
+            inputs = {key for recipe in machine_rules if recipe.machine == "decomposer" for key, _ in recipe.inputs}
+            outputs = {key for recipe in machine_rules if recipe.machine == "decomposer" for key, _ in recipe.outputs}
             recipe_status = {entry.path: ("powered_decomposition" if f"{namespace}:{entry.path}" in inputs else
                                           "decomposer_output" if f"{namespace}:{entry.path}" in outputs else "catalog_only")
                              for entry in entries}
-            features = (f"Recovered .394 catalog items and {count} measured decomposition recipes with upfront FE, a saved output queue "
-                        "and a plain-water tank. CoFH RF linkage is not provided.")
+            decomposition = sum(rule.machine == "decomposer" for rule in machine_rules)
+            features = (f"Recovered .394 catalog items, {decomposition} measured decomposition rules and a plain-water tank, "
+                        f"and {count - decomposition} measured synthesis rules with ghost templates and payment on extraction. "
+                        "CoFH RF linkage is not provided.")
         else:
             recipe_status = {entry.path: "powered_synthesis" for entry in entries if entry.components}
             features = ("Recovered items, powered synthesis/decomposition, and microscope and journal discovery for the recovered recipes. "

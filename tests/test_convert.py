@@ -208,7 +208,7 @@ class ConvertTests(unittest.TestCase):
                                 ("element_" if key[0] == "e" else "molecule_") + key[1:]),
                                 key, "test.png", (), {"legacy_metadata": int(key[1:])}) for key in symbols]
         files, count = _project_files(profile, entries, {"test.png": PNG}, RELEASE_394_SHA256, {}, [])
-        self.assertEqual(count, 199)
+        self.assertEqual(count, 382)
         self.assertEqual(len([key for key in trace if re.fullmatch(r"m\d+", key)]), 173)
         with self.assertRaisesRegex(InputError, "catalog does not match"):
             _project_files(profile, [row for row in entries if row.path != "molecule_water"], {"test.png": PNG}, RELEASE_394_SHA256, {}, [])
@@ -219,14 +219,20 @@ class ConvertTests(unittest.TestCase):
         self.assertNotIn("ChemistryResearch.register", files[f"{package}/CatalogPort.java"])
         self.assertNotIn(f"{package}/ResearchScreens.java", files)
         resources = "src/main/resources/data/minechem_chemistry_394"
-        self.assertNotIn(f"{resources}/recipe/synthesizer.json", files)
+        self.assertIn(f"{resources}/recipe/synthesizer.json", files)
         self.assertNotIn(f"{resources}/recipe/chemist_journal.json", files)
         catalog = json.loads(files[f"{resources}/mcmodup/catalog.json"])
         self.assertFalse(catalog["full_port"])
         self.assertEqual(catalog["decomposer_mode"], DecomposerMode.RELEASE_394)
-        rows = {row["id"]: row for row in catalog["machine_recipes"]}
+        rows = {row["id"]: row for row in catalog["machine_recipes"] if row["machine"] == "decomposer"}
         self.assertEqual({row["energy_fe"] for row in rows.values()}, {1_000})
-        self.assertEqual({row["machine"] for row in rows.values()}, {"decomposer"})
+        synth = {row["id"]: row for row in catalog["machine_recipes"] if row["machine"] == "synthesizer"}
+        self.assertEqual(len(synth), 183)
+        self.assertEqual(synth["minecraft:iron_ingot"]["energy_fe"], 3_000)
+        self.assertEqual(synth["minecraft:iron_ingot"]["consumption"], "on_extraction")
+        self.assertTrue(synth["minecraft:glass"]["shaped"])
+        self.assertIsNone(synth["minecraft:glass"]["ghost_pattern"][1])
+        self.assertEqual(synth["minecraft:stone"]["outputs"], [{"id": "minecraft:stone", "count": 16}])
         self.assertEqual(rows["minecraft:iron_ingot"]["outputs"], [{"id": "minechem_chemistry_394:element_fe", "count": 16}])
         self.assertEqual(rows["minecraft:iron_block"]["outputs"][0]["count"], 144)
         self.assertEqual(rows["minecraft:water_bucket"]["outputs"], [
