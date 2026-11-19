@@ -72,6 +72,12 @@ final class LegacyMinechemMining {
         loot("bromine_iron", boosted(35, 1), 15, 0, 1, x, y, z);
         loot("wool_plain", boosted(), 35, 15, 1, x, y, z);
         loot("wool_chromium10", boosted(24, 10), 35, 15, 512, x, y, z);
+        lowerChromium(x, y, z);
+        loot("silk_plain_coal", silk(boosted()), 16, 0, 1, x, y, z);
+        loot("silk_bromine_gold", silk(boosted(35, 1)), 14, 0, 1, x, y, z);
+        vein("silk_iron_carbon64", silk(boosted(26, 1, 6, 64)), 16, 512, x, y, z);
+        vein("iron_only_diamond", boosted(26, 1), 56, 4, x, y, z);
+        vein("iron_carbon1", boosted(26, 1, 6, 1), 16, 4, x, y, z);
         vein("iron_only", boosted(26, 1), 16, 8, x, y, z);
         vein("iron_carbon64", boosted(26, 1, 6, 64), 16, 512, x, y, z);
         vein("iron_bromine1", boosted(26, 1, 35, 1), 14, 1, x, y, z);
@@ -95,6 +101,19 @@ final class LegacyMinechemMining {
             outputs.add(harvested(x, y, z, false)[0]);
         }
         rows.put(key, outputs.toString());
+    }
+
+    private void lowerChromium(int x, int y, int z) throws Exception {
+        boosted(24, 1);
+        TreeSet<String> kinds = new TreeSet<String>();
+        for (int i = 0; i < 512; i++) {
+            put(x, y, z, 35, 15);
+            harvest.invoke(actor.interaction, x, y, z);
+            String result = harvested(x, y, z, false)[0];
+            require(result.matches("\\{35:(?:[0-9]|1[0-5])=1}"), "Expected just one wool, got " + result);
+            kinds.add(result.equals("{35:15=1}") ? "unchanged" : "recolored");
+        }
+        rows.put("wool_chromium1", kinds.toString());
     }
 
     private void vein(String key, Object held, int oreId, int samples, int x, int y, int z) throws Exception {
@@ -122,9 +141,7 @@ final class LegacyMinechemMining {
         for (int roll = 0; roll <= 1; roll++) {
             level.setInt(food, 10);
             saturation.setFloat(food, 0F);
-            long seed = 0;
-            while (new Random(seed).nextInt(10) != roll) seed++;
-            worldRandom.setSeed(seed);
+            seedRoll(10, roll);
             callback(held, 1, x, y, z);
             rows.put("fluorine_rank1_roll" + roll, String.format(Locale.ROOT, "%d/%.2f", level.getInt(food), saturation.getFloat(food)));
         }
@@ -156,6 +173,13 @@ final class LegacyMinechemMining {
             rows.put("sodium_glowstone_" + distance, brightness + "/" + at(x, y, z));
             put(x + distance, y, z, 0, 0);
             put(x, y, z, 0, 0);
+        }
+        Object rankOne = boosted(11, 1);
+        for (int roll = 0; roll <= 1; roll++) {
+            put(x, y, z, 0, 0);
+            seedRoll(35, roll);
+            callback(rankOne, 1, x + 4, y, z);
+            rows.put("sodium_rank1_roll" + roll, Integer.toString(at(x, y, z)));
         }
         put(x, y, z, 1, 0);
         callback(held, 1, x + 4, y, z);
@@ -225,6 +249,18 @@ final class LegacyMinechemMining {
             kill.invoke(drop);
         }
         return new String[]{primary.toString(), extra.toString()};
+    }
+
+    private void seedRoll(int bound, int roll) {
+        long seed = 0;
+        while (new Random(seed).nextInt(bound) != roll) seed++;
+        worldRandom.setSeed(seed);
+    }
+
+    private Object silk(Object held) throws Exception {
+        Class<?> enchant = mc("enchantment.Enchantment");
+        stack.getMethod("func_77966_a", enchant, int.class).invoke(held, enchant.getField("field_77348_q").get(null), 1);
+        return held;
     }
 
     private Object boosted(int... ranks) throws Exception {
