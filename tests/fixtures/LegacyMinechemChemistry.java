@@ -206,7 +206,9 @@ final class LegacyMinechemChemistry {
             for (Object v : m.getEnumConstants()) {
                 Object player = player();
                 Object hunger = foodStats(player);
-                hunger.getClass().getMethod("func_75114_a", int.class).invoke(hunger, 0);
+                Field foodLevel = hunger.getClass().getDeclaredField("field_75127_a");
+                foodLevel.setAccessible(true);
+                foodLevel.setInt(hunger, 0);
                 Field saturation = hunger.getClass().getDeclaredField("field_75125_b");
                 saturation.setAccessible(true);
                 saturation.setFloat(hunger, 0F);
@@ -262,9 +264,16 @@ final class LegacyMinechemChemistry {
     private Object player() throws Exception {
         if (old) return Class.forName("net.minecraftforge.common.FakePlayer").getConstructor(mc("world.World"), String.class)
                 .newInstance(world, "[Chemistry]");
-        return Class.forName("net.minecraftforge.common.util.FakePlayer").getConstructor(mc("world.WorldServer"), Class.forName("com.mojang.authlib.GameProfile"))
+        Object fake = Class.forName("net.minecraftforge.common.util.FakePlayer").getConstructor(mc("world.WorldServer"), Class.forName("com.mojang.authlib.GameProfile"))
                 .newInstance(world, Class.forName("com.mojang.authlib.GameProfile").getConstructor(java.util.UUID.class, String.class)
                         .newInstance(java.util.UUID.randomUUID(), "[Chemistry]"));
+        Class<?> server = mc("server.MinecraftServer"), manager = mc("network.NetworkManager");
+        Class<?> mp = mc("entity.player.EntityPlayerMP");
+        Object network = manager.getConstructor(boolean.class).newInstance(true);
+        Object connection = mc("network.NetHandlerPlayServer").getConstructor(server, manager, mp)
+                .newInstance(server.getMethod("func_71276_C").invoke(null), network, fake);
+        mp.getField("field_71135_a").set(fake, connection);
+        return fake;
     }
 
     private Object pig() throws Exception {
