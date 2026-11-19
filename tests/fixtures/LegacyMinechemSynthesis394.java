@@ -110,8 +110,12 @@ final class LegacyMinechemSynthesis394 {
                     "Unexpected concrete extraction for " + entry.getKey());
             for (int slot = 10; slot < index; slot++) require(get.invoke(machine, slot) == null, "Not all of the inputs were spent");
             require(extract.invoke(machine, true, 64) == null && same(get.invoke(machine, 0), result), "Ghost template was duplicated or destroyed");
-            observed.put(entry.getKey(), cost + ";" + quantity(result) + ";" + ((Boolean) isShaped.invoke(rule) ? "shaped" : "shapeless") + ";" +
-                    String.join(",", inputs));
+            StringBuilder pattern = new StringBuilder();
+            for (String part : inputs) {
+                if (pattern.length() > 0) pattern.append(',');
+                pattern.append(part);
+            }
+            observed.put(entry.getKey(), cost + ";" + quantity(result) + ";" + ((Boolean) isShaped.invoke(rule) ? "shaped" : "shapeless") + ";" + pattern);
         }
         require(observed.containsKey("iron_ingot") && observed.containsKey("stone") && observed.containsKey("m1"), "Missing .394 starter synthesis rules");
         require(capacity == 100000 && receiveLimit == 100, "Unexpected synthesis power defaults");

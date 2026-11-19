@@ -96,8 +96,8 @@ jobs:
           download target/mods/CodeChickenLib-1.21.1-4.6.1.526.jar https://cdn.modrinth.com/data/2gq0ALnz/versions/gQ1srSKh/CodeChickenLib-1.21.1-4.6.1.526.jar sha512sum 2d4efdc64531d5bb8133a247bc22a0728ab99dbcb2842ad0303b2242afd0ddc1b90cd43f8ed8562f651d8d9e228c95d15d73b4b63b3980286450de2df9c0e5ef
       - name: Measure original or staged plate behavior (no checked JARs uploaded)
         run: python -m icbm_plate_smoke "$RUNNER_TEMP/icbm-plate" '${{ matrix.side }}'
-      - name: Compare the original or staged Atomic Science thermometer
-        run: python -m atomic_thermometer_smoke "$RUNNER_TEMP/icbm-plate" '${{ matrix.side }}'
       - name: Measure the original thermal grid, steam turbine and ICBM infrastructure
         if: matrix.side == 'legacy'
         run: python -m voltz_infrastructure_original "$RUNNER_TEMP/icbm-plate"
+      - name: Compare the original or staged Atomic Science thermometer
+        run: python -m atomic_thermometer_smoke "$RUNNER_TEMP/icbm-plate" '${{ matrix.side }}'

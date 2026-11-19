@@ -66,6 +66,19 @@ public final class LegacyAtomicThermometer {
         Object remote = vectorWorld.getConstructor(worldType, double.class, double.class, double.class).newInstance(world, x + 4, y, z);
         Method heat = gridType.getMethod("addTemperature", vectorWorld, float.class);
         Method ambient = gridType.getMethod("getDefaultTemperature", vectorWorld);
+        // Calclavia updates heat on a separate thread. Use its storage lock to
+        // hold both measured temperatures steady while explicitly ticking the sensor.
+        Field source = gridType.getDeclaredField("thermalSource");
+        source.setAccessible(true);
+        synchronized (source.get(grid)) {
+            readStableSamples(world, worldType, block, tile, x, y, z, sensor, vector, grid, local, remote, heat, ambient, get);
+        }
+    }
+
+    private static void readStableSamples(Object world, Class<?> worldType, Object block, Class<?> tile, int x, int y, int z,
+                                          Object sensor, Class<?> vector, Object grid, Object local, Object remote,
+                                          Method heat, Method ambient, Method get) throws Exception {
+        Field sensed = tile.getField("detectedTemperature");
         heat.invoke(grid, local, 1000F - (Float) ambient.invoke(grid, local));
         heat.invoke(grid, remote, 999F - (Float) ambient.invoke(grid, remote));
         Method tick = tile.getMethod("func_70316_g");
