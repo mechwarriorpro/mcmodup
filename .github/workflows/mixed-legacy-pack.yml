@@ -19,9 +19,12 @@ on:
       - 'mcmodup/method_ports.py'
       - 'mcmodup/minechem_pair.py'
       - 'mcmodup/icbm_plate.py'
+      - 'mcmodup/atomic_thermometer.py'
       - 'mcmodup/source_ports.py'
       - 'mcmodup/templates/minechem/**'
       - 'mcmodup/templates/icbm_plate/**'
+      - 'mcmodup/templates/atomic_thermometer/**'
+      - 'tests/atomic_thermometer_smoke.py'
       - 'tests/mixed_legacy_pack_smoke.py'
       - 'tests/minechem_pair_pack_smoke.py'
       - 'tests/neoforge_smoke.py'
@@ -29,6 +32,7 @@ on:
       - 'tests/fixtures/MinechemPairChecks.java'
       - 'tests/fixtures/MultipartControlSmoke.java'
       - 'tests/fixtures/PlateMultipartSmoke.java'
+      - 'tests/fixtures/ThermometerMultipartSmoke.java'
 
 permissions:
   contents: read
@@ -36,7 +40,7 @@ permissions:
 jobs:
   mixed-pack:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     env:
       PYTHONPATH: .:tests
     steps:
@@ -95,7 +99,7 @@ jobs:
       - name: Run the unchanged Multipart and CodeChickenLib control separately
         if: ${{ !cancelled() && steps.target.outcome == 'success' && (inputs.connector_oracle == '' || inputs.connector_oracle == 'none') }}
         run: python -m mixed_legacy_pack_smoke "$RUNNER_TEMP/mixed-legacy-pack" control
-      - name: Stage the Minechem and ICBM previews together and run the staged JARs
+      - name: Stage the Minechem and Voltz previews together and run the staged JARs
         if: ${{ inputs.connector_oracle == '' || inputs.connector_oracle == 'none' }}
         run: python -m minechem_pair_pack_smoke "$RUNNER_TEMP/mixed-legacy-pack"
       - name: Run the exact-input Legacy Connector oracle (not a native pack)

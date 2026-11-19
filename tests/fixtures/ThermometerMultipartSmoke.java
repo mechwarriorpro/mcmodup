@@ -15,14 +15,16 @@ import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
-import net.neoforged.bus.api.IEventBus;
+import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.ModList;
+import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.neoforge.capabilities.RegisterCapabilitiesEvent;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 
 @Mod(ThermometerMultipartSmoke.ID)
+@EventBusSubscriber(modid = ThermometerMultipartSmoke.ID)
 @GameTestHolder(ThermometerMultipartSmoke.ID)
 @PrefixGameTestTemplate(false)
 public final class ThermometerMultipartSmoke {
@@ -30,11 +32,10 @@ public final class ThermometerMultipartSmoke {
     private static final BlockPos SENSOR = new BlockPos(1, 1, 1);
     private static final BlockPos SOURCE = new BlockPos(3, 1, 1);
 
-    public ThermometerMultipartSmoke(IEventBus bus) {
-        bus.addListener((RegisterCapabilitiesEvent event) -> {
-            event.registerBlock(Thermometer.TEMPERATURE, (level, pos, state, entity, context) -> () -> 1_000F, Blocks.GOLD_BLOCK);
-            event.registerBlock(Thermometer.TEMPERATURE, (level, pos, state, entity, context) -> () -> 999F, Blocks.IRON_BLOCK);
-        });
+    @SubscribeEvent
+    public static void heatSources(RegisterCapabilitiesEvent event) {
+        event.registerBlock(Thermometer.TEMPERATURE, (level, pos, state, entity, context) -> () -> 1_000F, Blocks.GOLD_BLOCK);
+        event.registerBlock(Thermometer.TEMPERATURE, (level, pos, state, entity, context) -> () -> 999F, Blocks.IRON_BLOCK);
     }
 
     @GameTest(template = "empty", timeoutTicks = 45)

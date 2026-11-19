@@ -57,7 +57,15 @@ def modern(root: Path) -> None:
     artifact = out / "mods" / ARCHIVE
     assert {path.name for path in (out / "mods").iterdir()} == {*PACK_MODS, ARCHIVE}
     assert all(file_digest(out / "mods" / name) == before[target / "mods" / name] for name in PACK_MODS)
-    evidence = report["native_builds"][ARCHIVE]
+    check_artifact(artifact, original, report["native_builds"][ARCHIVE])
+    boot(out, report["instance_runtime"]["launch"]["unix"])
+    staged_test(root / "atomic-integration", out)
+    assert fingerprints(source, target) == before
+    note("Staged Atomic Science thermometer preview passed", "Two source and one staged-JAR GameTest passed. The stock server booted with "
+         "only the preview and unchanged native Multipart/CCL. Multipart read 0 → 15 → 0 from a tracked test heat source. Not full Atomic Science.")
+
+
+def check_artifact(artifact: Path, original: Path, evidence: dict) -> None:
     assert evidence["status"] == "preview" and evidence["gametests"]["passed"] == 2, evidence
     assert evidence["original_sha256"] == LEGACY_SHA256 and evidence["jar_sha256"] == file_digest(artifact), evidence
     assert evidence["legacy_ids"] == {"atomicscience": MOD_ID}, evidence
@@ -68,11 +76,6 @@ def modern(root: Path) -> None:
         assert all(jar.read(new) == old.read(src) for src, new in TEXTURES.items())
         assert f"{KERNEL}/ThermometerChecks.class" not in jar.namelist()
         assert not any(name.startswith(("atomicscience/", "calclavia/", "universalelectricity/")) or name.endswith(".jar") for name in jar.namelist())
-    boot(out, report["instance_runtime"]["launch"]["unix"])
-    staged_test(root / "atomic-integration", out)
-    assert fingerprints(source, target) == before
-    note("Staged Atomic Science thermometer preview passed", "Two source and one staged-JAR GameTest passed. The stock server booted with "
-         "only the preview and unchanged native Multipart/CCL. Multipart read 0 → 15 → 0 from a tracked test heat source. Not full Atomic Science.")
 
 
 def staged_test(project: Path, staged: Path) -> None:

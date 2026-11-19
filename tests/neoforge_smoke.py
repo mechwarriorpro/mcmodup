@@ -35,11 +35,12 @@ def check_minechem_artifacts(final: Path, release394: Path) -> None:
 
 
 def check_recipes_in_game(project: Path, outputs: list[Path], *, minechem_394: Path | None = None,
-                          multipart_control: list[Path] | None = None, icbm_plate: Path | None = None) -> None:
+                          multipart_control: list[Path] | None = None, icbm_plate: Path | None = None,
+                          atomic_thermometer: Path | None = None) -> None:
     namespace = "mcmodup_smoke"
     assert len(outputs) in (1, 2), "Supply the FINAL-based (or fixture) JAR with an optional aspect JAR"
     include_aspects = len(outputs) == 2
-    jars = [*outputs, *([minechem_394] if minechem_394 else []), *([icbm_plate] if icbm_plate else [])]
+    jars = [*outputs, *(path for path in (minechem_394, icbm_plate, atomic_thermometer) if path is not None)]
     # Load the separately built production JARs as runtime mods, not as source sets.
     inputs = {f"fixtures/{i}.jar": path.read_bytes() for i, path in enumerate(jars)}
     controls = {}
@@ -82,8 +83,13 @@ neoForge.runs.create('gameTestServer') {{
             .replace(f'"{own_namespace}"', f'"{namespace}"')
             .replace('template = "empty"', 'template = "test_room"'))
 
+    if atomic_thermometer:
+        assert controls, "Thermometer integration checks require the unchanged native controls"
     if controls:
-        compile_jars = ", ".join(f"'{relative}'" for relative in controls)
+        compile_inputs = [*controls]
+        if atomic_thermometer:
+            compile_inputs.append(f"fixtures/{len(jars) - 1}.jar")
+        compile_jars = ", ".join(f"'{relative}'" for relative in compile_inputs)
         gradle += f"\ndependencies {{ compileOnly files({compile_jars}) }}\n"
         integrate_fixture("MultipartControlSmoke.java", (FIXTURES / "MultipartControlSmoke.java").read_text(encoding="utf-8"),
                           "mcmodup.multipartcheck", "mcmodup_multipart_control")
@@ -94,6 +100,9 @@ neoForge.runs.create('gameTestServer') {{
         integrate_fixture("PlateChecks.java", checks(namespace), "mcmodup.icbmplate", namespace)
         integrate_fixture("PlateMultipartSmoke.java", (FIXTURES / "PlateMultipartSmoke.java").read_text(encoding="utf-8"),
                           "mcmodup.plateintegration", "mcmodup_plate_integration")
+    if atomic_thermometer:
+        integrate_fixture("ThermometerMultipartSmoke.java", (FIXTURES / "ThermometerMultipartSmoke.java").read_text(encoding="utf-8"),
+                          "mcmodup.atomicintegration", "mcmodup_atomic_integration")
     write_workspace(project, {
         "settings.gradle": "rootProject.name = 'catalog-smoke'\n",
         "build.gradle": gradle,
@@ -107,7 +116,7 @@ neoForge.runs.create('gameTestServer') {{
     })
     run = subprocess.run(["./gradlew", "--no-daemon", "--console=plain", "runGameTestServer"],
                          cwd=project, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=420)
-    count = 7 + include_aspects + (2 if minechem_394 else 0) + bool(controls) + (3 if icbm_plate else 0)
+    count = 7 + include_aspects + (2 if minechem_394 else 0) + bool(controls) + (3 if icbm_plate else 0) + bool(atomic_thermometer)
     if run.returncode or f"All {count} required tests passed" not in run.stdout:
         raise AssertionError(run.stdout[-8000:])
     parsing_errors = [line for line in run.stdout.splitlines() if "Parsing error loading recipe" in line

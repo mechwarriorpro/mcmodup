@@ -1,4 +1,4 @@
-"""Boot the exact Minechem and ICBM previews together with the native controls."""
+"""Boot the two Minechem and two Voltz previews together with the native controls."""
 
 import argparse
 import json
@@ -9,6 +9,8 @@ import sys
 import traceback
 from zipfile import ZipFile
 
+from atomic_thermometer_smoke import check_artifact as check_thermometer
+from mcmodup.atomic_thermometer import ARCHIVE as THERMOMETER, prepare as prepare_thermometer
 from mcmodup.icbm_plate import ARCHIVE as PLATE, MOD_ID as PLATE_ID, prepare as prepare_plate
 from mcmodup.method_ports import PROVENANCE
 from mcmodup.minechem_pair import FINAL, RELEASE_394, VERSIONS
@@ -25,7 +27,8 @@ def check(root: Path) -> None:
     full_source = root / "legacy"
     labels = [entry.label for entry in ORIGINALS[:2]]
     plate_original = next(entry for entry in ORIGINALS if "icbm" in entry.ids)
-    selected = sorted([*labels, plate_original.label])
+    sensor_original = next(entry for entry in ORIGINALS if "atomicscience" in entry.ids)
+    selected = sorted([*labels, plate_original.label, sensor_original.label])
     all_before = fingerprints(full_source, target)
     for label in selected:
         path = source / label
@@ -44,9 +47,9 @@ def check(root: Path) -> None:
     proc = subprocess.run([sys.executable, "-m", "mcmodup", "prepare-minechem-pair", *(str(source / label) for label in labels),
                            "-o", str(recipe)], text=True, capture_output=True, timeout=50)
     assert proc.returncode == 0, proc.stdout + proc.stderr
-    manifest = recipe / "minechem-pair.json"
-    plate_manifest = prepare_plate(root / "linked-plate-recipe")
-    manifests = ["--source-ports", str(manifest), "--source-ports", str(plate_manifest)]
+    options = (recipe / "minechem-pair.json", prepare_plate(root / "linked-plate-recipe"),
+               prepare_thermometer(root / "linked-thermometer-recipe"))
+    manifests = [arg for path in options for arg in ("--source-ports", str(path))]
     command = ["update-pack", str(source), "--target", str(target), *manifests, "--include-native", "cb_multipart"]
     for label in selected:
         command.extend(("--mod", label))
@@ -54,7 +57,7 @@ def check(root: Path) -> None:
     assert code == 1 and not out.exists() and any("--allow-preview-ports" in issue for issue in unapproved["problems"]), unapproved["problems"]
     allowed = ["--allow-preview-ports", "--output-pack", str(out)]
     proc = subprocess.run([sys.executable, "-m", "mcmodup", *command, *allowed, "--build-timeout", "420", "--json"],
-                          text=True, capture_output=True, timeout=1050)
+                          text=True, capture_output=True, timeout=1460)
     if proc.returncode:
         problems = json.loads(proc.stdout)["problems"] if not proc.stderr and proc.stdout.startswith("{") else []
         raise AssertionError("Combined staging failed: " + ("\n".join(problems) or proc.stderr or proc.stdout)[:2200])
@@ -71,7 +74,8 @@ def check(root: Path) -> None:
     assert all(file_digest(path) == all_before[target / "mods" / path.name] for path in controls)
     artifacts = [out / "mods" / f"{profile.namespace}-{VERSIONS[profile.namespace]}.jar" for profile in (FINAL, RELEASE_394)]
     plate = out / "mods" / PLATE
-    assert set((out / "mods").iterdir()) == {*artifacts, *controls, plate}
+    sensor = out / "mods" / THERMOMETER
+    assert set((out / "mods").iterdir()) == {*artifacts, *controls, plate, sensor}
     for split_row, path, label, method in zip(split["archives"], artifacts, labels, ("canUnjam()Z", "pushQueue()V")):
         evidence = report["native_builds"][path.name]
         assert evidence["status"] == "preview" and evidence["gametests"]["passed"] == 2, evidence
@@ -90,9 +94,10 @@ def check(root: Path) -> None:
     assert evidence["original_sha256"] == plate_original.sha256 == before[source / plate_original.label], evidence
     assert evidence["jar_sha256"] == file_digest(plate)
     assert evidence["legacy_ids"] == {"icbm": PLATE_ID, "icbm|explosion": None, "icbm|sentry": None}, evidence
+    check_thermometer(sensor, source / sensor_original.label, report["native_builds"][sensor.name])
     boot(out, report["instance_runtime"]["launch"]["unix"])
     check_recipes_in_game(root / "preview-staged-smoke", [artifacts[0]], minechem_394=artifacts[1],
-                          multipart_control=controls, icbm_plate=plate)
+                          multipart_control=controls, icbm_plate=plate, atomic_thermometer=sensor)
     assert fingerprints(full_source, target) == all_before and fingerprints(source) == before
     # Opting in must not silently stage previews if the rest of the full selection is blocked.
     delta = root / "mixed-with-linked-previews-must-not-stage"
@@ -103,12 +108,13 @@ def check(root: Path) -> None:
     code, report = run(*full)
     assert code == 1 and not report["ready"] and not delta.exists() and not report["native_builds"], report["problems"]
     assert not report["legacy_selection_conflicts"] and report["legacy_identity_splits"], report["legacy_selection_conflicts"]
-    note("Combined native previews booted", "Both exact Minechem previews and the ICBM plate reached dedicated server ready with unchanged Multipart and CCL. Six source and 13 staged-JAR tests passed. All eight still block without writing a pack.")
+    note("Combined native previews booted", "Both Minechem previews, the ICBM plate and the Atomic Science thermometer reached dedicated "
+         "server ready with unchanged Multipart and CCL. Eight source and 14 staged-JAR tests passed. All eight still block without writing a pack.")
     summary(["## Combined native previews", "",
-             "The two Minechem previews and the Voltz ICBM glass pressure plate built in one updater invocation and staged in a new NeoForge "
-             "instance with unchanged CB Multipart and CodeChickenLib. Six source GameTests, stock dedicated boot, and 13 staged-JAR GameTests "
-             "passed. The tests include the native Multipart lookup of the converted plate's redstone signal. These are isolated previews, "
-             "not full ports. The all-eight selection with the same recipes staged nothing.", ""])
+             "Both Minechem previews, the ICBM glass pressure plate, and the Atomic Science thermometer built in one updater "
+             "invocation and staged with unchanged CB Multipart and CodeChickenLib. Eight source GameTests, stock dedicated boot, and 14 "
+             "staged-JAR GameTests passed on a fresh NeoForge instance. Multipart read the actual plate and sensor signals. These are bounded "
+             "previews, not full ports. The all-eight selection with the same recipes staged nothing.", ""])
 
 
 if __name__ == "__main__":
