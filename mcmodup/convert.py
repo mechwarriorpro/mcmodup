@@ -1,7 +1,7 @@
 """Compile a new NeoForge JAR from a recognized, explicitly partial legacy profile."""
 
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import hashlib
 import json
 import os
@@ -387,4 +387,5 @@ def convert_catalog(pack: ModPack, mod: PackMod, profile: Profile, output: Path,
         finally:
             if staging_path is not None:
                 staging_path.unlink(missing_ok=True)
-    return Conversion(output, profile, len(entries), recipe_count)
+    report = json.loads(files[f"src/main/resources/data/{profile.namespace}/mcmodup/catalog.json"])
+    return Conversion(output, replace(profile, not_ported=report["not_ported"]), len(entries), recipe_count)
