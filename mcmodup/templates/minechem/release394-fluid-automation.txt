@@ -11,7 +11,7 @@ dispense_molecule_short=ok/air/{m0=4}/{}
 dispense_molecule_split=ok/m0:0/{e0=8}/{}
 dispense_pickup_flow=ok/air/{be26=1}/{}
 dispense_pickup_source=ok/air/{be26=1}/{}
-dispense_water_fallback=ok/air/{vanilla=1}/{}
+dispense_water_fallback=ok/air/{water_bucket=1}/{}
 fire_sources=fire,flowing_lava,lava
 fuel_e1=100
 fuel_e15=250
@@ -30,11 +30,17 @@ fuel_m92=800
 ignite_disabled_reactions=air
 ignite_lava=air
 ignite_m6=2.0
+propagate_capped_gas=air/e1:0/stone/air/e1:1/e1:1
+propagate_gas=air/e1:0/e1:1
+propagate_liquid=m62:1/m62:0/air
+propagate_solid=air/e26:0/air
+propagate_unsupported_gas=air/air/e1:1
 react_flow=[e1:1@1]
 react_item=true/[e1:0@1, m148:0@-1, m1:0@0]/{bucket=1}
 react_item_disabled=false/[m1:0@0]/{}
 react_source=[e1:0@1, m148:0@-1]
 react_source_disabled=[e3:0@0, m1:0@0]
+react_water_product=[m83:0@-1]
 rule_e1+e17=0.1;m99
 rule_e11+m1=0.15;e1,m149
 rule_e16+m77=0.1;e1,e1,m168

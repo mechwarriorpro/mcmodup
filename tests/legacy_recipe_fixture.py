@@ -59,7 +59,7 @@ def library(relative: str, root: Path) -> None:
     urls = [host + artifact for host in hosts]
     # These early Forge manifests predate the Scala modules group on Central.
     if re.match(r"org/scala-lang/scala-(?:parser-combinators|xml|swing)_2[.]11/", artifact):
-        urls.append(CENTRAL + artifact.replace("org/scala-lang/", "org/scala-lang/modules/", 1))
+        urls.insert(0, CENTRAL + artifact.replace("org/scala-lang/", "org/scala-lang/modules/", 1))
     for url in urls:
         if fetch(url + ".sha1", checksum, 1024):
             match = re.match(r"[0-9a-fA-F]{40}\b", checksum.read_text().strip())

@@ -1,6 +1,8 @@
 package mcmodup.minechemoracle;
 
 import java.io.PrintWriter;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.MethodType;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
@@ -9,11 +11,12 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Random;
 import java.util.TreeMap;
 
 /** Test the exact .394 registry and callbacks; none of this code is used by the port. */
 final class LegacyMinechemFluidAutomation {
-    private final Object world, element, molecule, bucket;
+    private final Object world, element, molecule, bucket, waterBucket;
     private final Class<?> w = mc("world.World"), block = mc("block.Block"), stack = mc("item.ItemStack"), item = mc("item.Item");
     private final Class<?> dropped = mc("entity.item.EntityItem"), entity = mc("entity.Entity");
     private final Class<?> inv = mc("inventory.IInventory"), type = Class.forName("minechem.item.MinechemChemicalType");
@@ -39,7 +42,9 @@ final class LegacyMinechemFluidAutomation {
         Class<?> items = Class.forName("minechem.MinechemItemsRegistration");
         element = items.getField("element").get(null);
         molecule = items.getField("molecule").get(null);
-        bucket = registry.getMethod("findItem", String.class, String.class).invoke(null, "minecraft", "bucket");
+        Method findItem = registry.getMethod("findItem", String.class, String.class);
+        bucket = findItem.invoke(null, "minecraft", "bucket");
+        waterBucket = findItem.invoke(null, "minecraft", "water_bucket");
         iron = ec.getField("Fe").get(null);
         lithium = ec.getField("Li").get(null);
         exampleMolecule = mol.getField("cellulose").get(null);
@@ -50,6 +55,7 @@ final class LegacyMinechemFluidAutomation {
         probe.registries();
         probe.dispensers(x, y, z);
         probe.reactions(x, y + 12, z);
+        probe.propagation(x, y + 24, z);
         try (PrintWriter out = new PrintWriter("minechem-fluid-automation.txt", "UTF-8")) {
             for (Map.Entry<String, String> row : probe.rows.entrySet()) out.println(row.getKey() + "=" + row.getValue());
             if (out.checkError()) throw new AssertionError("Could not save the original fluid automation trace");
@@ -198,6 +204,44 @@ final class LegacyMinechemFluidAutomation {
         put(x, y, z, vanilla("lava"), 0);
         put(x + 1, y, z, fluidBlock(mol.getField("tnt").get(null)), 0);
         rows.put("ignite_lava", position(x + 1, y, z));
+        x += 8;
+        put(x, y, z, fluidBlock(mol.getField("hcl").get(null)), 0);
+        put(x + 1, y, z, fluidBlock(mol.getField("sodiumHydroxide").get(null)), 0);
+        rows.put("react_water_product", products(x, y, z));
+    }
+
+    private void propagation(int x, int y, int z) throws Exception {
+        Object gas = fluidBlock(ec.getField("H").get(null));
+        Object ethanol = fluidBlock(mol.getField("ethanol").get(null));
+        Object solid = fluidBlock(iron), air = vanilla("air");
+        Object[] types = {gas, ethanol, solid};
+        String[] names = {"gas", "liquid", "solid"};
+        for (int i = 0; i < types.length; i++, x += 8) {
+            put(x, y, z, types[i], 0);
+            updateFluid(types[i], x, y, z);
+            rows.put("propagate_" + names[i], column(x, y, z));
+        }
+        put(x, y + 1, z, vanilla("stone"), 0);
+        put(x, y, z, gas, 0);
+        updateFluid(gas, x, y, z);
+        updateFluid(gas, x + 1, y, z);
+        rows.put("propagate_capped_gas", column(x, y, z) + "/" + column(x + 1, y, z));
+        put(x, y, z, air, 0);
+        updateFluid(gas, x + 1, y, z);
+        rows.put("propagate_unsupported_gas", column(x + 1, y, z));
+    }
+
+    private void updateFluid(Object value, int x, int y, int z) throws Exception {
+        try {
+            MethodHandles.publicLookup().findVirtual(block, "func_149674_a", MethodType.methodType(void.class,
+                w, int.class, int.class, int.class, Random.class)).invokeWithArguments(value, world, x, y, z, new Random(0));
+        } catch (Throwable error) {
+            throw new AssertionError("Could not tick the original fluid block", error);
+        }
+    }
+
+    private String column(int x, int y, int z) throws Exception {
+        return position(x, y - 1, z) + "/" + position(x, y, z) + "/" + position(x, y + 1, z);
     }
 
     private String itemContact(int x, int y, int z) throws Exception {
@@ -237,6 +281,7 @@ final class LegacyMinechemFluidAutomation {
         if (held == element) return "e" + damage.invoke(value);
         if (held == molecule) return "m" + damage.invoke(value);
         if (held == bucket) return "bucket";
+        if (held == waterBucket) return "water_bucket";
         if (chemicalBucket.isInstance(held)) return "b" + chemical(chemicalBucket.getField("chemical").get(held));
         return "vanilla";
     }
