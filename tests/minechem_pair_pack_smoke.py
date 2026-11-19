@@ -100,7 +100,8 @@ def check(root: Path) -> None:
         with ZipFile(path) as jar:
             proof = json.loads(jar.read(PROVENANCE))
             assert proof["imports"] == [linked] and not proof["parity_verified"]
-            assert not any(name.endswith((".jar", "DecomposerChecks.class")) or name.startswith("minechem/") for name in jar.namelist())
+            assert not any(name.endswith((".jar", "DecomposerChecks.class")) or name.startswith("minechem/") or "Release394Checks" in name
+                           for name in jar.namelist())
         note("Original method linked and tested", f"{path.name}: {method}; {len(linked['call_redirects'])} approved redirects; {tests_passed} source GameTests passed.")
     evidence = report["native_builds"][plate.name]
     assert evidence["status"] == "preview" and evidence["gametests"]["passed"] == 2, evidence

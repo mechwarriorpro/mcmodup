@@ -86,8 +86,8 @@ def original(root: Path, version: str) -> None:
         assert observations == expected, f".394 material trace changed: missing {missing[:8]}; unexpected {unexpected[:8]}"
         note("Pinned .394 material trace re-observed", f"{len(observations)} ordered outputs matched the pinned Forge trace.")
         synthesis = (server / "minechem-synthesis.txt").read_text(encoding="utf-8").splitlines()
-        for offset in range(0, len(synthesis), 12):
-            note(f"Minechem .394 synthesis trace {offset // 12 + 1}", "\n".join(synthesis[offset:offset + 12]))
+        for offset in range(0, len(synthesis), 25):
+            note(f"Minechem .394 synthesis trace {offset // 25 + 1}", "\n".join(synthesis[offset:offset + 25]))
 
 
 if __name__ == "__main__":

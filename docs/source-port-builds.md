@@ -27,9 +27,9 @@ The first command checks both fingerprints and prepares local source and recipes
 
 The two results have separate Java packages, mod IDs (`minechem_chemistry` and `minechem_chemistry_394`), items, block entities and assets. Each adds only its own blocks to the vanilla pickaxe tag; neither replaces it. There is no Connector or old Forge JAR in the output. The two native controls are copied unchanged. Both sources and artifacts are local derivatives; don't redistribute them without the appropriate permissions.
 
-The [paired check](https://github.com/mechwarriorpro/mcmodup/actions/runs/44377479138/job/135060390070) passed two build-time GameTests per release. It booted the staged production JARs with the unchanged controls, then passed ten staged-JAR GameTests. The [exact Forge measurements](https://github.com/mechwarriorpro/mcmodup/actions/runs/44377478998) confirmed that an occupied matching slot doesn't clear FINAL's jam, while .394 compacts at intake and retains any excess in the trailing slot.
+The [exact Forge measurements](https://github.com/mechwarriorpro/mcmodup/actions/runs/44453747811) confirmed the different jam rules and re-observed 199 .394 decomposition traces: 25 vanilla items, 173 molecules, and a 1,000 mB water input. The .394 port charges 1,000 FE per batch, prioritizes item input, and can drain a paid queue with no extra power. Its tank holds 5,000 mB and saves the remaining water. The [combined check](https://github.com/mechwarriorpro/mcmodup/actions/runs/44454155162/job/135325005923) built both release previews in the same invocation and tested the production JARs together on NeoForge 21.1.267.
 
-**Preview only.** Most original machines and integrations are missing; .394 only decomposes iron ingots. FE and modern item components are not legacy UE/RF or arbitrary legacy stack metadata, and this does not migrate saves or recreate legacy clients. These two builds do not unblock the eight-original selection.
+**Preview only.** .394 has no verified synthesizer port yet. Chance and recursive decomposition, other fluids, most machines and original integrations are missing. FE and modern item components are not legacy UE/RF or arbitrary legacy stack metadata. Neither preview migrates saves or unblocks the eight-original selection.
 
 ## Voltz glass pressure plate (executable preview)
 
@@ -84,6 +84,22 @@ python3 -m mcmodup update-pack LegacyPack --target NeoForgePack \
 The recipe targets Minecraft **1.21.1** / NeoForge **21.1.267**. The build checks the exact ZIP hash, copies its Mimichite icon to a new namespace, and tests the five native shapeless recipes before staging. The [combined test](https://github.com/mechwarriorpro/mcmodup/actions/runs/44450228340/job/135312054359) booted the production JAR with both Minechem previews, both Voltz previews, and unchanged Multipart and CodeChickenLib, then exercised those recipes against the staged JAR.
 
 Use `/give @s mimicry_catalyst:mimichite` or the creative Ingredients tab. It is not obtainable in survival in this preview. No dynamic furnace or Ore Dictionary integration, other materials, ore generation, Upheaver, orb and block storage, or migration are implemented. No original classes are copied and the preview cannot satisfy a Mimicry add-on dependency. Keep the staged result local unless you have rights to redistribute the original icon.
+
+## GeoStrata v23b decorative rock preview
+
+Use the exact **`GeoStrata 1.6 v23b.zip`** from FTB Monster 1.1.2 in `LegacyPack/mods/1.6.4/`. For a mixed preparation, keep the matched `DragonAPI 1.6 v23b.zip` under the source `lib/` as a legacy reference, not a selected mod. The native preview does not load or implement DragonAPI.
+
+```sh
+python3 -m mcmodup prepare-geostrata-rocks -o .mcmodup/GeoStrataRecipe
+python3 -m mcmodup update-pack LegacyPack --target NeoForgePack \
+  --mod 'mods/1.6.4/GeoStrata 1.6 v23b.zip' \
+  --source-ports .mcmodup/GeoStrataRecipe/geostrata-rocks.json \
+  --allow-preview-ports --output-pack .mcmodup/GeoStrataPreview
+```
+
+The [exact Forge survey](https://github.com/mechwarriorpro/mcmodup/actions/runs/44453708486/job/135323545958) checked 153 placements and drops, 153 craft and smelt cases, and generated veins in a controlled stone volume. The [NeoForge check](https://github.com/mechwarriorpro/mcmodup/actions/runs/44454155162/job/135325005923) verified **136 blocks** (17 rocks × 8 shapes), the pickaxe tiers, ordinary drops, and **119 recipes** with the staged `geostrata_rocks-23b-preview.1.jar`. Smooth rock drops its own cobblestone; smelting it gives the smooth rock back. Six distinct crafting patterns per rock include both orientations of the engraved pattern. Original textures are imported locally from the matched ZIP; no original Java classes are bundled.
+
+The rocks start in the **GeoStrata Rocks (Preview)** creative tab. **World generation is not ported.** Connected walls, opal tint, crystals, legacy mining timing, add-ons, original configuration and old saves are also not implemented. This is a private-use build; do not redistribute imported assets or derivative builds without the owner's permission.
 
 ## Thaumcraft 4 Reload (preview)
 
@@ -166,9 +182,10 @@ The third run assumes the exact CC: Tweaked release was staged. It checks the pe
 | Thaumcraft 4.2.3.5 | Exact native source-build preview, plus the paired Tinkerer preview | Visual, localization, survival, multiplayer and compatibility gaps remain, even with complete asset accounting. |
 | GTNH Thaumic Tinkerer 2.13.0 | Exact native add-on preview, with optional CC: Tweaked and Ender Storage runtime support | OpenComputers and other legacy integrations, some behaviors and some effects are still missing. |
 | Minechem 1.6.4 5.0.5 FINAL | [Linked updater preview](#both-exact-minechem-releases-linked-previews), including the adapted Microscope and Chemist's Journal | Not all machines, recipes, effects, worldgen, graphics or integrations have been ported. |
-| Minechem 1.7.10 5.0.5.394 | [Linked updater preview](#both-exact-minechem-releases-linked-previews), separate from FINAL | Only an iron decomposer and catalog; no other machines or original integrations. |
+| Minechem 1.7.10 5.0.5.394 | [Linked updater preview](#both-exact-minechem-releases-linked-previews), separate from FINAL | 199 observed decomposition rules and a plain-water tank. Synthesis, research and other machines not verified. |
 | ICBM 1.4.1.344 | [Glass pressure plate preview](#voltz-glass-pressure-plate-executable-preview) | Only one Core block; not the rest of Core, Explosion or Sentry. |
 | Atomic Science 1.2.0 | [Thermometer preview](#voltz-atomic-science-thermometer-executable-preview) | One redstone sensor. No thermal grid, reactor or turbine, survival recipe, or old dependency API. |
+| GeoStrata v23b | [Decorative rocks preview](#geostrata-v23b-decorative-rock-preview) | 136 blocks, 119 recipe definitions; generation, connected walls, crystals and DragonAPI integration still missing. |
 | Mimicry 1.3.9 (1.6.4) | [Mimichite recipe preview](#mimicry-catalyst-recipe-preview) | Five crafts with a creative-only catalyst. No ores, storage, tools or dynamic integrations. |
 
 ## What the source-build test covers
