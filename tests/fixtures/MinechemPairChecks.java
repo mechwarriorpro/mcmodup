@@ -45,10 +45,12 @@ public final class MinechemPairChecks {
                 RELEASE_394, "decomposer");
         check(test, CraftingInput.of(3, 3, List.of(copper, redstone, copper, copper, piston, copper, copper, diamond, copper)),
                 RELEASE_394, "synthesizer");
-        var iron = new ItemStack(Items.IRON_INGOT);
-        var lens = stack(test, RELEASE_394, "microscope_lens");
-        check(test, CraftingInput.of(3, 3, List.of(ItemStack.EMPTY, lens, iron,
-                ItemStack.EMPTY, new ItemStack(Items.GLASS_PANE), iron, iron, iron, iron)), RELEASE_394, "microscope");
+        var lensId = ResourceLocation.fromNamespaceAndPath(RELEASE_394, "microscope_lens");
+        boolean linked = BuiltInRegistries.ITEM.containsKey(lensId);
+        var metal = new ItemStack(linked ? Items.IRON_INGOT : Items.COPPER_INGOT);
+        var lens = new ItemStack(linked ? BuiltInRegistries.ITEM.get(lensId) : Items.SPYGLASS);
+        check(test, CraftingInput.of(3, 3, List.of(ItemStack.EMPTY, lens, metal,
+                ItemStack.EMPTY, new ItemStack(Items.GLASS_PANE), metal, metal, metal, metal)), RELEASE_394, "microscope");
         check(test, CraftingInput.of(2, 1, List.of(new ItemStack(Items.BOOK), new ItemStack(Items.GLASS_PANE))), RELEASE_394, "chemist_journal");
         test.assertTrue(right.power().getMaxEnergyStored() == 10_000 && right.power().receiveEnergy(1000, true) == 100 &&
                 right.power().getEnergyStored() == 0, "Wrong .394 capacity or simulated receive limit");
