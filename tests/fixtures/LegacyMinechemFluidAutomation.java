@@ -181,6 +181,15 @@ final class LegacyMinechemFluidAutomation {
         x += 8;
         rows.put("react_item", itemContact(x, y, z));
         x += 8;
+        Object acid = fluidBlock(mol.getField("hcl").get(null));
+        Object alkaline = mol.getField("sodiumHydroxide").get(null);
+        put(x, y, z, acid, 0);
+        rows.put("react_item_chemical_only", itemContact(x, y, z, 0.5, alkaline));
+        x += 8;
+        put(x, y, z, acid, 0);
+        put(x + 1, y, z, water, 0);
+        rows.put("react_item_water_edge", itemContact(x, y, z, 0.95, alkaline));
+        x += 8;
         Class<?> settings = Class.forName("minechem.Settings");
         Field blockToggle = settings.getField("reactionFluidMeetFluid"), itemToggle = settings.getField("reactionItemMeetFluid");
         boolean originalBlocks = blockToggle.getBoolean(null), originalItems = itemToggle.getBoolean(null);
@@ -246,8 +255,12 @@ final class LegacyMinechemFluidAutomation {
 
     private String itemContact(int x, int y, int z) throws Exception {
         put(x, y, z, vanilla("water"), 0);
+        return itemContact(x, y, z, 0.5, lithium);
+    }
+
+    private String itemContact(int x, int y, int z, double offset, Object chemical) throws Exception {
         Object itemEntity = dropped.getConstructor(w, double.class, double.class, double.class, stack)
-            .newInstance(world, x + 0.5, y + 0.1, z + 0.5, fullBucket(lithium));
+            .newInstance(world, x + offset, y + 0.1, z + 0.5, fullBucket(chemical));
         w.getMethod("func_72838_d", entity).invoke(world, itemEntity);
         List<Object> before = new ArrayList<Object>(entities());
         Class<?> event = Class.forName("cpw.mods.fml.common.gameevent.TickEvent$WorldTickEvent");

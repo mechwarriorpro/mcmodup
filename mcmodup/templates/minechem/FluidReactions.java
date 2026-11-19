@@ -16,6 +16,7 @@ import net.minecraft.world.item.Items;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.material.FlowingFluid;
+import net.minecraft.world.phys.AABB;
 import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.config.ModConfig;
 import net.neoforged.neoforge.common.ModConfigSpec;
@@ -95,12 +96,23 @@ final class FluidReactions {
         String fluid = chemicalAt(level, pos);
         if (fluid == null) return;
         var rule = RULES.get(Pair.of(bucket.chemical(), fluid));
-        if (rule == null) return;
+        if (rule == null || !touchesWater(level, item.getBoundingBox())) return;
         // Don't consume the target pool in the item-triggered path. Pay once before applying effects.
         if (stack.getCount() <= 1) item.discard();
         else item.setItem(stack.copyWithCount(stack.getCount() - 1));
         produce(level, pos, rule, level.getFluidState(pos).isSource());
         drop(level, pos, new ItemStack(Items.BUCKET));
+    }
+
+    private static boolean touchesWater(ServerLevel level, AABB box) {
+        // The original item path checks the item's bounding box for vanilla water,
+        // then uses the block at the item's center for the actual reaction lookup.
+        var min = BlockPos.containing(box.minX, box.minY, box.minZ);
+        var max = BlockPos.containing(box.maxX, box.maxY, box.maxZ);
+        for (var pos : BlockPos.betweenClosed(min, max)) {
+            if (accessible(level, pos) && level.getBlockState(pos).is(Blocks.WATER)) return true;
+        }
+        return false;
     }
 
     private static boolean accessible(ServerLevel level, BlockPos pos) {

@@ -89,10 +89,14 @@
         var level = test.getLevel();
         var pos = test.absolutePos(new BlockPos(4, 5, 4));
         level.setBlockAndUpdate(pos, Blocks.WATER.defaultBlockState());
-        var bucket = new ItemEntity(level, pos.getX() + 0.5, pos.getY() + 0.1, pos.getZ() + 0.5, item("bucket_element_li", 1));
-        bucket.setDeltaMovement(net.minecraft.world.phys.Vec3.ZERO);
-        bucket.setNoGravity(true);
-        level.addFreshEntity(bucket);
+        var bucket = droppedBucket(level, pos, 0.5, "bucket_element_li");
+        var dryPair = pos.offset(6, 0, 0);
+        var waterEdge = pos.offset(0, 0, 6);
+        setFluid(level, dryPair, "fluid_molecule_hcl", true);
+        setFluid(level, waterEdge, "fluid_molecule_hcl", true);
+        level.setBlockAndUpdate(waterEdge.east(), Blocks.WATER.defaultBlockState());
+        var dry = droppedBucket(level, dryPair, 0.5, "bucket_molecule_sodiumhydroxide");
+        var wet = droppedBucket(level, waterEdge, 0.95, "bucket_molecule_sodiumhydroxide");
         var option = reactionOption("ITEM_CONTACT");
         var before = option.get();
         try {
@@ -106,8 +110,19 @@
                 visibleItems(level, pos, new ItemStack(Items.BUCKET)) == 1 && atLayer(level, pos, 1, "fluid_element_h") == 1 &&
                 atLayer(level, pos, -1, "fluid_molecule_lithiumhydroxide") == 1,
                 "Dropped bucket didn't pay once, keep the water and return an empty bucket with both products");
+            test.assertTrue(!dry.isRemoved() && wet.isRemoved() && atLayer(level, waterEdge, -1, "fluid_molecule_salt") == 1 &&
+                atLayer(level, dryPair, -1, "fluid_molecule_salt") == 0,
+                "Item contact didn't preserve the original vanilla-water bounding-box gate");
             test.succeed();
         });
+    }
+
+    private static ItemEntity droppedBucket(ServerLevel level, BlockPos pos, double xOffset, String path) {
+        var item = new ItemEntity(level, pos.getX() + xOffset, pos.getY() + 0.1, pos.getZ() + 0.5, item(path, 1));
+        item.setDeltaMovement(net.minecraft.world.phys.Vec3.ZERO);
+        item.setNoGravity(true);
+        level.addFreshEntity(item);
+        return item;
     }
 
     @GameTest(template = "fluid_room")
