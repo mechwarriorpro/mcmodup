@@ -66,6 +66,7 @@ final class LegacyMinechemSynthesisFinal {
 
         List<?> recipes = (List<?>) recipe.getField("recipes").get(null);
         require(!recipes.isEmpty() && recipes.size() < 1000, "Unexpected FINAL recipe registry size: " + recipes.size());
+        verifyContainer(recipes.get(0), x, y, z);
         Method shape = recipe.getMethod("getShapedRecipe"), shaped = recipe.getMethod("isShaped");
         Method output = recipe.getMethod("getOutput"), cost = recipe.getMethod("energyCost");
         // Looking up every helper signature reflectively links a client-only FontRenderer on the server.
@@ -128,8 +129,55 @@ final class LegacyMinechemSynthesisFinal {
         }
         require(paid > 100, "Too few observed FINAL synthesis extractions");
         return "FINAL synthesis: 20 slots, 9 ghost/9 storage, cap " + capacity + "/packet 200; default automation never withdraws, " +
-                "ready non-top shows only output, journal load/save/removal verified; " + recipes.size() + " ordered recipes, " +
+                "ready non-top shows only output, journal reload, ghost editing, stone click/shift-click verified; " + recipes.size() + " ordered recipes, " +
                 paid + " paid batches, " + shadowed + " shadowed canonical patterns and " + blocked + " grid/power/storage limits";
+    }
+
+    private void verifyContainer(Object stone, int x, int y, int z) throws Exception {
+        Class<?> playerType = mc("entity.player.EntityPlayer"), invType = mc("entity.player.InventoryPlayer");
+        Object player = Class.forName("net.minecraftforge.common.FakePlayer").getConstructor(mc("world.WorldServer"), String.class)
+                .newInstance(world, "[MCModUp]");
+        Object inv = playerType.getField("field_71071_by").get(player);
+        Class<?> container = Class.forName("minechem.tileentity.synthesis.SynthesisContainer");
+        Object machine = fresh(x, y, z);
+        Object menu = container.getConstructor(invType, tile).newInstance(inv, machine);
+        Method click = container.getMethod("func_75144_a", int.class, int.class, int.class, playerType);
+        Method cursor = invType.getMethod("func_70437_b", stack), carried = invType.getMethod("func_70445_o");
+        int chemical = mc("item.Item").getField("field_77779_bT").getInt(element);
+        Object silicon = make.newInstance(chemical, 2, 13), oxygen = make.newInstance(chemical, 2, 7);
+        cursor.invoke(inv, silicon);
+        click.invoke(menu, 1, 0, 0, player);
+        cursor.invoke(inv, oxygen);
+        click.invoke(menu, 4, 1, 0, player);
+        require(get.invoke(machine, 0) == null && count.getInt(get.invoke(machine, 4)) == 1, "Shaped FINAL ghost accepted too few oxygen tubes");
+        click.invoke(menu, 4, 1, 0, player);
+        tile.getMethod("func_70296_d").invoke(machine);
+        require(current.invoke(machine) == stone && count.getInt(get.invoke(machine, 0)) == 7 && count.getInt(oxygen) == 2,
+                "FINAL ghosts didn't copy the held amount, count by right-click or select an at-least shaped rule");
+        click.invoke(menu, 9, 1, 0, player);
+        require(current.invoke(machine) == stone, "Trailing ghost did not preserve original short shaped rule");
+        cursor.invoke(inv, new Object[]{null});
+        click.invoke(menu, 4, 0, 0, player);
+        require(get.invoke(machine, 4) == null && current.invoke(machine) == null, "Empty cursor did not clear the shaped template");
+        choose.invoke(machine, stone);
+        require(store(machine, new Object[]{make.newInstance(chemical, 3, 13), make.newInstance(chemical, 6, 7)}), "Stone inputs did not fit");
+        charge(machine, 1500);
+        click.invoke(menu, 0, 0, 0, player);
+        Object result = carried.invoke(inv);
+        require(result != null && key(result).equals("v1:0") && count.getInt(result) == 3 && energy(machine) == 0,
+                "FINAL click did not charge per requested item when fewer than seven crafts are funded");
+        cursor.invoke(inv, new Object[]{null});
+        require(store(machine, new Object[]{make.newInstance(chemical, 2, 13), make.newInstance(chemical, 4, 7)}), "Shift stone inputs did not fit");
+        charge(machine, 1000);
+        container.getMethod("func_82846_b", playerType, int.class).invoke(menu, player, 0);
+        int made = 0;
+        Method inSlot = invType.getMethod("func_70301_a", int.class);
+        for (int i = 0; i < 36; i++) {
+            Object found = inSlot.invoke(inv, i);
+            if (found != null && key(found).equals("v1:0")) made += count.getInt(found);
+        }
+        require(made == 14 && energy(machine) == 0 && get.invoke(machine, 10) == null && get.invoke(machine, 11) == null,
+                "FINAL shift-click did not craft two seven-stone batches: " + made + ", power=" + energy(machine));
     }
 
     private void verifyJournal(Object machine, Object target, int x, int y, int z) throws Exception {
