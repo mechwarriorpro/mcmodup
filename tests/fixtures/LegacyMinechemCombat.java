@@ -277,6 +277,7 @@ final class LegacyMinechemCombat {
         rows.put("phosphorus_stone", Integer.toString(blockAt(bx - 1, y, z)));
         put(bx, y, z, 0);
         // A synthetic high rank makes the rare dirt callback deterministic without changing the RNG or claiming future rank support.
+        dropsNear(bx, y, z); // Drain debris left by the blast probes.
         held = equip(30, 8191);
         mine(held, 1, bx, y, z);
         rows.put("zinc_stone", dropsNear(bx, y, z));
@@ -312,7 +313,7 @@ final class LegacyMinechemCombat {
 
     private void mine(Object held, int id, int x, int y, int z) throws Exception {
         Class<?> block = mc("block.Block");
-        tool.getClass().getMethod("func_77660_a", stack, w, old ? int.class : block, int.class, int.class, int.class, living)
+        tool.getClass().getMethod(old ? "func_77660_a" : "func_150894_a", stack, w, old ? int.class : block, int.class, int.class, int.class, living)
             .invoke(tool, held, world, old ? id : block.getMethod("func_149729_e", int.class).invoke(null, id), x, y, z, actor);
     }
 
@@ -405,6 +406,11 @@ final class LegacyMinechemCombat {
             update.invoke(held, world, actor, 10, false);
             rows.put("gold_rank1_roll" + roll, Integer.toString(effects.size() - before));
             while (effects.size() > before) effects.remove(effects.size() - 1);
+        }
+        if (!old) {
+            Field cofh = Class.forName("minechem.item.polytool.types.PolytoolTypeGold").getDeclaredField("canCharge");
+            cofh.setAccessible(true);
+            rows.put("gold_cofh_api", String.valueOf(cofh.getBoolean(null)));
         }
     }
 
