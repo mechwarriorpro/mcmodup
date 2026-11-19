@@ -96,7 +96,7 @@ final class ChemistryResearch {
     }
 
     private static boolean supported(String id) {
-        return ChemistryRecipes.BY_RESULT.containsKey(id) || ChemistryRecipes.DECOMPOSE.containsKey(id);
+        return ChemistryRecipes.BY_RESULT.containsKey(id) || ChemistryRecipes.inspection(id) != null;
     }
 
     private static List<String> discoveries(CompoundTag tag) {

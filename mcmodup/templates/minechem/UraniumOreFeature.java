@@ -38,6 +38,7 @@ final class UraniumOreFeature extends Feature<NoneFeatureConfiguration> {
     static void register(IEventBus bus, ModContainer mod) {
         FEATURES.register("uranium_veins", UraniumOreFeature::new);
         FEATURES.register(bus);
+@CRAFT_REGISTER@
         mod.registerConfig(ModConfig.Type.SERVER, CONFIG, CatalogPort.MOD_ID + "-worldgen.toml");
     }
 

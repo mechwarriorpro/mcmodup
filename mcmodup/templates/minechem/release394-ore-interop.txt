@@ -1,1 +1,30 @@
-# Pinned old ore registrations and material outputs.
+# Checksum-pinned Forge ore interoperability controls.
+blockUranium=-
+craft_extra=-
+craft_foreign=-
+craft_full_stack=-
+craft_native=-
+craft_recipes=0
+craft_setting=absent
+craft_shifted=-
+craft_untagged=-
+crystalUranium=[e92x16]
+dustDirtyUranium=[e92x12]
+dustSmallSalpeter=-
+dustSmallUranium=[e92x4]
+dustUranium=[e92x16]
+explicit_iron_after=[e26x48]
+explicit_iron_before=[e26x48]
+external_uranium_after_scan=[e92x48]
+external_uranium_before_scan=[e92x48]
+gemUranium=[e92x16]
+ingotUranium=[e92x16]
+native_uranium_after_scan=[e92x48]
+native_uranium_before_scan=[e92x48]
+nuggetUranium=[e92x1]
+oreNetherUranium=[e92x96]
+oreObsidian=[m7x48, m39x24]
+oreRuby=[m68x3, e24x3]
+oreSalpeter=[e19x3, e7x3, e8x9]
+oreUnknown=-
+plateUranium=[e92x16]

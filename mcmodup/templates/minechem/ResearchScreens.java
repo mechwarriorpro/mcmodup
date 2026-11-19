@@ -48,7 +48,7 @@ public final class ResearchScreens {
         @Override
         public void render(GuiGraphics gui, int mouseX, int mouseY, float delta) {
             inspected = inspectedKey();
-            recipe = (synthesis ? ChemistryRecipes.BY_RESULT : ChemistryRecipes.DECOMPOSE).get(inspected);
+            recipe = synthesis ? ChemistryRecipes.BY_RESULT.get(inspected) : ChemistryRecipes.inspection(inspected);
             parts = recipe == null ? List.of() : (synthesis ? recipe.inputs() : recipe.outputs());
             mode.setMessage(Component.translatable(GUI + (synthesis ? "inspect_synthesis" : "inspect_decomposition")));
             super.render(gui, mouseX, mouseY, delta);

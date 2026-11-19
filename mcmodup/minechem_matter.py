@@ -12,8 +12,9 @@ from .minechem_materials import PRODUCT, TEMPLATES, chemical_id, observations
 JAVA = ("ChemistryFluids", "FluidPresentation", "ChemicalBucketRecipe", "ChemistryRadiation",
         "ShieldedStorage", "ShieldedStorageScreen", "FinalFluidCollector", "TubeWorldUse", "FluidDispensing", "FluidReactions",
         "ChemicalFuels", "ChemicalFlow394")
-GENERATED_CLASSES = (*JAVA, minechem_ore.FEATURE_CLASS)
-RELEASE_394_ONLY = {"TubeWorldUse", "FluidDispensing", "FluidReactions", "ChemicalFuels", "ChemicalFlow394"}
+GENERATED_CLASSES = (*JAVA, minechem_ore.FEATURE_CLASS, minechem_ore.CRAFT_CLASS, minechem_ore.DICTIONARY_CLASS)
+FINAL_ONLY = {"FinalFluidCollector", minechem_ore.CRAFT_CLASS}
+RELEASE_394_ONLY = {minechem_ore.DICTIONARY_CLASS, "TubeWorldUse", "FluidDispensing", "FluidReactions", "ChemicalFuels", "ChemicalFlow394"}
 AUTOMATION_TRACE = "release394-fluid-automation.txt"
 RESOURCES = "src/main/resources"
 ANIMATED_PNGS = {"assets/minechem/textures/blocks/fluid_still.png": (16, 128),
@@ -258,7 +259,7 @@ def project(namespace: str, package: str, ids: dict[str, str], names: dict[str, 
         **({"bucket": row.bucket, "tube_volume": 125} if row.placeable else {})} for row in fluids})
     files[f"{data}/mcmodup/radiation.json"] = out({"default_multiplier": int(percent), "decay_safe_machines": safe == "true",
         "rules": {item: {"tier": tier, "products": dict(parts)} for item, tier, parts in radiation}})
-    files.update(minechem_ore.project(namespace, package, prepaid))
+    files.update(minechem_ore.project(namespace, package, prepaid, ids))
     return files, locales
 
 

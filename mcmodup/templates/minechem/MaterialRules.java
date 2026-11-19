@@ -114,6 +114,7 @@ final class MaterialRules {
 
     static List<Part> roll(Recipe recipe, RandomSource random) {
         var entry = (recipe.fluidAmount() == 0 ? ITEMS : FLUIDS).get(recipe.id());
+        if (entry == null) return recipe.outputs(); // Dynamic deterministic OreDictionary fallback.
         var products = new ArrayList<Part>();
         GRAPH.get(entry.node()).roll(random, products);
         return products;

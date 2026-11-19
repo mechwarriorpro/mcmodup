@@ -105,11 +105,12 @@ def original(root: Path, version: str, matter_only: bool = False, ore_disable: b
     trace = "final-ore-disabled" if ore_disable else ("release394-ore-interop" if version == "1.7.10" else "final-ore-interop")
     path = server / "minechem-ore-interop.txt"
     text = path.read_text(encoding="utf-8")
-    if os.environ.get("MCMODUP_CAPTURE_CHEMISTRY") == "1" or not observations(f"{trace}.txt"):
-        note(f"Original Minechem {version} {trace}", text)
     expected = observations(f"{trace}.txt")
-    if expected:
-        assert dict(line.split("=", 1) for line in text.splitlines()) == expected, (trace, text)
+    observed = dict(line.split("=", 1) for line in text.splitlines())
+    if os.environ.get("MCMODUP_CAPTURE_CHEMISTRY") == "1" or observed != expected:
+        note(f"Original Minechem {version} {trace}", text)
+    assert observed == expected, f"{trace} differed from the pinned crafting and ore tag observations"
+    note(f"Pinned Minechem {version} {trace}", f"{len(expected)} original ore interop rows re-observed")
     if ore_disable:
         return
     for kind in (("fluids", "radiation", "player-decay", "uranium-worldgen") if matter else ()):

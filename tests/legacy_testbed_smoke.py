@@ -44,6 +44,7 @@ neoForge.runs.create('gameTestServer') {{
         f"{resources}/META-INF/neoforge.mods.toml": _metadata(ModMetadata(""), CHECK, "Staged JAR test probe", "1.0.0", "Unlicense"),
         f"run/mods/{JAR_NAME}": jar.read_bytes(),
         **terrain_fixtures(package, CHECK),
+        **minechem_ore.verification_tags(),
         f"{source}/GeoCrystalChecks.java": geostrata_rocks.crystal_checks(package, CHECK),
         f"{source}/GeoRockChecks.java": geostrata_rocks.checks(package, CHECK),
         f"{source}/LaunchChecks.java": icbm_plate.launch_checks(package, CHECK),

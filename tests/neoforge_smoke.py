@@ -193,6 +193,7 @@ neoForge.runs.create('gameTestServer') {{
         geostrata_rooms[f"src/main/resources/data/{namespace}/structure/rock_room.nbt"] = empty_test_structure(3)
         geostrata_rooms[f"src/main/resources/data/{namespace}/structure/vein_room.nbt"] = empty_test_structure(19)
     write_workspace(project, {
+        **(minechem_ore.verification_tags() if buffered or minechem_394 else {}),
         "settings.gradle": "rootProject.name = 'catalog-smoke'\n",
         "build.gradle": gradle,
         "gradle.properties": "org.gradle.jvmargs=-Xmx2G\n",

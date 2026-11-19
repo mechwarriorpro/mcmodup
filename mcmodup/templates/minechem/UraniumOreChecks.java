@@ -1,10 +1,13 @@
 package @PACKAGE@;
 
+import com.google.gson.JsonObject;
+import com.mojang.serialization.JsonOps;
 import java.lang.reflect.Proxy;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.gametest.framework.GameTest;
@@ -12,6 +15,10 @@ import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.util.RandomSource;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.item.crafting.CraftingInput;
+import net.minecraft.world.item.crafting.CraftingRecipe;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.WorldGenLevel;
 import net.minecraft.world.level.biome.Biomes;
@@ -20,7 +27,10 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.levelgen.GenerationStep;
 import net.minecraft.world.level.levelgen.feature.ConfiguredFeature;
 import net.neoforged.fml.ModList;
+import net.neoforged.neoforge.capabilities.Capabilities;
 import net.neoforged.neoforge.common.ModConfigSpec;
+import net.neoforged.neoforge.common.conditions.ICondition;
+import net.neoforged.neoforge.registries.NeoForgeRegistries;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 
@@ -96,6 +106,81 @@ public final class @CLASS@ {
             cluster.set(defaults.cluster());
         }
         test.succeed();
+    }
+
+    @GameTest(template = "test_room", timeoutTicks = 180)
+    public static void @PREFIX@UraniumInterop(GameTestHelper test) throws ReflectiveOperationException {
+        var level = test.getLevel();
+        var id = ResourceLocation.fromNamespaceAndPath(ORE.getNamespace(), "uranium_ore_conversion");
+        var recipe = level.getRecipeManager().byKey(id);
+        var nativeOre = new ItemStack(BuiltInRegistries.ITEM.get(ORE));
+        var foreignId = ResourceLocation.fromNamespaceAndPath(@RELEASE_394@ ? "minechem_chemistry" : "minechem_chemistry_394", "uranium_ore");
+        var foreign = new ItemStack(BuiltInRegistries.ITEM.get(foreignId));
+        var conversionSample = new ItemStack(Items.LIGHT);
+        if (!@RELEASE_394@) {
+            test.assertTrue(recipe.isPresent() && recipe.get().value() instanceof CraftingRecipe, "FINAL's gated uranium recipe was not registered by default");
+            var craft = (CraftingRecipe) recipe.orElseThrow().value();
+            craftSample(test, craft, nativeOre, nativeOre, true);
+            craftSample(test, craft, new ItemStack(Items.COBBLESTONE), nativeOre, false);
+            if (!foreign.isEmpty()) craftSample(test, craft, foreign, nativeOre, false);
+            if (@STAGED@) craftSample(test, craft, conversionSample, nativeOre, true);
+            var registry = NeoForgeRegistries.CONDITION_SERIALIZERS;
+            var codec = registry.get(ResourceLocation.fromNamespaceAndPath(ORE.getNamespace(), "uranium_ore_craftable"));
+            var condition = codec.codec().parse(JsonOps.INSTANCE, new JsonObject()).getOrThrow();
+            ModConfigSpec.ConfigValue<Boolean> gate = option(condition.getClass(), "CRAFTABLE");
+            test.assertTrue(condition.test(ICondition.IContext.EMPTY), "FINAL's startup gate default is off");
+            try {
+                gate.set(false);
+                test.assertTrue(!condition.test(ICondition.IContext.EMPTY), "FINAL's recipe condition ignored the off switch");
+            } finally { gate.set(true); }
+            test.succeed();
+            return;
+        }
+        test.assertTrue(recipe.isEmpty(), ".394 acquired FINAL's crafting conversion");
+        var machine = BuiltInRegistries.BLOCK.get(ResourceLocation.fromNamespaceAndPath(ORE.getNamespace(), "decomposer"));
+        var positions = List.of(new BlockPos(1, 1, 1), new BlockPos(2, 1, 1), new BlockPos(3, 1, 1), new BlockPos(1, 1, 2));
+        var cases = @STAGED@ ? List.of(nativeOre, conversionSample, new ItemStack(Items.BARRIER), new ItemStack(Items.IRON_ORE)) : List.of(nativeOre);
+        var itemCapability = Capabilities.ItemHandler.BLOCK;
+        for (int i = 0; i < cases.size(); i++) {
+            var pos = test.absolutePos(positions.get(i));
+            level.setBlockAndUpdate(pos, machine.defaultBlockState());
+            var input = level.getCapability(itemCapability, pos, Direction.UP);
+            test.assertTrue(input != null && input.getSlots() == 1, "Missing .394 sided ore input");
+            if (!foreign.isEmpty()) test.assertTrue(!input.insertItem(0, foreign, true).isEmpty(), ".394 accepted FINAL uranium by shared tag");
+            test.assertTrue(!input.insertItem(0, new ItemStack(Items.STRUCTURE_VOID), true).isEmpty(), ".394 accepted an unsupported storage-block form");
+            test.assertTrue(input.insertItem(0, cases.get(i), false).isEmpty(), "Missing .394 recipe for " + cases.get(i));
+            var power = level.getCapability(Capabilities.EnergyStorage.BLOCK, pos, Direction.NORTH);
+            for (int fill = 0; fill < 10; fill++) test.assertTrue(power.receiveEnergy(100, false) == 100, "Could not prepay the ore batch");
+        }
+        var uranium = BuiltInRegistries.ITEM.get(ResourceLocation.fromNamespaceAndPath(ORE.getNamespace(), "element_u"));
+        var iron = BuiltInRegistries.ITEM.get(ResourceLocation.fromNamespaceAndPath(ORE.getNamespace(), "element_fe"));
+        test.startSequence().thenWaitUntil(() -> {
+            for (int i = 0; i < cases.size(); i++) {
+                var pos = test.absolutePos(positions.get(i));
+                var output = level.getCapability(itemCapability, pos, Direction.DOWN);
+                int count = 0;
+                for (int slot = 0; slot < output.getSlots(); slot++) {
+                    var stack = output.getStackInSlot(slot);
+                    if (!stack.isEmpty()) {
+                        test.assertTrue(stack.is(i == 3 ? iron : uranium), "Tag recipe shadowed an explicit recipe or crossed the output identity");
+                        count += stack.getCount();
+                    }
+                }
+                test.assertTrue(count == (i == 2 ? 96 : 48), "Waiting for all .394 ore products, have " + count);
+                test.assertTrue(level.getCapability(Capabilities.EnergyStorage.BLOCK, pos, Direction.NORTH).getEnergyStored() == 0,
+                    "The .394 ore conversion must prepay 1000 FE exactly once");
+            }
+        }).thenSucceed();
+    }
+
+    private static void craftSample(GameTestHelper test, CraftingRecipe recipe, ItemStack sample, ItemStack result, boolean matches) {
+        var input = CraftingInput.of(2, 2, List.of(ItemStack.EMPTY, ItemStack.EMPTY, sample.copyWithCount(64), ItemStack.EMPTY));
+        test.assertTrue(recipe.matches(input, test.getLevel()) == matches, "Wrong FINAL uranium ingredient: " + sample);
+        if (matches) {
+            test.assertTrue(ItemStack.matches(recipe.assemble(input, test.getLevel().registryAccess()), result), "Wrong uranium recipe result");
+            var extra = CraftingInput.of(2, 2, List.of(ItemStack.EMPTY, new ItemStack(Items.COBBLESTONE), sample, ItemStack.EMPTY));
+            test.assertTrue(!recipe.matches(extra, test.getLevel()), "Uranium recipe accepted unrelated ingredients");
+        }
     }
 
     private static Set<BlockPos> run(GameTestHelper test, ServerLevel level, ConfiguredFeature<?, ?> feature,

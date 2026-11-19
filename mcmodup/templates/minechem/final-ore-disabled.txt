@@ -1,1 +1,9 @@
-# Pinned old ore registrations and material outputs.
+# Checksum-pinned Forge ore interoperability controls.
+craft_extra=-
+craft_foreign=-
+craft_full_stack=-
+craft_native=-
+craft_recipes=0
+craft_setting=false
+craft_shifted=-
+craft_untagged=-

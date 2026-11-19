@@ -2,7 +2,7 @@ import json
 import unittest
 
 from mcmodup import minechem_ore
-from mcmodup.minechem_materials import observations
+from mcmodup.minechem_materials import PRODUCT, observations
 
 
 class UraniumOreTests(unittest.TestCase):
@@ -28,7 +28,9 @@ class UraniumOreTests(unittest.TestCase):
         for prepaid in (False, True):
             with self.subTest(prepaid=prepaid):
                 ns = "minechem_chemistry_394" if prepaid else "minechem_chemistry"
-                files = minechem_ore.project(ns, "test.port", prepaid)
+                rows = observations("release394-ore-interop.txt")
+                ids = {part[1]: f"{ns}:chemical_{part[1]}" for row in rows.values() for part in PRODUCT.finditer(row)}
+                files = minechem_ore.project(ns, "test.port", prepaid, ids)
                 data = f"src/main/resources/data/{ns}"
                 self.assertEqual(json.loads(files[f"{data}/worldgen/configured_feature/uranium_ore.json"]),
                                  {"type": f"{ns}:uranium_veins", "config": {}})
@@ -46,6 +48,30 @@ class UraniumOreTests(unittest.TestCase):
                 checks = minechem_ore.checks("test.checks", "check", ns, prepaid)
                 self.assertNotRegex(checks, r"@[A-Z_]+@")
                 self.assertEqual(checks.count("new Sample("), len(minechem_ore.CASES))
+
+    def test_crafting_gate_and_tag_fallback_keep_release_identity(self):
+        final = observations("final-ore-interop.txt")
+        disabled = observations("final-ore-disabled.txt")
+        other = observations("release394-ore-interop.txt")
+        self.assertEqual((final["craft_foreign"], final["craft_extra"], disabled["craft_foreign"], other["craft_foreign"]),
+                         ("nativex1:0", "-", "-", "-"))
+        self.assertEqual((other["native_uranium_after_scan"], other["external_uranium_after_scan"], other["oreNetherUranium"]),
+                         ("[e92x48]", "[e92x48]", "[e92x96]"))
+        self.assertEqual((other["explicit_iron_before"], other["explicit_iron_after"], other["blockUranium"]),
+                         ("[e26x48]", "[e26x48]", "-"))
+        ns = "minechem_chemistry"
+        final_files = minechem_ore.project(ns, "test.final", False, {})
+        recipe = json.loads(final_files[f"src/main/resources/data/{ns}/recipe/uranium_ore_conversion.json"])
+        self.assertEqual(recipe["neoforge:conditions"], [{"type": f"{ns}:uranium_ore_craftable"}])
+        self.assertEqual(recipe["ingredients"][0]["base"], {"tag": "c:ores/uranium"})
+        self.assertEqual(recipe["result"], {"id": f"{ns}:uranium_ore", "count": 1})
+        ids = {part[1]: f"minechem_chemistry_394:chemical_{part[1]}" for row in other.values() for part in PRODUCT.finditer(row)}
+        newer_files = minechem_ore.project(ns + "_394", "test.newer", True, ids)
+        self.assertFalse(any(path.endswith("uranium_ore_conversion.json") for path in newer_files))
+        code = newer_files["src/main/java/test/newer/OreDictionary394.java"]
+        self.assertEqual(code.count("new Rule("), len(minechem_ore.ORE_FORMS))
+        self.assertIn('tag("c:ores_in_ground/netherrack"), List.of(new Part("minechem_chemistry_394:chemical_e92", 96))', code)
+        self.assertFalse(set(minechem_ore.verification_tags().values()) & set(newer_files.values()))
 
 
 if __name__ == "__main__":

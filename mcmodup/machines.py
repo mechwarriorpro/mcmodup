@@ -30,7 +30,7 @@ class DecomposerMode(StrEnum):
 def machine_classes(mode: DecomposerMode) -> tuple[str, ...]:
     research = () if mode == DecomposerMode.BATCH else ("JournalClone", "MaterialRules", *minechem_effects.JAVA, *minechem_polytool.JAVA)
     synthesis = {DecomposerMode.FINAL: SYNTHESIS_FINAL_CLASSES, DecomposerMode.RELEASE_394: SYNTHESIS_394_CLASSES}.get(mode, ())
-    matter = tuple(name for name in minechem_matter.GENERATED_CLASSES if (name != "FinalFluidCollector" or mode == DecomposerMode.FINAL)
+    matter = tuple(name for name in minechem_matter.GENERATED_CLASSES if (name not in minechem_matter.FINAL_ONLY or mode == DecomposerMode.FINAL)
                    and (name not in minechem_matter.RELEASE_394_ONLY or mode == DecomposerMode.RELEASE_394)) if research else ()
     return JAVA_CLASSES + research + synthesis + matter
 
@@ -221,6 +221,7 @@ def _java_recipes(package: str, namespace: str, entries: list[CatalogEntry], rec
     roll = "MaterialRules.roll(recipe, random)" if mode != DecomposerMode.BATCH else "recipe.outputs()"
     variable = "MaterialRules.variable(recipe)" if mode != DecomposerMode.BATCH else "false"
     key = "MaterialRules.validInput(stack)" if mode != DecomposerMode.BATCH else "true"
+    fallback = "OreDictionary394.lookup(stack, id)" if mode == DecomposerMode.RELEASE_394 else "null"
     chemical_ids = ",\n".join(f'        "{namespace}:{entry.path}"' for entry in entries)
     return f'''package {package};
 
@@ -251,7 +252,18 @@ final class ChemistryRecipes {{
     static final Map<String, Recipe> DECOMPOSE_FLUID = index({fluids});
 
     static Recipe input(ItemStack stack) {{
-        return {key} ? DECOMPOSE.get(BuiltInRegistries.ITEM.getKey(stack.getItem()).toString()) : null;
+        if (!({key})) return null;
+        var id = BuiltInRegistries.ITEM.getKey(stack.getItem());
+        var known = DECOMPOSE.get(id.toString());
+        return known != null ? known : {fallback};
+    }}
+
+    static Recipe inspection(String key) {{
+        // Published journal keys also cover variants such as the water potion.
+        var known = DECOMPOSE.get(key);
+        if (known != null) return known;
+        var id = ResourceLocation.tryParse(key);
+        return id != null && BuiltInRegistries.ITEM.containsKey(id) ? input(new ItemStack(BuiltInRegistries.ITEM.get(id))) : null;
     }}
 
     static boolean variable(Recipe recipe) {{ return {variable}; }}
