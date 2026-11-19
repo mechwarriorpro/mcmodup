@@ -83,7 +83,10 @@ public final class PlatformChecks {
             "Wrong terminal and player inventory layout");
         var cobble = new ItemStack(Items.COBBLESTONE, 37);
         test.assertTrue(menu.getSlot(19).mayPlace(cobble), "Manual storage rejected inert material");
-        menu.getSlot(19).set(cobble);
+        menu.getSlot(19).set(cobble.copyWithCount(30));
+        player.getInventory().setItem(9, cobble.copyWithCount(7));
+        test.assertTrue(!menu.quickMoveStack(player, 20).isEmpty() && ItemStack.matches(menu.getSlot(19).getItem(), cobble) &&
+            player.getInventory().getItem(9).isEmpty(), "Shift-click did not merge seven items into slot 19");
         for (var side : Direction.values()) {
             var inventory = level.getCapability(Capabilities.ItemHandler.BLOCK, pos, side);
             test.assertTrue(inventory != null && inventory.getSlots() == 20 && inventory.getSlotLimit(19) == 64 &&

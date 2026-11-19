@@ -53,7 +53,11 @@ def modern(root: Path) -> None:
     launched = subprocess.run([sys.executable, "-m", "mcmodup", *args, "--allow-preview-ports", "--output-pack", str(out),
                                "--include-native", "cb_multipart", "--build-timeout", "600", "--json"],
                               text=True, capture_output=True, timeout=700)
-    assert launched.returncode == 0, (launched.stderr or launched.stdout)[-5300:]
+    if launched.returncode:
+        # Keep the JUnit assertion near the head; shutdown and stack traces occupy the Gradle tail.
+        problems = json.loads(launched.stdout)["problems"] if not launched.stderr and launched.stdout.startswith("{") else []
+        error = "\n".join(problems) or launched.stderr or launched.stdout
+        raise AssertionError(error if len(error) <= 5200 else f"{error[:2400]}\n…\n{error[-2800:]}")
     report = json.loads((out / REPORT_NAME).read_text())
     assert report["ready"] and report["staged"] and not report["parity_verified"] and not report["connector_required"], report
     assert report["selected"] == [label] and report["build_order"] == [label], report

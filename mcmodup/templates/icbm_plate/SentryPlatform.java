@@ -15,6 +15,7 @@ import net.minecraft.world.ContainerHelper;
 import net.minecraft.world.Containers;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.MenuProvider;
+import net.minecraft.world.SimpleContainer;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.flag.FeatureFlags;
@@ -37,7 +38,6 @@ import net.neoforged.neoforge.capabilities.RegisterCapabilitiesEvent;
 import net.neoforged.neoforge.energy.IEnergyStorage;
 import net.neoforged.neoforge.event.BuildCreativeModeTabContentsEvent;
 import net.neoforged.neoforge.items.IItemHandler;
-import net.neoforged.neoforge.items.ItemStackHandler;
 import net.neoforged.neoforge.registries.DeferredBlock;
 import net.neoforged.neoforge.registries.DeferredHolder;
 import net.neoforged.neoforge.registries.DeferredItem;
@@ -52,7 +52,7 @@ public final class SentryPlatform extends BaseEntityBlock {
     private static final DeferredRegister<BlockEntityType<?>> ENTITIES = DeferredRegister.create(Registries.BLOCK_ENTITY_TYPE, ID);
     private static final DeferredRegister<MenuType<?>> MENUS = DeferredRegister.create(Registries.MENU, ID);
     private static final DeferredBlock<SentryPlatform> PLATFORM = BLOCKS.register(NAME,
-        () -> new SentryPlatform(Properties.of().strength(100F, @RESISTANCE@F).requiresCorrectToolForDrops()));
+        () -> new SentryPlatform(Properties.of().strength(100F, 30F).requiresCorrectToolForDrops()));
     private static final DeferredItem<BlockItem> ITEM = ITEMS.registerSimpleBlockItem(PLATFORM);
     static final DeferredHolder<BlockEntityType<?>, BlockEntityType<Tile>> ENTITY = ENTITIES.register(NAME,
         () -> BlockEntityType.Builder.of(Tile::new, PLATFORM.get()).build(null));
@@ -89,26 +89,32 @@ public final class SentryPlatform extends BaseEntityBlock {
 
     @Override protected void onRemove(BlockState state, Level level, BlockPos pos, BlockState replacement, boolean moved) {
         if (!state.is(replacement.getBlock()) && !level.isClientSide() && level.getBlockEntity(pos) instanceof Tile tile) {
-            for (int index = 0; index < SLOTS; ++index) {
-                ItemStack stack = tile.items.extractItem(index, Integer.MAX_VALUE, false);
-                if (!stack.isEmpty()) Containers.dropItemStack(level, pos.getX(), pos.getY(), pos.getZ(), stack);
-            }
+            Containers.dropContents(level, pos, tile.items);
         }
         super.onRemove(state, level, pos, replacement, moved);
     }
 
     static final class Tile extends BlockEntity implements MenuProvider {
         private boolean forwarding;
-        final ItemStackHandler items = new ItemStackHandler(SLOTS) {
-            @Override protected void onContentsChanged(int slot) { setChanged(); }
+        final SimpleContainer items = new SimpleContainer(SLOTS) {
+            @Override public int getMaxStackSize() { return 64; }
+            @Override public void setChanged() {
+                super.setChanged();
+                Tile.this.setChanged();
+            }
         };
         // The original permits manual placement, but the inherited canStore hook rejects automated input from every side.
         private final IItemHandler sided = new IItemHandler() {
             @Override public int getSlots() { return SLOTS; }
-            @Override public ItemStack getStackInSlot(int slot) { return items.getStackInSlot(slot).copy(); }
+            @Override public ItemStack getStackInSlot(int slot) { return items.getItem(slot).copy(); }
             @Override public ItemStack insertItem(int slot, ItemStack stack, boolean simulate) { return stack; }
-            @Override public ItemStack extractItem(int slot, int amount, boolean simulate) { return items.extractItem(slot, amount, simulate); }
-            @Override public int getSlotLimit(int slot) { return items.getSlotLimit(slot); }
+            @Override public ItemStack extractItem(int slot, int amount, boolean simulate) {
+                if (amount <= 0) return ItemStack.EMPTY;
+                var stack = items.getItem(slot);
+                if (stack.isEmpty()) return ItemStack.EMPTY;
+                return simulate ? stack.copyWithCount(Math.min(amount, stack.getCount())) : items.removeItem(slot, amount);
+            }
+            @Override public int getSlotLimit(int slot) { return items.getMaxStackSize(); }
             @Override public boolean isItemValid(int slot, ItemStack stack) { return false; }
         };
         private final IEnergyStorage power = new IEnergyStorage() {
@@ -135,7 +141,7 @@ public final class SentryPlatform extends BaseEntityBlock {
         @Override protected void saveAdditional(CompoundTag tag, HolderLookup.Provider registries) {
             super.saveAdditional(tag, registries);
             var stacks = NonNullList.withSize(SLOTS, ItemStack.EMPTY);
-            for (int i = 0; i < SLOTS; ++i) stacks.set(i, items.getStackInSlot(i));
+            for (int i = 0; i < SLOTS; ++i) stacks.set(i, items.getItem(i));
             ContainerHelper.saveAllItems(tag, stacks, registries);
         }
 
@@ -145,7 +151,7 @@ public final class SentryPlatform extends BaseEntityBlock {
             ContainerHelper.loadAllItems(tag, stacks, registries);
             for (int i = 0; i < SLOTS; ++i) {
                 var stack = stacks.get(i);
-                items.setStackInSlot(i, stack.copyWithCount(Math.min(stack.getCount(), stack.getMaxStackSize())));
+                items.setItem(i, stack);
             }
         }
     }

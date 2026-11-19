@@ -37,6 +37,7 @@ on:
       - 'tests/fixtures/MultipartControlSmoke.java'
       - 'tests/fixtures/PlateMultipartSmoke.java'
       - 'tests/fixtures/ThermometerMultipartSmoke.java'
+      - 'tests/fixtures/VoltzBusSmoke.java'
 
 permissions:
   contents: read

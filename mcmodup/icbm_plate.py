@@ -111,9 +111,7 @@ neoForge.runs.create('gameTestServer') {{
 """,
         "src/main/resources/META-INF/neoforge.mods.toml": meta.replace(f"[{NEOFORGE_VERSION},21.2)", f"[{NEOFORGE_VERSION}]"),
         **{f"{java}/{KERNEL}/{name}.java": (TEMPLATES / f"icbm_plate/{name}.java").read_bytes()
-           for name in ("GlassPlate", "SentryBridge", "SentryMenu", "SentryScreen")},
-        f"{java}/{KERNEL}/SentryPlatform.java": (TEMPLATES / "icbm_plate/SentryPlatform.java").read_text(encoding="utf-8")
-            .replace("@RESISTANCE@", "30.0"),
+           for name in ("GlassPlate", "SentryBridge", "SentryMenu", "SentryPlatform", "SentryScreen")},
         f"{java}/mcmodup/icbmplate/GlassPlateMod.java": (TEMPLATES / "icbm_plate/GlassPlateMod.java").read_bytes(),
         f"{java}/mcmodup/icbmplate/PlateChecks.java": checks(MOD_ID),
         f"{java}/mcmodup/icbmplate/PlatformChecks.java": platform_checks(PACKAGE, MOD_ID),
@@ -167,7 +165,7 @@ def prepare(output: Path) -> Path:
                       "Platform GUI storage, sided extraction and save/load": "storedsentryinventory"},
                   "status": "preview", "limitations": [
                       "Only the Core glass plate and passive Sentry platform are implemented. No turret behaviors, ammunition or structures, Explosion or other Core blocks.",
-                      "The platform forwards FE only to native receivers advertising the dedicated Sentry capability. No receive-capable turrets or batteries are included.",
+                      "The creative-only platform forwards FE only to native receivers advertising the dedicated Sentry capability. The legacy crafting prerequisites and receivers are not included.",
                       "Separate registry IDs for fresh worlds. Old saves and add-ons expecting ICBM are not supported.",
                       "No graphical client comparison; modern material, collision and redstone APIs are used at the boundary."],
                   "import_assets": {old: f"src/main/resources/{new}" for old, new in TEXTURES.items()},
