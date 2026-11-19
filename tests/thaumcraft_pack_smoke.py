@@ -164,13 +164,13 @@ neoForge.runs.create('gameTestServer') {{
     write_workspace(project, files)
     mods = copy_mods(staged, project, expected)
     log = run_gradle(project, "runGameTestServer")
-    tests = 1 + 4 * with_tinkerer + (len(CC_CASES) if cc_fixtures else 0) + with_ender_storage + 2 * restored + 2 * bool(frost_fixtures)
+    tests = 1 + 4 * with_tinkerer + (len(CC_CASES) if cc_fixtures else 0) + with_ender_storage + 3 * restored + 2 * bool(frost_fixtures)
     assert f"All {tests} required tests passed" in log, log[-12000:]
     assert mod_hashes(mods) == expected, "A server runtime input changed"
     print("Staged production Thaumcraft and Architectury passed the native NeoForge crucible smoke test without Connector.")
     if restored:
-        print("The staged JAR matched exact TC4 enchanted golden apple aspects and coordinate-derived overworld node identity, "
-              "including identity preservation through block-entity save/load and recreation at the same position.")
+        print("The staged JAR matched exact TC4 enchanted golden apple aspects and coordinate-derived node identities in the "
+              "Overworld and Nether. A native NBT load in the other dimension preserved the original identity.")
     if frost_fixtures:
         print("The staged Frost focus matched the original base cost, color, and cooldown. The native tests also exercised "
               "research, recipe payment, casting, shard ricochets, damage, and native persistence from the production JAR.")

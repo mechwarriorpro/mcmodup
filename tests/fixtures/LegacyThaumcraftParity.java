@@ -65,9 +65,20 @@ public final class LegacyThaumcraftParity {
             String next = id(fresh);
             require(first.equals("0:12:64:-13") && first.equals(moved) && first.equals(saved) && next.equals("0:14:65:-15"),
                     "Unexpected coordinate generation, caching or NBT load: " + first + "/" + moved + "/" + saved + "/" + next + "; NBT " + data);
+            Object nether = serverType.getMethod("func_71218_a", int.class).invoke(server, -1);
+            require(nether != null && nether != world, "Original server did not load the Nether");
+            Object crossDim = nodeType.newInstance();
+            tile.getMethod("func_145834_a", worldType).invoke(crossDim, nether);
+            set(crossDim, 14, 65, -15);
+            String netherFresh = id(crossDim);
+            tile.getMethod("func_145839_a", compound).invoke(crossDim, data);
+            String inNether = id(crossDim);
+            require(netherFresh.equals("-1:14:65:-15") && first.equals(inNether),
+                    "Wrong original Nether node identity or lost persisted id: " + netherFresh + "/" + inNether);
             String frost = frost(stack);
             System.out.println("MCMODUP_TC4_ORIGINAL_PASS enchanted_golden_apple=" + tags + "; node_first=" + first
-                    + "; node_moved=" + moved + "; node_restored=" + saved + "; node_fresh=" + next + "; " + frost + "; NBT " + data);
+                    + "; node_moved=" + moved + "; node_restored=" + saved + "; node_fresh=" + next
+                    + "; node_nether_fresh=" + netherFresh + "; node_nether_restored=" + inNether + "; " + frost + "; NBT " + data);
         } catch (Throwable error) {
             System.err.println("MCMODUP_TC4_ORIGINAL_FAIL " + error);
             error.printStackTrace();

@@ -7,6 +7,7 @@ import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.level.Level;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 import thaumcraft.common.config.ThaumcraftContent;
@@ -55,5 +56,35 @@ public final class ThaumcraftRestoredChecks {
         test.succeed();
     }
 
-    private static String overworldId(BlockPos pos) { return "0:" + pos.getX() + ":" + pos.getY() + ":" + pos.getZ(); }
+    @GameTest(template = "empty", timeoutTicks = 200)
+    public static void originalNodeIdentitySurvivesCrossDimensionNbtLoad(GameTestHelper test) {
+        var overworld = test.getLevel();
+        var nether = overworld.getServer().getLevel(Level.NETHER);
+        test.assertTrue(nether != null && nether != overworld, "Expected both dimensions in the staged test world");
+        var block = ThaumcraftContent.AURA_NODE.get();
+        var from = test.absolutePos(new BlockPos(0, 1, 0));
+        var into = new BlockPos(8, 85, 8);
+        test.assertTrue(nether.getBlockEntity(into) == null, "Expected an empty block-entity slot in the fresh Nether test world");
+        var previous = nether.getBlockState(into);
+        try {
+            overworld.setBlockAndUpdate(from, block.defaultBlockState());
+            var source = (TileNode) overworld.getBlockEntity(from);
+            String identity = overworldId(from);
+            test.assertTrue(identity.equals(source.getId()), "Wrong identity of node in the original dimension");
+            var saved = source.saveWithId(overworld.registryAccess());
+            overworld.removeBlock(from, false);
+            nether.setBlockAndUpdate(into, block.defaultBlockState());
+            var target = (TileNode) nether.getBlockEntity(into);
+            test.assertTrue(target != null && ("-1:" + coordinates(into)).equals(target.getId()), "Fresh Nether node did not use the original dimension prefix");
+            target.loadWithComponents(saved, nether.registryAccess());
+            test.assertTrue(target.getLevel() == nether && target.getBlockPos().equals(into)
+                    && identity.equals(target.getId()), "Node did not preserve the saved overworld identity in the Nether");
+        } finally {
+            nether.setBlockAndUpdate(into, previous);
+        }
+        test.succeed();
+    }
+
+    private static String coordinates(BlockPos pos) { return pos.getX() + ":" + pos.getY() + ":" + pos.getZ(); }
+    private static String overworldId(BlockPos pos) { return "0:" + coordinates(pos); }
 }
