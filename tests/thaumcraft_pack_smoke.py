@@ -106,7 +106,8 @@ def frost_test_sources(source: Path, source_sha256: str) -> dict[str, bytes]:
     assert digest(source) == source_sha256, "The Frost fixtures must come from the exact source used for the staged port"
     files = {}
     with ZipFile(source) as archive:
-        for name in ("FrostFocusRuntimeChecks", "FrostShardRuntimeChecks"):
+        # The shard collision fixture uses the upstream deterministic target-join helper.
+        for name in ("FrostFocusRuntimeChecks", "FrostShardRuntimeChecks", "ChampionJoinRoll"):
             path = f"java/thaumcraft/common/testing/{name}.java"
             files[f"src/main/{path}"] = archive.read(f"{TC_SOURCE_ROOT}/common/src/gameTest/{path}")
     return files
