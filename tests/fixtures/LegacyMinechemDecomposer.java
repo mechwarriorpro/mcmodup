@@ -183,7 +183,7 @@ public final class LegacyMinechemDecomposer {
                 jam = "; receive_limit=100; compacts_at_intake_and_keeps_merge_remainder; merge_before_empty_when_active; paid_jam_resumes_without_more_charge";
             }
             String materials = FINAL_164 ? "" : "; " + LegacyMinechemMaterials.survey(machine, world) +
-                    " | " + LegacyMinechemSynthesis394.survey(world);
+                    " | " + LegacyMinechemSynthesis394.survey(world) + " | " + LegacyMinechemJournal394.survey(world, x, y, z);
             System.out.println("MCMODUP_MINECHEM_ORIGINAL_PASS slots=" + slots + "; start_charge=" + capacity + "; start_cost=" + paidAtStart
                     + "; input_consumed_on_start; saved_queue_emits_16_iron_tubes_one_per_tick; remaining_charge=0" + jam + materials);
         } catch (Throwable failure) {

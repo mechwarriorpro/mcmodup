@@ -28,7 +28,7 @@ def compile_probe(root: Path, server: Path, forge: Path, javac: str) -> None:
     fixtures = Path(__file__).with_name("fixtures")
     subprocess.run([javac, "-proc:none", "-encoding", "UTF-8", "-classpath", str(forge), "-d", str(probe),
                     *(str(fixtures / name) for name in ("LegacyMinechemDecomposer.java", "LegacyMinechemMaterials.java",
-                                                        "LegacyMinechemSynthesis394.java"))], check=True, timeout=60)
+                                                        "LegacyMinechemSynthesis394.java", "LegacyMinechemJournal394.java"))], check=True, timeout=60)
     with ZipFile(server / "mods/mcmodup-minechemoracle.jar", "x") as jar:
         for compiled in probe.rglob("*.class"):
             jar.write(compiled, compiled.relative_to(probe).as_posix())
