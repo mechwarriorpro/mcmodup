@@ -73,6 +73,19 @@ class MatterTests(unittest.TestCase):
                              for path in final))
         self.assertNotIn("FluidReactions", final["src/main/java/test/port/ChemistryFluids.java"])
 
+    def test_displacement_and_overdue_sources_match_forge_controls(self):
+        rows = observations(AUTOMATION_TRACE)
+        self.assertEqual((rows["displace_down_solid"], rows["displace_down_sign"]), ("true/{}", "false/{}"))
+        self.assertEqual((rows["displace_lateral_water_closed"], rows["displace_lateral_water_outlet"]), ("m62:1", "m1:0"))
+        self.assertEqual((rows["overdue_source_e92"], rows["overdue_source_m109"]), ("e92:0/true/true", "m109:0/true/true"))
+        self.assertEqual((rows["contact_e92"], rows["contact_m109"], rows["contact_disabled_m109"]),
+                         ("[19:0/10]", "[18:6/2400, 19:6/400, 20:1/600]", "[]"))
+        ns, ids = self.ids(True)
+        probe = checks("test.port", "checker", ns, ids, True)
+        self.assertIn('new Displacement("sign", "minecraft:oak_sign", false, 0)', probe)
+        self.assertIn('new Displacement("web", "minecraft:cobweb", true, 1)', probe)
+        self.assertNotRegex(probe, r"@[A-Z_]+@")
+
     def test_only_pinned_fluid_animation_layouts_are_accepted(self):
         name = "assets/minechem/textures/blocks/fluid_still.png"
 

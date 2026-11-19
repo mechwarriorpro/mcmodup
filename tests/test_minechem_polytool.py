@@ -64,8 +64,13 @@ class MinechemPolytoolTests(unittest.TestCase):
 
     def test_combat_observations_keep_different_release_paths(self):
         final, newer = (observations(combat_trace_name(value)) for value in (False, True))
-        self.assertEqual(len(final), 60)
-        self.assertEqual(newer.keys() - final.keys(), {"gold_cofh_api"})
+        self.assertEqual((len(final), len(newer)), (63, 64))
+        self.assertEqual(newer.keys() - final.keys(), {"gold_cofh_api", "gold_cofh_disabled"})
+        self.assertEqual(final.keys() - newer.keys(), {"gold_ue_lithium_after"})
+        self.assertEqual(final["gold_transfer_roll0"], "1/UNKNOWN/5000000/false/137")
+        self.assertEqual(final["gold_ue_lithium_after"], "0")
+        self.assertEqual(newer["gold_transfer_roll0"], "1/true/5000000/false/137")
+        self.assertEqual(newer["gold_cofh_disabled"], "1/1/true/5000000/false/137")
         self.assertEqual((final["boron16_spider"], newer["boron16_spider"]), ("33.60", "12.80"))
         self.assertEqual((final["titanium_first_hit_kill"], newer["titanium_first_hit_kill"]), ("true/true", "false/false"))
         self.assertEqual((final["silicon_flesh_miss"], newer["silicon_flesh_miss"]), ("{m85=1}", "{}"))

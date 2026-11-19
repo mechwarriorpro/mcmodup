@@ -81,9 +81,11 @@ final class PolytoolWorld {
         var inventory = player.getInventory();
         for (int slot = 0; slot < inventory.getContainerSize(); slot++) {
             var stack = inventory.getItem(slot);
-            if (stack.isEmpty() || BuiltInRegistries.ITEM.getKey(stack.getItem()).getNamespace().equals(OTHER_RELEASE)) continue;
+            // FINAL Lithium was an IEnergyItem, not the IEnergyContainer Gold searched for.
+            if (stack.isEmpty() || stack.getItem() instanceof PolytoolItem ||
+                    BuiltInRegistries.ITEM.getKey(stack.getItem()).getNamespace().equals(OTHER_RELEASE)) continue;
             var storage = stack.getCapability(Capabilities.EnergyStorage.ITEM);
-            if (storage != null && storage.canReceive()) storage.receiveEnergy(5_000_000, false);
+            if (storage != null && storage.canReceive()) storage.receiveEnergy(@GOLD_REQUEST@, false);
         }
     }
 }

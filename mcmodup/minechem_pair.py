@@ -25,7 +25,7 @@ STACK = "net/minecraft/item/ItemStack"
 RESOURCE = "src/main/resources/"
 FINAL = PROFILES["minechem-chemistry"]
 RELEASE_394 = PROFILES[RELEASE_394_PROFILE]
-VERSIONS = {FINAL.namespace: "1.3.13-partial", RELEASE_394.namespace: "1.4.13-partial"}
+VERSIONS = {FINAL.namespace: "1.3.14-partial", RELEASE_394.namespace: "1.4.14-partial"}
 FEATURES = minechem_reactors.FEATURES | {"Buffered iron decomposition and saved remaining output": "savedbufferdrains",
             "Original decomposer output-slot method": "linkedslotrule",
             "Journal cloning preserves discovery and selection components": "journalcloningpreservescomponents"}

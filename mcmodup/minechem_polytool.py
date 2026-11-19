@@ -82,9 +82,14 @@ def project(namespace: str, package: str, entries: list[CatalogEntry], release_3
     for row in infusions(namespace, entries, release_394):
         vector = f"new Stats({', '.join(map(str, row.alloy))})" if row.alloy else "null"
         cases.append(f"        new Infusion({row.atomic}, ResourceLocation.parse({json.dumps(row.id)}), {vector})")
+    gold = observations(combat_trace_name(release_394))["gold_transfer_roll0"].split("/")
+    if (len(gold) != 5 or gold[0] != "1" or gold[1] != ("true" if release_394 else "UNKNOWN") or gold[3] != "false"
+            or not re.fullmatch(r"[1-9][0-9]{0,9}", gold[2]) or int(gold[2]) >= 2**31):
+        raise InputError("Invalid original Gold transfer observation")
     files = {f"{java}/{name}.java": (TEMPLATES / f"{name}.java").read_text(encoding="utf-8")
              .replace("@PACKAGE@", package).replace("@NAMESPACE@", namespace)
              .replace("@RELEASE_394@", str(release_394).lower()).replace("@INFUSIONS@", ",\n".join(cases))
+             .replace("@GOLD_REQUEST@", gold[2])
              for name in JAVA}
     gui = {"infuse": "Infuse", "prompt": "64 tubes", "title": "Polytool · " + (".394" if release_394 else "FINAL"),
            "sword": "Sword: %s", "ore": "Ores: %s", "stone": "Stone: %s", "axe": "Axe: %s", "shovel": "Shovel: %s",

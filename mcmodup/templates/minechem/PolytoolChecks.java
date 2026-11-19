@@ -14,6 +14,7 @@ import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import net.minecraft.ChatFormatting;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.gametest.framework.GameTest;
@@ -47,6 +48,7 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.enchantment.Enchantments;
+import net.minecraft.world.item.component.CustomData;
 import net.minecraft.world.level.Explosion;
 import net.minecraft.world.level.GameRules;
 import net.minecraft.world.level.GameType;
@@ -56,7 +58,11 @@ import net.minecraft.world.level.block.LiquidBlock;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.bus.api.EventPriority;
+import net.neoforged.bus.api.SubscribeEvent;
+import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.capabilities.Capabilities;
+import net.neoforged.neoforge.capabilities.RegisterCapabilitiesEvent;
+import net.neoforged.neoforge.energy.IEnergyStorage;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.entity.living.LivingDropsEvent;
 import net.neoforged.neoforge.event.level.BlockDropsEvent;
@@ -67,6 +73,7 @@ import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 import net.neoforged.neoforge.network.registration.NetworkRegistry;
 
 /** Also compiled as a separate test mod against the staged production JAR. */
+@EventBusSubscriber(modid = "@TEST_NAMESPACE@", bus = EventBusSubscriber.Bus.MOD)
 @GameTestHolder("@TEST_NAMESPACE@")
 @PrefixGameTestTemplate(false)
 public final class @CLASS@ {
@@ -622,6 +629,10 @@ public final class @CLASS@ {
             }
             var gold = RELEASE_394 ? tuned(test, attacker, "au:1") : tuned(test, attacker, "au:1", "li:2");
             attacker.getInventory().setItem(10, gold);
+            var receiver = new ItemStack(Items.CLOCK);
+            CustomData.update(DataComponents.CUSTOM_DATA, receiver, tag -> tag.putString("GoldFixtureRelease", ID));
+            attacker.getInventory().setItem(12, receiver);
+            test.assertTrue(receiver.getCapability(Capabilities.EnergyStorage.ITEM) != null, "Missing native test FE receiver");
             attacker.setItemInHand(InteractionHand.MAIN_HAND, ItemStack.EMPTY);
             var box = new AABB(attacker.position(), attacker.position()).inflate(1);
             for (int roll : new int[]{1, 0}) {
@@ -629,14 +640,45 @@ public final class @CLASS@ {
                 attacker.getInventory().tick();
                 var bolts = level.getEntitiesOfClass(LightningBolt.class, box);
                 combat(test, "gold_rank1_roll" + roll, Integer.toString(bolts.size()));
+                var meter = meter(receiver);
+                var expected = COMBAT.get("gold_transfer_roll" + roll).split("/");
+                test.assertTrue(meter.getInt("Calls") == Integer.parseInt(expected[0]) &&
+                    meter.getInt("Requested") == Integer.parseInt(expected[2]) && meter.getBoolean("Simulate") == Boolean.parseBoolean(expected[3]) &&
+                    meter.getInt("Stored") == Integer.parseInt(expected[4]), "Gold's FE transfer differs from the original call: " + meter);
                 bolts.forEach(LightningBolt::discard);
             }
-            if (!RELEASE_394) test.assertTrue(gold.getCapability(Capabilities.EnergyStorage.ITEM).getEnergyStored() == 10_000_000,
-                "Gold's FE strike did not feed this release's Lithium receiver");
+            if (!RELEASE_394) combat(test, "gold_ue_lithium_after", Integer.toString(gold.getCapability(Capabilities.EnergyStorage.ITEM).getEnergyStored()));
             if (!foreign.isEmpty()) test.assertTrue(foreign.getCapability(Capabilities.EnergyStorage.ITEM).getEnergyStored() == 0,
                 ".394 Gold charged a FINAL item");
         });
         test.succeed();
+    }
+
+    @SubscribeEvent
+    public static void testReceiver(RegisterCapabilitiesEvent event) {
+        event.registerItem(Capabilities.EnergyStorage.ITEM, (stack, context) ->
+            ID.equals(meter(stack).getString("GoldFixtureRelease")) ? new GoldMeter(stack) : null, Items.CLOCK);
+    }
+
+    private static CompoundTag meter(ItemStack stack) { return stack.getOrDefault(DataComponents.CUSTOM_DATA, CustomData.EMPTY).copyTag(); }
+
+    // This marker-only receiver lives in the test code, never the production JAR.
+    private record GoldMeter(ItemStack stack) implements IEnergyStorage {
+        @Override public int receiveEnergy(int amount, boolean simulate) {
+            int received = Math.clamp(amount, 0, getMaxEnergyStored() - getEnergyStored());
+            CustomData.update(DataComponents.CUSTOM_DATA, stack, tag -> {
+                tag.putInt("Calls", tag.getInt("Calls") + 1);
+                tag.putInt("Requested", amount);
+                tag.putBoolean("Simulate", simulate);
+                if (!simulate) tag.putInt("Stored", tag.getInt("Stored") + received);
+            });
+            return received;
+        }
+        @Override public int extractEnergy(int amount, boolean simulate) { return 0; }
+        @Override public int getEnergyStored() { return meter(stack).getInt("Stored"); }
+        @Override public int getMaxEnergyStored() { return 137; }
+        @Override public boolean canExtract() { return false; }
+        @Override public boolean canReceive() { return true; }
     }
 
     @GameTest(template = "polytool_room")

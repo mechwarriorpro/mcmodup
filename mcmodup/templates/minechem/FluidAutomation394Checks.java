@@ -211,8 +211,7 @@
     }
 
     private static void tickFluid(ServerLevel level, BlockPos pos) {
-        var fluid = level.getFluidState(pos);
-        fluid.getType().tick(level, pos, fluid);
+        level.getFluidState(pos).tick(level, pos);
     }
 
     @GameTest(template = "fluid_room")
