@@ -33,7 +33,8 @@ public final class Release394Checks {
     @GameTest(template = "test_room")
     public static void materialDecompositionMatchesTrace(GameTestHelper test) {
         var machine = place(test);
-        test.assertTrue(!machine.input().isItemValid(0, new ItemStack(Items.DEEPSLATE_IRON_ORE)), "Do not guess a new ore recipe");
+        test.assertTrue(machine.input().isItemValid(0, new ItemStack(Items.DEEPSLATE_IRON_ORE)), "Use the registered iron ore tag for deepslate ore");
+        test.assertTrue(!machine.input().isItemValid(0, new ItemStack(Items.STRUCTURE_VOID)), "Do not guess a recipe for unsupported inputs");
         for (String row : TRACE) {
             String[] fields = row.split("=", 2);
             ItemStack stack = stack(fields[0]);
