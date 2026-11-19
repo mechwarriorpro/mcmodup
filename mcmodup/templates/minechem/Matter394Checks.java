@@ -44,3 +44,49 @@
             bucketHandler.drain(999, FluidAction.EXECUTE).isEmpty(), "Bucket didn't report its full 1000 mB capacity");
         test.succeed();
     }
+
+    @GameTest(template = "test_room")
+    public static void release394RadioactiveTubeSource(GameTestHelper test) throws Exception {
+        var level = test.getLevel();
+        var pos = test.absolutePos(new BlockPos(3, 2, 3));
+        var floor = pos.below();
+        level.setBlockAndUpdate(floor, Blocks.STONE.defaultBlockState());
+        var actor = new net.neoforged.neoforge.common.util.FakePlayer(level,
+            new com.mojang.authlib.GameProfile(new java.util.UUID(26, 394), "mcmodupTube"));
+        var hand = net.minecraft.world.InteractionHand.MAIN_HAND;
+        var base = new net.minecraft.world.phys.BlockHitResult(net.minecraft.world.phys.Vec3.atCenterOf(floor), Direction.UP, floor, false);
+        var sourceHit = new net.minecraft.world.phys.BlockHitResult(net.minecraft.world.phys.Vec3.atCenterOf(pos), Direction.UP, pos, false);
+        actor.setPos(floor.getX() + 0.5, floor.getY(), floor.getZ() + 1.5);
+        var uranium = item("element_u", 3);
+        var other = radioactive(test, "element_u", 5, 310, level.getGameTime());
+        var oldest = clock(test, other);
+        actor.setItemInHand(hand, uranium);
+        actor.getInventory().setItem(9, other.copyWithCount(4));
+        test.assertTrue(!tubeUse("pour", level, actor, hand, base).getResult().consumesAction() && uranium.getCount() == 3 && level.isEmptyBlock(pos),
+            "Fewer than eight tubes placed a source or lost payment");
+        actor.getInventory().setItem(9, other);
+        var empty = tubeUse("pour", level, actor, hand, base).getObject();
+        var source = level.getBlockEntity(pos);
+        test.assertTrue(empty.is(item("test_tube", 1).getItem()) && empty.getCount() == 8 && actor.getInventory().getItem(9).isEmpty() && source != null,
+            "A full source didn't take exactly eight split uranium tubes");
+        var state = level.getBlockState(pos);
+        var tag = source.saveWithoutMetadata(level.registryAccess());
+        level.removeBlock(pos, false);
+        level.setBlockAndUpdate(pos, state);
+        level.getBlockEntity(pos).loadWithComponents(tag, level.registryAccess());
+        actor.setItemInHand(hand, empty);
+        var filled = tubeUse("collect", level, actor, hand, sourceHit).getObject();
+        test.assertTrue(filled.is(item("element_u", 1).getItem()) && filled.getCount() == 8 && oldest.equals(clock(test, filled)) && level.isEmptyBlock(pos),
+            "Source pickup didn't restore eight tubes and their oldest persisted clock");
+        test.succeed();
+    }
+
+    @SuppressWarnings("unchecked")
+    private static net.minecraft.world.InteractionResultHolder<ItemStack> tubeUse(String action, net.minecraft.world.level.Level level,
+        Player player, net.minecraft.world.InteractionHand hand, net.minecraft.world.phys.BlockHitResult hit) throws Exception {
+        var base = item("test_tube", 1).getItem().getClass().getEnclosingClass();
+        var method = base.getDeclaredMethod(action, net.minecraft.world.level.Level.class, Player.class,
+            net.minecraft.world.InteractionHand.class, net.minecraft.world.phys.BlockHitResult.class);
+        method.setAccessible(true);
+        return (net.minecraft.world.InteractionResultHolder<ItemStack>) method.invoke(null, level, player, hand, hit);
+    }

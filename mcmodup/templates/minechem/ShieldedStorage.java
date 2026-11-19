@@ -96,6 +96,7 @@ final class ShieldedStorage {
             super(CONTENTS.get(), pos, state);
             int size = FINAL && state.is(CABINET.get()) ? CABINET_SLOTS : CHEST_SLOTS;
             storage = new ItemStackHandler(size) {
+                @Override public int getSlotLimit(int index) { return 64; }
                 @Override public void setStackInSlot(int index, ItemStack value) { super.setStackInSlot(index, value.copy()); }
                 @Override public ItemStack insertItem(int index, ItemStack value, boolean simulate) {
                     return super.insertItem(index, simulate ? value : value.copy(), simulate);
