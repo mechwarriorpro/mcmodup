@@ -127,7 +127,11 @@ jobs:
               assert any(item["new_id"] == "minechem_chemistry:molecule_water" and item["recipe_status"] == "powered_synthesis"
                          for item in catalog["entries"])
               recipes = len(catalog["machine_recipes"])
-              assert recipes == 299
+              assert recipes == 300
+              water = [rule for rule in catalog["machine_recipes"] if "fluid_input" in rule]
+              assert len(water) == 1 and water[0]["fluid_input"] == {"id": "minecraft:water", "millibuckets": 144}
+              assert water[0]["outputs"] == [{"id": "minechem_chemistry:element_h", "count": 2},
+                                             {"id": "minechem_chemistry:element_o", "count": 1}]
               assert catalog["decomposer_mode"] == "5.0.5-final-output-buffer" and not catalog["full_port"]
               print(f"::notice title=Minechem catalog and buffer mode checked::113 elements, 147 molecules, {recipes} machine recipes")
           PY
