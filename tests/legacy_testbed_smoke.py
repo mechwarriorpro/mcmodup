@@ -68,7 +68,7 @@ neoForge.runs.create('gameTestServer') {{
         files[f"{source}/MatterChecks{suffix}.java"] = minechem_matter.checks(package, CHECK, profile.namespace,
             minechem_final_synthesis.chemical_ids(profile.namespace, rows), prepaid)
         files[f"{source}/{minechem_ore.check_name(prepaid)}.java"] = minechem_ore.checks(package, CHECK, profile.namespace, prepaid)
-    for room, size in {"rock_room": 3, "vein_room": 19, "crystal_room": 9, "water_room": 5, "synthesis_room": 5, "journal_room": 5, "fluid_room": 15, "empty": 5, "test_room": 5, "turbine_room": 5, "platform_room": 5, "accel_room": 15, "launch_room": 17, "reactor_room": 29}.items():
+    for room, size in {"rock_room": 3, "vein_room": 19, "crystal_room": 9, "water_room": 5, "synthesis_room": 5, "journal_room": 5, "fluid_room": 15, "empty": 5, "test_room": 5, "polytool_room": 11, "turbine_room": 5, "platform_room": 5, "accel_room": 15, "launch_room": 17, "reactor_room": 29}.items():
         files[f"{resources}/data/{CHECK}/structure/{room}.nbt"] = empty_test_structure(size)
     write_workspace(root, files)
     result = run_gradle(root, "runGameTestServer")

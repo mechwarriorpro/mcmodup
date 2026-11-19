@@ -1,1 +1,40 @@
-# Original Polytool mining trace.
+# Pinned final Forge binary; mining probe run 44532156052/135588000682.
+# Loot is a set of observed item-ID:metadata=count maps from actual survival harvests.
+# Iron samples split the primary and adjacent ore. Sodium records light/block ID or block ID.
+# Food, motion and chat isolate the original callbacks to record seeded rolls and warning bounds.
+bromine1_gold=[{266:0=2}]
+bromine64_gold=[{266:0=2}, {266:0=3}, {266:0=4}, {266:0=5}, {266:0=6}]
+bromine_iron=[{15:0=1}]
+carbon2_coal=[{263:0=1}]
+carbon64_coal=[{263:0=1}, {263:0=2}, {263:0=3}, {263:0=4}, {263:0=5}]
+carbon64_stone=[{4:0=1}]
+carbon8_diamond=[{264:0=1}, {264:0=2}, {264:0=3}]
+fluorine_cap=20/20.00
+fluorine_rank1_roll0=14/4.80
+fluorine_rank1_roll1=10/0.00
+iron_bromine1=[{266:0=2}]/[{14:0=1}]
+iron_carbon1=[{263:0=1}]/[{263:0=1}]
+iron_carbon64=[{263:0=1}, {263:0=2}, {263:0=3}, {263:0=4}, {263:0=5}]/[{263:0=1}]
+iron_only=[{263:0=1}]/[{263:0=1}]
+iron_only_diamond=[{264:0=1}]/[{264:0=1}]
+mercury_beyond=[]
+mercury_flow=[{"translate":"§cWARNING: LAVA UNDERNEATH"}]
+mercury_source=[{"translate":"§cWARNING: LAVA UNDERNEATH"}]
+mercury_two_levels=[{"translate":"§cWARNING: LAVA UNDERNEATH"}]
+nickel=-0.75,-0.50,0.25/0.00,0.00,0.00
+plain_coal=[{263:0=1}]
+plain_diamond=[{264:0=1}]
+plain_gold=[{14:0=1}]
+silk_bromine_gold=[{266:0=2}]
+silk_iron_carbon64=[{16:0=1, 263:0=1}, {16:0=1, 263:0=2}, {16:0=1, 263:0=3}, {16:0=1, 263:0=4}, {16:0=1}]/[{263:0=1}]
+silk_plain_coal=[{16:0=1}]
+sodium_glowstone_3=12/50
+sodium_glowstone_4=11/50
+sodium_occupied=50
+sodium_rank1_roll0=50
+sodium_rank1_roll1=0
+sodium_sky=15/50
+sodium_unsupported=0
+wool_chromium1=[recolored, unchanged]
+wool_chromium10=[{35:0=1}, {35:10=1}, {35:11=1}, {35:12=1}, {35:13=1}, {35:14=1}, {35:1=1}, {35:2=1}, {35:3=1}, {35:4=1}, {35:5=1}, {35:6=1}, {35:7=1}, {35:8=1}, {35:9=1}]
+wool_plain=[{35:15=1}]

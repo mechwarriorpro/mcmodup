@@ -26,7 +26,8 @@ import net.neoforged.neoforge.registries.DeferredRegister;
 final class PolytoolRules {
     static final boolean RELEASE_394 = @RELEASE_394@;
     static final int BATCH = 64, MAX_RANK = 64, CAPACITY = Integer.MAX_VALUE;
-    static final int LITHIUM = 3, OXYGEN = 8, SULFUR = 16, IRON = 26;
+    static final int LITHIUM = 3, CARBON = 6, OXYGEN = 8, FLUORINE = 9, SODIUM = 11, SULFUR = 16,
+        CHROMIUM = 24, IRON = 26, NICKEL = 28, BROMINE = 35, MERCURY = 80;
     static final String TEXT = "gui.@NAMESPACE@.polytool.";
 
     record Stats(int sword, int ore, int stone, int axe, int shovel) {
@@ -48,6 +49,13 @@ final class PolytoolRules {
                 case OXYGEN -> "air";
                 case SULFUR -> "fire";
                 case IRON -> "vein";
+                case CARBON -> "carbon";
+                case FLUORINE -> "fluorine";
+                case SODIUM -> "sodium";
+                case CHROMIUM -> "chromium";
+                case NICKEL -> "nickel";
+                case BROMINE -> "bromine";
+                case MERCURY -> "mercury";
                 default -> "inactive";
             };
         }

@@ -12,9 +12,9 @@ from .minechem_materials import observations
 
 
 TEMPLATES = Path(__file__).with_name("templates") / "minechem"
-JAVA = ("PolytoolItem", "PolytoolRules", "PolytoolMenu", "PolytoolScreen")
-LIMIT = ("Polytool supports measured infusion/alloy rules, iron vein mining, oxygen air and sulfur ignition. "
-         "Only FINAL has a native Lithium charge adapter; the other accepted ranks have no module effect yet. "
+JAVA = ("PolytoolItem", "PolytoolRules", "PolytoolMenu", "PolytoolScreen", "PolytoolMining")
+LIMIT = ("Polytool supports measured infusion/alloy rules, ore and wool drops, mining utility, oxygen air and sulfur ignition. "
+         "Only FINAL has a Lithium FE adapter; unported combat, tick and inventory modules still store ranks without effects. "
          "No legacy NBT migration, UE/RF item charging API, or original Polytool orbit animation.")
 
 
@@ -92,7 +92,15 @@ def project(namespace: str, package: str, entries: list[CatalogEntry], release_3
            "reject": "Infusion rejected: a stat would reach zero or the rank limit was reached",
            "alloy": "Alloy: trades one tool stat against others",
            "rank": "%s · rank %s", "rank_next": "%s: rank %s → %s", "more": "… and %s more elements",
-           "air": "Oxygen: restores air when mining", "vein": "Iron: mines adjacent matching ores",
+           "air": "Oxygen: restores air when mining",
+           "vein": "Iron: adjacent coal/diamond need Carbon to drop items" if release_394 else "Iron: mines adjacent matching ores",
+           "carbon": "Carbon: boosts coal and diamond drops",
+           "fluorine": "Fluorine: chance to restore hunger when mining",
+           "sodium": "Sodium: chance to light a dark spot at your feet" if release_394 else "Sodium: chance to place a torch at your feet",
+           "chromium": "Chromium: chance to recolor mined wool",
+           "nickel": "Nickel: mining attracts nearby dropped items",
+           "bromine": "Bromine: turns mined gold ore into ingots",
+           "mercury": "Mercury: warns of lava below a mined block", "lava_warning": "WARNING: LAVA UNDERNEATH",
            "fire": "Sulfur: ignites targets on melee hits", "lithium": "Lithium: enables FE charging and a melee bonus",
            "inactive": "Rank is saved; this module effect isn't ported"}
     return files, {f"gui.{namespace}.polytool.{key}": value for key, value in gui.items()}
@@ -102,15 +110,21 @@ def features(release_394: bool) -> dict[str, str]:
     prefix = "release394" if release_394 else "final"
     return {"Full-stack Polytool infusion, invalid inputs, and safe held-item binding": prefix + "polytoolinfusion",
             "All observed Polytool inputs and alloy speeds, stat floor and saved ranks": prefix + "polytoolalloysandsave",
-            "Polytool ore, air and hit hooks; release-local charging": prefix + "polytoolminingandcharge"}
+            "Polytool ore, air and hit hooks; release-local charging": prefix + "polytoolminingandcharge",
+            "Polytool drops, separate Iron and Carbon harvest, Silk Touch": prefix + "polytooldrops",
+            "Polytool torch and food rolls, item attraction and lava warnings": prefix + "polytoolutility",
+            "Polytool protected breaks, drop cancellation and creative isolation": prefix + "polytoolprotection"}
 
 
 def checks(package: str, test_namespace: str, namespace: str, entries: list[CatalogEntry], release_394: bool) -> str:
     prefix = "release394" if release_394 else "final"
     cases = [json.dumps(f"{row.id}|{','.join(map(str, row.mining or (8,) * 12))}")
              for row in infusions(namespace, entries, release_394)]
+    mining = observations(mining_trace_name(release_394))
+    mining_rows = [f"        Map.entry({json.dumps(key)}, {json.dumps(value)})" for key, value in mining.items()]
     return ((TEMPLATES / "PolytoolChecks.java").read_text(encoding="utf-8")
             .replace("@PACKAGE@", package).replace("@TEST_NAMESPACE@", test_namespace).replace("@NAMESPACE@", namespace)
             .replace("@RELEASE_394@", str(release_394).lower()).replace("@PREFIX@", prefix)
             .replace("@CLASS@", "PolytoolChecks394" if release_394 else "PolytoolChecksFinal")
-            .replace("@CASES@", ",\n".join(f"        {case}" for case in cases)))
+            .replace("@CASES@", ",\n".join(f"        {case}" for case in cases))
+            .replace("@MINING_CASES@", ",\n".join(mining_rows)))

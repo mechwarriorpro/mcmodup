@@ -5,7 +5,7 @@ from unittest.mock import patch
 from mcmodup.catalogs import CatalogEntry
 from mcmodup.inputs import InputError
 from mcmodup.minechem_materials import observations
-from mcmodup.minechem_polytool import asset_paths, checks, features, infusions, project, trace_name
+from mcmodup.minechem_polytool import asset_paths, checks, features, infusions, mining_trace_name, project, trace_name
 
 
 def catalog(release_394):
@@ -34,7 +34,7 @@ class MinechemPolytoolTests(unittest.TestCase):
         for prepaid in (False, True):
             ns = "minechem_chemistry_394" if prepaid else "minechem_chemistry"
             files, locales = project(ns, "test.polytool", catalog(prepaid), prepaid)
-            self.assertEqual(len(files), 4)
+            self.assertEqual(len(files), 5)
             self.assertTrue(all(re.search(r"@[A-Z_]+@", java) is None for java in files.values()))
             source = files["src/main/java/test/polytool/PolytoolRules.java"]
             self.assertEqual(source.count("new Infusion("), 48 if prepaid else 49)
@@ -45,6 +45,22 @@ class MinechemPolytoolTests(unittest.TestCase):
             code = checks("test.probe", "test", ns, catalog(prepaid), prepaid)
             registered = {name.lower() for name in re.findall(r"public static void (\w+)\(GameTestHelper test\)", code)}
             self.assertEqual(registered, set(features(prepaid).values()))
+
+    def test_mining_evidence_distinguishes_primary_and_extra_ore(self):
+        final, newer = (observations(mining_trace_name(flag)) for flag in (False, True))
+        self.assertEqual(final.keys(), newer.keys())
+        self.assertEqual(len(final), 36)
+        self.assertEqual(final["iron_only"], "[{263:0=1}]/[{263:0=1}]")
+        self.assertEqual(newer["iron_only"], "[{263:0=1}]/[{}]")
+        self.assertEqual(newer["iron_carbon1"], final["iron_only"])
+        self.assertTrue(newer["silk_iron_carbon64"].endswith("[{16:0=1}, {16:0=2}, {16:0=3}, {16:0=4}, {16:0=5}]"))
+        self.assertEqual(final["sodium_glowstone_3"], "12/50")
+        self.assertEqual(newer["sodium_glowstone_3"], "12/0")
+        for release_394 in (False, True):
+            code = checks("test.probe", "test", "minechem_chemistry", catalog(release_394), release_394)
+            source = observations(mining_trace_name(release_394))
+            self.assertIn(f'Map.entry("iron_only", "{source["iron_only"]}")', code)
+            self.assertIsNone(re.search(r"@[A-Z_]+@", code))
 
     def test_unobserved_catalog_or_inconsistent_trace_fails_closed(self):
         entries = catalog(True)

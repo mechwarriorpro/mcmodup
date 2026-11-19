@@ -101,7 +101,7 @@ neoForge.runs.create('gameTestServer') {{
     tests = {"src/main/java/mcmodup/test/CatalogSmoke.java": fixture}
     if include_aspects:
         tests["src/main/java/mcmodup/test/CatalogAspectSmoke.java"] = (FIXTURES / "CatalogAspectSmoke.java").read_bytes()
-    research_rooms = {}
+    research_rooms = {f"src/main/resources/data/{namespace}/structure/polytool_room.nbt": empty_test_structure(11)} if buffered or minechem_394 else {}
     terrain = {}
     if buffered:
         tests["src/main/java/mcmodup/test/ChemistryGameplayChecksFinal.java"] = chemistry_gameplay_checks("mcmodup.test", namespace, False)
