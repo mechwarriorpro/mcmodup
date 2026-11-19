@@ -65,12 +65,34 @@ public final class LegacyThaumcraftParity {
             String next = id(fresh);
             require(first.equals("0:12:64:-13") && first.equals(moved) && first.equals(saved) && next.equals("0:14:65:-15"),
                     "Unexpected coordinate generation, caching or NBT load: " + first + "/" + moved + "/" + saved + "/" + next + "; NBT " + data);
+            String frost = frost(stack);
             System.out.println("MCMODUP_TC4_ORIGINAL_PASS enchanted_golden_apple=" + tags + "; node_first=" + first
-                    + "; node_moved=" + moved + "; node_restored=" + saved + "; node_fresh=" + next + "; NBT " + data);
+                    + "; node_moved=" + moved + "; node_restored=" + saved + "; node_fresh=" + next + "; " + frost + "; NBT " + data);
         } catch (Throwable error) {
             System.err.println("MCMODUP_TC4_ORIGINAL_FAIL " + error);
             error.printStackTrace();
         }
+    }
+
+    private static String frost(Class<?> stack) throws Exception {
+        Class<?> itemType = type("item.Item");
+        Class<?> focus = Class.forName("thaumcraft.common.items.wands.foci.ItemFocusFrost");
+        Object registered = null;
+        for (Object item : (Iterable<?>) itemType.getField("field_150901_e").get(null)) {
+            if (item.getClass() == focus) {
+                require(registered == null, "More than one original Frost focus registry entry");
+                registered = item;
+            }
+        }
+        require(registered != null, "No original Frost focus item in the Forge registry");
+        Object bare = stack.getConstructor(itemType, int.class, int.class).newInstance(registered, 1, 0);
+        int color = (Integer) focus.getMethod("getFocusColor", stack).invoke(registered, bare);
+        int cooldown = (Integer) focus.getMethod("getActivationCooldown", stack).invoke(registered, bare);
+        Object cost = focus.getMethod("getVisCost", stack).invoke(registered, bare);
+        Map<String, Integer> vis = tags(cost);
+        require(color == 5204428 && cooldown == 200 && vis.toString().equals("{aqua=5, ignis=2, perditio=2}"),
+                "Unexpected unupgraded Frost focus constants: " + color + "/" + cooldown + "/" + vis);
+        return "frost_basic_centivis=" + vis + "; frost_color=" + color + "; frost_cooldown_ms=" + cooldown;
     }
 
     private static Map<String, Integer> tags(Object aspects) throws Exception {

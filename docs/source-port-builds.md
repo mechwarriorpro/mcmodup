@@ -49,6 +49,24 @@ To include the tested native dependencies, install **CB Multipart 3.5.0.155** an
 
 Only the single glass pressure plate from Core is implemented. Explosion, Sentry and the rest of Core are absent; fresh worlds use a separate registry ID. The updater marks the JAR as a preview and won't use it to satisfy a dependency or to replace a complete ICBM installation. Keep the result local unless you have redistribution rights for the original code and texture.
 
+## Voltz Atomic Science thermometer (executable preview)
+
+Use the exact `atomicscience.jar` from Voltz Server **3.0.0c**, not a later Atomic Science build. Place it in `LegacyPack/mods/1.6.4/` and use an installed Minecraft **1.21.1** / NeoForge **21.1.267** target with JDK 21.
+
+```sh
+python3 -m mcmodup prepare-atomic-thermometer -o .mcmodup/ThermometerRecipe
+python3 -m mcmodup update-pack LegacyPack --target NeoForgePack \
+  --mod mods/1.6.4/atomicscience.jar \
+  --source-ports .mcmodup/ThermometerRecipe/atomic-thermometer.json \
+  --allow-preview-ports --output-pack .mcmodup/ThermometerPreview
+```
+
+The source ZIP contains neither the original classes nor the textures. The build links four threshold methods from the exact JAR and imports the original item and block icons. The [original Forge probe](https://github.com/mechwarriorpro/mcmodup/actions/runs/44379371950/job/135067111296) observed a 1,000 threshold, a 295 initial reading, ten-tick sampling, and signal 15 at the threshold (0 below) on all sides. The old threshold-adjustment paths wrap at 5,000, and the threshold and tracked coordinates survived an NBT round trip.
+
+In the native preview, get `atomic_thermometer:thermometer` from the creative Redstone Blocks tab or `/give`. Use the placed block with an empty hand to lower the threshold by 100; crouch to raise it. Crouch-use the held item on a block to copy its position, then place the sensor. Use the item in the air to clear that position. The preview reads either a native temperature capability or the biome at the sampled position; it does not force-load a remote chunk. These are inputs to the same redstone comparison, not a port of the Calclavia thermal grid. Add `--include-native cb_multipart` if the two pinned native control JARs are installed in the target.
+
+**Preview only:** No reactor, turbine, distribution or heat simulation, circuits and survival recipe, saved item drops, legacy wrench/CC/OC interfaces, client visual parity, or old-save migration. The fresh-world sensor is not a dependency provider for an Atomic Science add-on. Keep the local output private unless you have rights to redistribute it.
+
 ## Thaumcraft 4 Reload (preview)
 
 The [opt-in recipe](../mcmodup/templates/source-ports/thaumcraft4-reload-preview.json) compiles the unofficial [Thaumcraft 4 Reload alpha.24 source](https://github.com/acak1221/Thaumcraft-1.21.1/tree/1417e30fa04ce349a8d811d8f1b3d7515cc58643) locally, not its release JAR. You need:
@@ -72,6 +90,8 @@ Use `--json` for the build report on stdout. `--keep-recipe NEW_DIR` retains the
 **Verified on NeoForge 21.1.267:** [Production-JAR CI for the patched standalone build](https://github.com/mechwarriorpro/mcmodup/actions/runs/44366504941/job/135021535112) passed 539 source GameTests and five tests against the exact original JAR. The staged build contained 1,037 byte-identical or relocated paths, 54 mapped adaptations, and no unmapped tracked asset paths. In independent runtime tests crucible placement created its block entity on a dedicated server. The staged JAR also opened the Thaumonomicon in a fresh client world, processed all four Warp post chains before and after a resource reload, cleared them, and saved the world. No Connector was loaded.
 
 **Exact-original comparison:** The [Forge oracle](https://github.com/mechwarriorpro/mcmodup/actions/runs/44364985694) crafted a metadata-1 golden apple and measured `lucrum=64`, `messis=1`, `metallum=64`, `praecantatio=4`, and `sano=8`. It also measured a fresh aura node deriving its identity from its coordinates, then preserving that identity when moved or loaded from saved NBT. The standalone changes restore the default apple aspect base without adding a vanilla crafting recipe, and derive new node identities from their positions. The staged tests exercise the apple and overworld node cases. This does not port the historical world format or change existing native UUIDs stored in saves.
+
+**Frost gate:** The source recipe requires the named NeoForge tests for Frost research, crafting, selection and vis payment, and for shard collision, damage and native persistence. A build cannot substitute a different test to meet the total count. Those checks are on the pinned native source project; they do not establish original client visuals, old saves, or full Frost gameplay equivalence.
 
 **Still preview-only:** The [upstream deviations](https://github.com/acak1221/Thaumcraft-1.21.1/blob/1417e30fa04ce349a8d811d8f1b3d7515cc58643/docs/audit/KNOWN_DEVIATIONS.md) include different font rendering, shader-pack compatibility gaps, and missing or unverified behavior; they describe the upstream build before these standalone changes. Original add-on binaries need native ports. Integrated accessory slots do not guarantee compatibility with Baubles add-ons. There is no old save migration. If your filesystem cannot hold different `Bore.png` and `bore.png` files, build on a case-sensitive filesystem (such as the WSL Linux filesystem), not on a Windows-mounted drive.
 
@@ -130,7 +150,7 @@ The third run assumes the exact CC: Tweaked release was staged. It checks the pe
 | Minechem 1.6.4 5.0.5 FINAL | [Linked updater preview](#both-exact-minechem-releases-linked-previews), including the adapted Microscope and Chemist's Journal | Not all machines, recipes, effects, worldgen, graphics or integrations have been ported. |
 | Minechem 1.7.10 5.0.5.394 | [Linked updater preview](#both-exact-minechem-releases-linked-previews), separate from FINAL | Only an iron decomposer and catalog; no other machines or original integrations. |
 | ICBM 1.4.1.344 | [Glass pressure plate preview](#voltz-glass-pressure-plate-executable-preview) | Only one Core block; not the rest of Core, Explosion or Sentry. |
-| Atomic Science 1.2.0 | [Exact Voltz binary and dependency evidence](usage-examples.md#atomic-science-120-and-icbm-141344-forge-164-input-examples) | No reviewed native build for the original and its required old dependency APIs. |
+| Atomic Science 1.2.0 | [Thermometer preview](#voltz-atomic-science-thermometer-executable-preview) | One redstone sensor. No thermal grid, reactor or turbine, survival recipe, or old dependency API. |
 
 ## What the source-build test covers
 

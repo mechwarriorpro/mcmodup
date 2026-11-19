@@ -43,5 +43,5 @@ jobs:
           download original/mods/Thaumcraft-1.7.10-4.2.3.5.jar https://edge.forgecdn.net/files/2227/552/Thaumcraft-1.7.10-4.2.3.5.jar sha256sum 3dba9786966974701578a658d1bb369bf35bdf5f363079f5ac9c4910a39113be 12565807
           download Baubles-1.7.10-1.0.1.10.jar https://edge.forgecdn.net/files/2224/857/Baubles-1.7.10-1.0.1.10.jar sha1sum b6e6ce2d0476d1d53686440f2fc70d2a27e289c2 95415
           download original/bin/modpack.jar https://maven.minecraftforge.net/net/minecraftforge/forge/1.7.10-10.13.4.1614-1.7.10/forge-1.7.10-10.13.4.1614-1.7.10-universal.jar sha1sum 25fd97f72beca728112256938e03e8105b1b78cc 4000000
-      - name: Observe original item aspects and node identity on a dedicated server
+      - name: Observe exact item aspects, node identity and Frost focus constants
         run: python -m thaumcraft_original_smoke "$RUNNER_TEMP/tc4-original"

@@ -42,6 +42,8 @@
       "minimum_tests": 539,
       "features": {
         "Crucible crafting": "crucibledissolvesandcraftswithoriginalcosts",
+        "Frost focus research, crafting, selection and vis payment": "frostfocuscraftsselectsandpays",
+        "Frost shard collision, damage and native persistence": "frostshardricochetsdamagesandpersists",
         "Research table": "researchtableeditssolveandpreserveresources",
         "Infusion altar": "infusionaltarformsandexecutesallinstabilityoutcomes",
         "Golem essentia transport": "alchemygolemscollectanddelivermixedreservoirs",

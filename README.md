@@ -35,7 +35,7 @@ If the exact **GTNH Thaumic Tinkerer 2.13.0** is present and detected as an add-
 
 The builder matches exact legacy archives, builds in dependency order, checks legacy assets and NeoForge GameTests, and stages only after those checks pass. It never substitutes a prebuilt approximation for an unsupported selection. **The built-in ports are not full-parity releases.** The command requires `--allow-preview-ports`; missing legacy behavior and integrations are not counted as ported.
 
-The updater can reuse selected executable methods from exact originals. The [paired Minechem previews](docs/source-port-builds.md#both-exact-minechem-releases-linked-previews) stage both releases under separate IDs and adapt their output-slot logic to native inventories. The [Voltz glass plate preview](docs/source-port-builds.md#voltz-glass-pressure-plate-executable-preview) links the old redstone logic for one ICBM `1.4.1.344` block. These are NeoForge `21.1.267` previews, not complete ports or a playable update of the eight-archive selection.
+The updater can reuse selected executable methods from exact originals. The [paired Minechem previews](docs/source-port-builds.md#both-exact-minechem-releases-linked-previews) use separate IDs and link their old slot logic to native inventories. The Voltz previews cover the [ICBM glass pressure plate](docs/source-port-builds.md#voltz-glass-pressure-plate-executable-preview) and the [Atomic Science thermometer](docs/source-port-builds.md#voltz-atomic-science-thermometer-executable-preview). These are NeoForge `21.1.267` previews, not complete ports or a playable update of the eight-archive selection.
 
 ## Build a new JAR from a supported part of a legacy mod
 
