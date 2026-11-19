@@ -56,14 +56,8 @@ final class LegacyMinechemSynthesis394 {
         Object sample = makeStack.newInstance(stone, 1, 0);
         Object rule = handler.getMethod("getRecipeFromOutput", stack).invoke(lookup, sample);
         int cost = (Integer) recipe.getMethod("energyCost").invoke(rule);
-        Object machine = fresh();
+        Object machine = tunedInputs(rule, 1);
         rows.put(profile + "_synthesizer_storage", LegacyMinechemPower394.storage(machine));
-        choose.invoke(machine, rule);
-        for (int i = 1, at = 10; i <= 9; ++i) {
-            Object ingredient = get.invoke(machine, i);
-            if (ingredient != null) set.invoke(machine, at++, stack.getMethod("func_77946_l").invoke(ingredient));
-        }
-        tick.invoke(machine);
         int needed = (Integer) tile.getMethod("getEnergyNeeded").invoke(machine);
         charge(machine, paid ? cost - 1 : 17);
         boolean below = (Boolean) canTake.invoke(machine, false);
@@ -72,6 +66,47 @@ final class LegacyMinechemSynthesis394 {
         Object output = result == null ? null : Array.get(result, 0);
         rows.put(profile + "_synthesizer_run", cost + "/" + needed + "/" + below + "/" +
             (same(sample, output) ? quantity(output) : 0) + "/" + stored.invoke(machine));
+        if (!paid) {
+            // The old direct extractOutput call and the actual inventory/container path had different gates.
+            Class<?> playerType = mc("entity.player.EntityPlayer"), inventoryType = mc("entity.player.InventoryPlayer");
+            Class<?> profileType = Class.forName("com.mojang.authlib.GameProfile");
+            Constructor<?> profileCtor = profileType.getConstructor(java.util.UUID.class, String.class);
+            Constructor<?> fake = Class.forName("net.minecraftforge.common.util.FakePlayer").getConstructor(mc("world.WorldServer"), profileType);
+            Constructor<?> container = Class.forName("minechem.tileentity.synthesis.SynthesisContainer").getConstructor(inventoryType, tile);
+            Method clicked = mc("inventory.Container").getMethod("func_75144_a", int.class, int.class, int.class, playerType);
+            Method cursor = inventoryType.getMethod("func_70445_o"), at = inventoryType.getMethod("func_70301_a", int.class);
+            for (boolean bulk : new boolean[]{false, true}) {
+                Object player = fake.newInstance(world, profileCtor.newInstance(java.util.UUID.randomUUID(), "[Craft]"));
+                Object inventory = playerType.getField("field_71071_by").get(player);
+                machine = tunedInputs(rule, 3);
+                Object menu = container.newInstance(inventory, machine);
+                clicked.invoke(menu, 0, 0, bulk ? 1 : 0, player);
+                int count = 0;
+                if (bulk) {
+                    for (int i = 0; i < 36; i++) {
+                        Object item = at.invoke(inventory, i);
+                        if (same(sample, item)) count += quantity(item);
+                    }
+                } else if (same(sample, cursor.invoke(inventory))) count = quantity(cursor.invoke(inventory));
+                rows.put(bulk ? "free_synthesis_shift_click" : "free_synthesis_click", count + "/" + stored.invoke(machine));
+            }
+            machine = tunedInputs(rule, 1);
+            Method allowed = tile.getMethod("func_102008_b", int.class, stack, int.class);
+            boolean bottom = (Boolean) allowed.invoke(machine, 0, get.invoke(machine, 0), 0);
+            Object taken = bottom ? tile.getMethod("func_70298_a", int.class, int.class).invoke(machine, 0, 16) : null;
+            rows.put("free_synthesis_sided", bottom + "/" + (same(sample, taken) ? quantity(taken) : 0) + "/" + stored.invoke(machine));
+        }
+    }
+
+    private Object tunedInputs(Object rule, int batches) throws Exception {
+        Object machine = fresh();
+        choose.invoke(machine, rule);
+        for (int i = 1, at = 10; i <= 9; ++i) {
+            Object part = get.invoke(machine, i);
+            if (part != null) set.invoke(machine, at++, makeStack.newInstance(item.invoke(part), batches * quantity(part), damage.invoke(part)));
+        }
+        tick.invoke(machine);
+        return machine;
     }
 
     private String run() throws Exception {
