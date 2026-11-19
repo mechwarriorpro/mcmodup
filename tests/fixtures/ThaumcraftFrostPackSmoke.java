@@ -14,7 +14,7 @@ import thaumcraft.common.testing.FrostShardRuntimeChecks;
 @GameTestHolder(ThaumcraftPackSmoke.ID)
 @PrefixGameTestTemplate(false)
 public final class ThaumcraftFrostPackSmoke {
-    @GameTest(template = "frost_room", timeoutTicks = 36000)
+    @GameTest(template = "frost_room", timeoutTicks = 36000, batch = "staged_frost_focus")
     public static void stagedFocusMatchesOriginalConstantsAndCasts(GameTestHelper test) {
         // Original values measured by LegacyThaumcraftParity on Forge 1.7.10.
         var focus = ThaumcraftFoci.FROST_FOCUS.get();

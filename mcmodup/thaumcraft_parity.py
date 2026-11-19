@@ -72,12 +72,22 @@ import thaumcraft.common.lib.world.OuterLandsRules;
                  '        if (scanId != null || level != null) tag.putString("scanId", getScanId());')
 
 
+def _frost_batch(text: str) -> str:
+    # The real-time guard can fire when unrelated tests are generating chunks
+    # in the same batch. Keep both the wall guard and the cooldown checks intact.
+    wrapper = "    public void frostFocusCraftsSelectsAndPays(GameTestHelper test) {"
+    annotation = '    @GameTest(template = "empty", templateNamespace = "thaumcraft", timeoutTicks = 36000'
+    return _edit(text, annotation + ")\n" + wrapper,
+                 annotation + ', batch = "mcmodup_frost_focus")\n' + wrapper)
+
+
 def prepare_source(source: Path, output: Path) -> None:
-    """Rewrite three pinned source files without importing code or assets from the original JAR."""
+    """Patch pinned gameplay and test sources without importing code or assets from the original JAR."""
     prefix = f"{SOURCE_ROOT}/common/src/main/java/thaumcraft/common/"
     transforms = {
         prefix + "lib/research/ObjectAspectResolver.java": _aspects,
         prefix + "tiles/TileNode.java": _node,
+        f"{SOURCE_ROOT}/neoforge/src/gameTest/java/thaumcraft/neoforge/testing/ThaumcraftGameTests.java": _frost_batch,
         f"{SOURCE_ROOT}/gradle.properties": lambda text: _edit(text, f"mod_version={BASE_VERSION}\n", f"mod_version={VERSION}\n"),
     }
     with ZipFile(source) as upstream:
