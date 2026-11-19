@@ -52,6 +52,17 @@ class SourceIdentityTests(unittest.TestCase):
                 })
                 if bad and collision == "tag-assets":
                     files["assets/minecraft/models/block/stone.json"] = "{}"
+                if collision.startswith("tag-matter"):
+                    files["data/minecraft/tags/block/needs_iron_tool.json"] = json.dumps({
+                        "replace": bad and collision == "tag-matter-replace", "values": [f"{mod_id}:uranium_ore"],
+                    })
+                    for registry in ("block", "item"):
+                        files[f"data/c/tags/{registry}/ores/uranium.json"] = json.dumps({
+                            "replace": False, "values": ["minechem_other:uranium_ore"
+                                if bad and collision == "tag-matter-foreign" else f"{mod_id}:uranium_ore"],
+                        })
+                    if bad and collision == "tag-matter-resource":
+                        files["data/c/recipe/unrelated.json"] = "{}"
             output = native(workspace, port.artifact, mod_id, requirements=tuple((dep.mod_id, dep.version) for dep in port.dependencies),
                             owner=f"modern/{mod_id}/Main", more=files)
             if collision == "nested":
@@ -128,6 +139,21 @@ class SourceIdentityTests(unittest.TestCase):
                     with self.assertRaisesRegex(InputError, "shares a native asset/data namespace 'minecraft'"):
                         stage(result, self.output)
                     self.assertFalse(self.output.exists())
+
+    def test_shared_ore_tags_may_only_append_local_ore_ids(self):
+        result = plan(self.get_inventory(), self.labels, output_pack=True)
+        self.assertTrue(result.report["ready"], result.problems)
+        for collision, rejected in (("tag-matter-foreign", "c"), ("tag-matter-resource", "c"),
+                                    ("tag-matter-replace", "minecraft"), ("tag-matter", None)):
+            with self.subTest(collision=collision), patch("mcmodup.native_pack.require_jdk", return_value="unused"), patch(
+                    "mcmodup.source_ports._gradle", self.build(collision=collision)):
+                if rejected:
+                    with self.assertRaisesRegex(InputError, f"shares a native asset/data namespace '{rejected}'"):
+                        stage(result, self.output)
+                    self.assertFalse(self.output.exists())
+                else:
+                    stage(result, self.output)
+                    self.assertTrue((self.output / REPORT_NAME).is_file())
 
     def test_target_file_does_not_inherit_a_recipe_by_filename(self):
         legacy(self.target, self.labels[0], "Chemistry", version="9.9")

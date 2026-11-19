@@ -95,6 +95,10 @@ def check(root: Path, *, fetch: bool = False, client: bool = False) -> None:
         assert {m["modId"]: m["version"] for m in tomllib.loads(zipped.read("META-INF/neoforge.mods.toml").decode())["mods"]} == COMPONENTS
         assert json.loads(zipped.read(AUDIT))["components"] == report["components"]
         assert len(json.loads(zipped.read("data/minecraft/tags/block/mineable/pickaxe.json"))["values"]) > 153
+        uranium = {f"{ns}:uranium_ore" for ns in ("minechem_chemistry", "minechem_chemistry_394")}
+        for tag in ("c/tags/item/ores/uranium", "c/tags/block/ores/uranium", "minecraft/tags/block/needs_iron_tool"):
+            merged = json.loads(zipped.read(f"data/{tag}.json"))
+            assert merged["replace"] is False and uranium <= set(merged["values"]), tag
     mods = root / "server/mods"
     mods.mkdir(exist_ok=True)
     assert not tuple(mods.iterdir())

@@ -915,26 +915,36 @@ def _materialize(update: UpdatePlan, scratch: Path) -> UpdatePlan:
     return replace(update, mods=mods, native_builds=evidence)
 
 
-def _isolated_pickaxe_tag(mod: NativeMod) -> bool:
-    # An append-only vanilla mining tag is not a shared asset identity. Do
-    # not allow a split version to replace the tag, or add another mod's blocks.
-    tag = "data/minecraft/tags/block/mineable/pickaxe.json"
+_SHARED_SPLIT_TAGS = {
+    "minecraft": frozenset({"data/minecraft/tags/block/mineable/pickaxe.json", "data/minecraft/tags/block/needs_iron_tool.json"}),
+    "c": frozenset({"data/c/tags/block/ores/uranium.json", "data/c/tags/item/ores/uranium.json"}),
+}
+
+
+def _isolated_shared_tags(mod: NativeMod, namespace: str) -> bool:
+    # The exact additive tag paths above are shared conventions, not mod identities.
+    # Never allow other resources, replacement tags, or contributions from another mod's namespace.
+    if namespace not in _SHARED_SPLIT_TAGS:
+        return False
     with open_input(mod.path) as archive:
-        vanilla = {name for name in archive.files if name.startswith(("data/minecraft/", "assets/minecraft/"))}
-        if vanilla != {tag}:
+        resources = {name for name in archive.files if name.startswith((f"data/{namespace}/", f"assets/{namespace}/"))}
+        if not resources or not resources <= _SHARED_SPLIT_TAGS[namespace]:
             return False
-        try:
-            pairs = json.loads(archive.read(tag, 16 * 1024), object_pairs_hook=tuple)
-        except (ValueError, InputError, RecursionError):
-            return False
-    if not isinstance(pairs, tuple) or len(pairs) != 2:
-        return False
-    data = dict(pairs)
-    values = data.get("values")
-    if data.get("replace") is not False or not isinstance(values, list) or not values:
-        return False
-    return (all(isinstance(value, str) and re.fullmatch(r"[a-z][a-z0-9_]*:[a-z0-9_/.-]+", value) and
-                value.split(":", 1)[0] in mod.ids for value in values) and len(set(values)) == len(values))
+        for name in sorted(resources):
+            try:
+                pairs = json.loads(archive.read(name, 16 * 1024), object_pairs_hook=tuple)
+            except (ValueError, InputError, RecursionError):
+                return False
+            if not isinstance(pairs, tuple) or len(pairs) != 2:
+                return False
+            data = dict(pairs)
+            values = data.get("values")
+            if data.get("replace") is not False or not isinstance(values, list) or not values:
+                return False
+            if not all(isinstance(value, str) and re.fullmatch(r"[a-z][a-z0-9_]*:[a-z0-9_/.-]+", value) and
+                       value.split(":", 1)[0] in mod.ids for value in values) or len(set(values)) != len(values):
+                return False
+    return True
 
 
 def _check_split_namespaces(splits: list[dict], artifacts: dict[str, NativeMod]) -> None:
@@ -952,7 +962,7 @@ def _check_split_namespaces(splits: list[dict], artifacts: dict[str, NativeMod])
             for namespace in mod.resource_namespaces:
                 resources[namespace].append(mod)
         for namespace, owners in sorted(resources.items()):
-            if len(owners) > 1 and not (namespace == "minecraft" and all(_isolated_pickaxe_tag(mod) for mod in owners)):
+            if len(owners) > 1 and not all(_isolated_shared_tags(mod, namespace) for mod in owners):
                 raise InputError(f"Split legacy ID {split['id']!r} shares a native asset/data namespace {namespace!r}.")
 
 

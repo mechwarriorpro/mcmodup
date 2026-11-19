@@ -57,7 +57,7 @@ public final class GeoConnectedClientSmoke {
     private static final Set<String> ISOLATED = Set.of("1", "2", "3", "4", "5", "6", "7", "8", "9");
     private Stage stage = Stage.TITLE;
     private BlockPos center, charger, matterMachine, matterChest;
-    private int age;
+    private int age, emptyHandSlot;
     private CompletableFuture<Void> reload;
     private enum Stage {
         TITLE, JOIN, ISOLATED, JOINED, CHANGE, RELOAD, REACTOR, SYNTHESIS, PAID, DEPOSITED, RETRIEVED,
@@ -306,8 +306,9 @@ public final class GeoConnectedClientSmoke {
                         !client.level.getBlockState(matterMachine).is(BuiltInRegistries.BLOCK.get(release394Id("decomposer")))) return;
                     var vial = client.player.getMainHandItem();
                     if (vial.is(BuiltInRegistries.ITEM.get(release394Id("test_tube")))) {
-                        // Opening with the offhand avoids immediately extracting the just-filled vial.
-                        client.gameMode.useItemOn(client.player, InteractionHand.OFF_HAND, hit(matterMachine));
+                        // Vanilla opens the block menu with the main hand only. Select the empty slot
+                        // rather than refilling the returned test tube on the next click.
+                        client.player.getInventory().selected = emptyHandSlot;
                         advance(Stage.FLUID_MENU);
                     } else if (age % 20 == 0 && vial.is(BuiltInRegistries.ITEM.get(release394Id("element_fe")))) {
                         client.gameMode.useItemOn(client.player, InteractionHand.MAIN_HAND, hit(matterMachine));
@@ -315,7 +316,12 @@ public final class GeoConnectedClientSmoke {
                 }
                 case FLUID_MENU -> {
                     var screen = synthesisScreen(client, release394Id("chemical_machine"));
-                    if (screen == null || menuInt(screen, "fluidVolume") != 125) return;
+                    if (screen == null) {
+                        if (client.screen == null && age % 20 == 0 && client.player.getMainHandItem().isEmpty())
+                            client.gameMode.useItemOn(client.player, InteractionHand.MAIN_HAND, hit(matterMachine));
+                        return;
+                    }
+                    if (menuInt(screen, "fluidVolume") != 125) return;
                     var label = screen.getMenu().getClass().getDeclaredMethod("fluidLabel");
                     label.setAccessible(true);
                     require(((net.minecraft.network.chat.Component) label.invoke(screen.getMenu())).getString().contains("Iron"),
@@ -326,7 +332,7 @@ public final class GeoConnectedClientSmoke {
                 case LEADED -> {
                     var screen = synthesisScreen(client, release394Id("leaded_chest"));
                     if (screen == null) {
-                        if (client.screen == null && age % 20 == 0) client.gameMode.useItemOn(client.player, InteractionHand.OFF_HAND, hit(matterChest));
+                        if (client.screen == null && age % 20 == 0) client.gameMode.useItemOn(client.player, InteractionHand.MAIN_HAND, hit(matterChest));
                         return;
                     }
                     var stored = screen.getMenu().getSlot(0).getItem();
@@ -484,6 +490,7 @@ public final class GeoConnectedClientSmoke {
     private void prepareMatter(Minecraft client) {
         var server = client.getSingleplayerServer();
         var playerId = client.player.getUUID();
+        emptyHandSlot = (client.player.getInventory().selected + 1) % 9;
         matterMachine = client.player.blockPosition().south(2);
         matterChest = client.player.blockPosition().north(2);
         server.execute(() -> {
@@ -491,6 +498,7 @@ public final class GeoConnectedClientSmoke {
             var level = player.serverLevel();
             player.closeContainer();
             player.setGameMode(GameType.SURVIVAL);
+            player.getInventory().setItem(emptyHandSlot, ItemStack.EMPTY);
             player.setItemInHand(InteractionHand.MAIN_HAND, new ItemStack(BuiltInRegistries.ITEM.get(release394Id("element_fe"))));
             player.setItemInHand(InteractionHand.OFF_HAND, ItemStack.EMPTY);
             level.setBlockAndUpdate(matterMachine, BuiltInRegistries.BLOCK.get(release394Id("decomposer")).defaultBlockState());
