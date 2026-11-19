@@ -66,6 +66,20 @@ final class LegacyMinechemMatter {
                 String tube = typed == null ? "-" : name.invoke(type) + ":" + mb.getInt(typed);
                 rows.put(key, name.invoke(value) + "|" + gas.invoke(value) + "|" + density.invoke(value) + "|" + viscosity.invoke(value) +
                          "|" + tint.invoke(value) + "|" + placeable + "|" + tube);
+                if (!old) {
+                    Class<?> chemicalType = Class.forName("minechem.item.MinechemChemicalType");
+                    Class<?> bucketHandler = Class.forName("minechem.item.bucket.MinechemBucketHandler");
+                    Object held = make.newInstance(bucketHandler.getMethod("getBucket", chemicalType).invoke(bucketHandler.getMethod("getInstance").invoke(null), chemical), 1, 0);
+                    Class<?> decomposer = Class.forName("minechem.tileentity.decomposer.DecomposerRecipe");
+                    Object rule = decomposer.getMethod("get", stack).invoke(null, held);
+                    require(rule != null, "Missing original bucket decomposition for " + key);
+                    rows.put("b" + key, chemicalProducts(decomposer.getMethod("getOutput").invoke(rule)));
+                    // Two old declarations share the name mt. Record the actual recipe found through the fluid registry.
+                    if ("mt".equals(name.invoke(value))) {
+                        Object fluidRule = decomposer.getMethod("get", fluidStack).invoke(null, typed);
+                        rows.put("alias_" + key, chemicalProducts(decomposer.getMethod("getOutput").invoke(fluidRule)));
+                    }
+                }
                 if (elements && id == (old ? 25 : 26)) iron = value;
                 if (!elements && id == 1) waterChemical = value;
             }
