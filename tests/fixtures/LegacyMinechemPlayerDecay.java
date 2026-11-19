@@ -206,6 +206,10 @@ final class LegacyMinechemPlayerDecay {
                 packets.clear();
             } else {
                 Class<?> chat = mc("network.play.server.S02PacketChat"), text = mc("util.IChatComponent");
+                Field component = null;
+                for (Field field : chat.getDeclaredFields()) if (field.getType() == text) component = field;
+                if (component == null) throw new AssertionError("No text component in the original chat packet");
+                component.setAccessible(true);
                 for (Field queue : network.getClass().getDeclaredFields()) if (Queue.class.isAssignableFrom(queue.getType())) {
                     queue.setAccessible(true);
                     Queue<?> pending = (Queue<?>) queue.get(network);
@@ -214,7 +218,7 @@ final class LegacyMinechemPlayerDecay {
                         payload.setAccessible(true);
                         Object packet = payload.get(entry);
                         if (chat.isInstance(packet)) {
-                            Object message = chat.getMethod("func_148915_c").invoke(packet);
+                            Object message = component.get(packet);
                             warnings.add((String) text.getMethod("func_150260_c").invoke(message));
                         }
                     }
