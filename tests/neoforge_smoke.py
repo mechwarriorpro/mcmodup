@@ -128,6 +128,7 @@ neoForge.runs.create('gameTestServer') {{
 
         tests["src/main/java/mcmodup/test/GeoRockChecks.java"] = checks("mcmodup.test", namespace)
         geostrata_rooms[f"src/main/resources/data/{namespace}/structure/rock_room.nbt"] = empty_test_structure()
+        geostrata_rooms[f"src/main/resources/data/{namespace}/structure/vein_room.nbt"] = empty_test_structure(19)
     write_workspace(project, {
         "settings.gradle": "rootProject.name = 'catalog-smoke'\n",
         "build.gradle": gradle,
@@ -144,7 +145,7 @@ neoForge.runs.create('gameTestServer') {{
     run = subprocess.run(["./gradlew", "--no-daemon", "--console=plain", "runGameTestServer"],
                          cwd=project, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=420)
     count = (7 + include_aspects + (6 if minechem_394 else 0) + bool(controls)
-             + (3 if icbm_plate else 0) + (3 if atomic_thermometer else 0) + (2 if mimicry else 0) + (2 if geostrata else 0))
+             + (3 if icbm_plate else 0) + (3 if atomic_thermometer else 0) + (2 if mimicry else 0) + (3 if geostrata else 0))
     if run.returncode or f"All {count} required tests passed" not in run.stdout:
         raise AssertionError(run.stdout[-8000:])
     parsing_errors = [line for line in run.stdout.splitlines() if "Parsing error loading recipe" in line

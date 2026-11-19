@@ -16,13 +16,14 @@ from .runtime import file_digest
 
 LEGACY_SHA256 = "afd68aa6ca1222a0f53ee25323c18bd3c2473c346a15345b216c9ef1042a0414"
 MOD_ID = "geostrata_rocks"
-VERSION = "23b-preview.1"
+VERSION = "23b-preview.2"
 ARCHIVE = f"{MOD_ID}-{VERSION}.jar"
 PACKAGE = "mcmodup.geostratarocks"
 RESOURCE = "src/main/resources/"
 FEATURES = {
     "All 136 decorative blocks, observed tool tiers and drops": "measuredrockfamilies",
     "Seven measured recipe families, with engraved mirrors": "measuredrockrecipes",
+    "Registered stone-only veins and biome filters from observed defaults": "orepreservingveins",
 }
 
 
@@ -44,6 +45,27 @@ ROCKS = tuple(Rock(*row) for row in (
     ("hornfel", 10., 18.75, "iron"), ("migmatite", 5., 10., "stone"), ("schist", 7.5, 10., "stone"),
     ("onyx", 6., 12.5, "iron"), ("opal", 3., 7.5, "stone"),
 ))
+@dataclass(frozen=True)
+class Vein:
+    min_y: int
+    max_y: int  # Original random origin bound is exclusive.
+    attempts: int
+    condition: str = "any_overworld"
+
+
+# Exact v23b / matched DragonAPI runtime: 44456516671/135332733142.
+# 58 origins at default density, from both observed factors and the direct RNG call count.
+VEIN_SIZE = 32
+VEINS = {
+    "granite": Vein(16, 48, 3), "basalt": Vein(48, 128, 9), "marble": Vein(16, 32, 2),
+    "limestone": Vein(48, 128, 9), "shale": Vein(48, 64, 2, "not_desert"), "sandstone": Vein(48, 128, 9),
+    "pumice": Vein(0, 16, 1), "slate": Vein(32, 48, 2, "not_desert"), "gneiss": Vein(16, 32, 2),
+    "peridotite": Vein(0, 24, 2), "quartz": Vein(0, 64, 3), "granulite": Vein(16, 32, 1),
+    "hornfel": Vein(0, 64, 4, "snowy"), "migmatite": Vein(0, 16, 1), "schist": Vein(16, 48, 2),
+    "onyx": Vein(0, 24, 5, "adjacent_lava"), "opal": Vein(32, 60, 1),
+}
+
+
 # Leave connected walls unregistered until the original adjacency/render rules
 # can be reproduced. These are full cube variants, not alternate metadata states.
 SHAPES = {"smooth": "", "cobblestone": "_c", "brick": "_b", "round": "_r", "fitted": "_f",
@@ -77,6 +99,46 @@ def checks(package: str, namespace: str) -> str:
             .replace("@PACKAGE@", package).replace("@NAMESPACE@", namespace).replace("@ROCKS@", cases))
 
 
+def _vein_resources(data: str) -> dict[str, str]:
+    files: dict[str, str] = {}
+    overworld = "#minecraft:is_overworld"
+    biome_sets = {
+        "any_overworld": overworld,
+        "not_desert": {"type": "neoforge:and", "values": [overworld, {"type": "neoforge:not", "value": "#c:is_desert"}]},
+        "snowy": {"type": "neoforge:and", "values": [overworld, "#c:is_snowy"]},
+    }
+    placed_ids: dict[str, list[str]] = {condition: [] for condition in biome_sets}
+    for name, vein in VEINS.items():
+        feature = f"{MOD_ID}:{name}_vein"
+        files[f"{data}/worldgen/configured_feature/{name}_vein.json"] = _json({
+            "type": "minecraft:ore", "config": {"size": VEIN_SIZE, "discard_chance_on_air_exposure": 0.0, "targets": [{
+                "target": {"predicate_type": "minecraft:block_match", "block": "minecraft:stone"},
+                "state": {"Name": f"{MOD_ID}:{name}"},
+            }]},
+        })
+        placement = [
+            {"type": "minecraft:count", "count": vein.attempts},
+            {"type": "minecraft:in_square"},
+            {"type": "minecraft:height_range", "height": {"type": "minecraft:uniform",
+                "min_inclusive": {"absolute": vein.min_y}, "max_inclusive": {"absolute": vein.max_y - 1}}},
+        ]
+        if vein.condition == "adjacent_lava":
+            placement.append({"type": "minecraft:block_predicate_filter", "predicate": {
+                "type": "minecraft:any_of", "predicates": [
+                    {"type": "minecraft:matching_fluids", "fluids": "#minecraft:lava", "offset": [x, y, z]}
+                    for x, y, z in ((-1, 0, 0), (1, 0, 0), (0, -1, 0), (0, 1, 0), (0, 0, -1), (0, 0, 1))],
+            }})
+        placement.append({"type": "minecraft:biome"})
+        files[f"{data}/worldgen/placed_feature/{name}_vein.json"] = _json({"feature": feature, "placement": placement})
+        placed_ids[vein.condition if vein.condition in biome_sets else "any_overworld"].append(feature)
+    for condition, biomes in biome_sets.items():
+        # Run after vanilla ore placement; the configured target also excludes ore, deepslate and all other blocks.
+        files[f"{data}/neoforge/biome_modifier/rocks_{condition}.json"] = _json({
+            "type": "neoforge:add_features", "biomes": biomes, "features": placed_ids[condition], "step": "underground_decoration",
+        })
+    return files
+
+
 def _project(workspace: Path) -> None:
     resources = RESOURCE
     assets = f"{resources}assets/{MOD_ID}"
@@ -84,7 +146,7 @@ def _project(workspace: Path) -> None:
     java_package = PACKAGE.replace(".", "/")
     java = f"src/main/java/{java_package}"
     meta = _metadata(ModMetadata("", authors="Reika Kalseki (original GeoStrata)",
-                                 description="17 GeoStrata v23b decorative rock families; no generation or DragonAPI implementation."),
+                                 description="17 GeoStrata v23b rock families and native stone-only veins; no DragonAPI implementation."),
                      MOD_ID, "GeoStrata Rocks (Preview)", VERSION, "GeoStrata original assets: private use only without permission")
     files = {
         "settings.gradle": f"rootProject.name = '{MOD_ID}'\n",
@@ -92,7 +154,7 @@ def _project(workspace: Path) -> None:
         "build.gradle": _build_gradle(MOD_ID, PACKAGE, VERSION) + f"""
 tasks.named('jar') {{
     archiveFileName = '{ARCHIVE}'
-    exclude '{java_package}/GeoRockChecks*.class', 'data/{MOD_ID}/structure/rock_room.nbt'
+    exclude '{java_package}/GeoRockChecks*.class', 'data/{MOD_ID}/structure/rock_room.nbt', 'data/{MOD_ID}/structure/vein_room.nbt'
 }}
 neoForge.runs.create('gameTestServer') {{
     type = 'gameTestServer'
@@ -108,6 +170,8 @@ neoForge.runs.create('gameTestServer') {{
             "Do not redistribute GeoStrata assets or derivative builds without the owner's permission.\n"
             "No original Java code is bundled. Tested against the default v23b Forge rock survey.\n"),
         f"{data}/structure/rock_room.nbt": empty_test_structure(),
+        f"{data}/structure/vein_room.nbt": empty_test_structure(19),
+        **_vein_resources(data),
         f"{java}/GeoRockChecks.java": checks(PACKAGE, MOD_ID),
     }
     locales = {f"itemGroup.{MOD_ID}.rocks": "GeoStrata Rocks (Preview)"}
@@ -177,8 +241,8 @@ def prepare(output: Path) -> Path:
                   "ids": {MOD_ID: VERSION}, "legacy_ids": {"geostrata": MOD_ID}, "neoforge": f"[{NEOFORGE_VERSION}]",
                   "artifact": f"build/libs/{ARCHIVE}", "tasks": ["jar", "runGameTestServer"], "game_report": "build/gametest.xml",
                   "minimum_tests": len(FEATURES), "features": FEATURES, "status": "preview", "standalone_preview": True,
-                  "limitations": ["Decorative rocks only: natural variants start in the creative tab. No worldgen, connected rendering, opal tint, or crystals.",
-                                  "Uses native mining timing, tags, smelting time and block rendering. No DragonAPI/add-on integration, dimension and configuration hooks, or old saves."],
+                  "limitations": ["Native ore placement in Overworld biomes, not the old RNG or exact chunk output. No retro-generation or custom dimension and density settings.",
+                                  "Only plain stone is replaced. Original mining timing, connected rendering, opal tint, crystals, DragonAPI integrations and old saves are missing."],
                   "import_assets": {old: RESOURCE + new for old, new in imports.items()},
                   "asset_map": {old: {"path": new} for old, new in imports.items()}}
         manifest = output / "geostrata-rocks.json"

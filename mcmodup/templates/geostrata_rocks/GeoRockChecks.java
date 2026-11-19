@@ -5,18 +5,25 @@ import java.util.ArrayList;
 import javax.xml.parsers.ParserConfigurationException;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.core.registries.Registries;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.gametest.framework.GlobalTestReporter;
 import net.minecraft.gametest.framework.JUnitLikeTestReporter;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.tags.BlockTags;
+import net.minecraft.util.RandomSource;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.crafting.CraftingInput;
 import net.minecraft.world.item.crafting.RecipeType;
 import net.minecraft.world.item.crafting.SingleRecipeInput;
+import net.minecraft.world.level.biome.Biome;
+import net.minecraft.world.level.biome.Biomes;
 import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.levelgen.GenerationStep;
+import net.minecraft.world.level.levelgen.placement.PlacedFeature;
 import net.neoforged.fml.ModList;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
@@ -95,6 +102,63 @@ public final class GeoRockChecks {
         var mixed = CraftingInput.of(2, 2, java.util.List.of(item("basalt"), item("granite"), item("granite"), item("granite")));
         test.assertTrue(level.getRecipeManager().getRecipeFor(RecipeType.CRAFTING, mixed, level).isEmpty(), "Mixed rock recipe unexpectedly matched");
         test.succeed();
+    }
+
+    @GameTest(template = "vein_room")
+    public static void orePreservingVeins(GameTestHelper test) {
+        var level = test.getLevel();
+        var registries = level.registryAccess();
+        var configured = registries.registryOrThrow(Registries.CONFIGURED_FEATURE);
+        var placed = registries.registryOrThrow(Registries.PLACED_FEATURE);
+        var biomes = registries.registryOrThrow(Registries.BIOME);
+        var plains = biomes.get(Biomes.PLAINS.location());
+        var desert = biomes.get(Biomes.DESERT.location());
+        var snow = biomes.get(Biomes.SNOWY_PLAINS.location());
+        var nether = biomes.get(Biomes.NETHER_WASTES.location());
+        var end = biomes.get(Biomes.THE_END.location());
+        for (Rock rock : ROCKS) {
+            var key = id(rock.name() + "_vein");
+            var vein = placed.get(key);
+            test.assertTrue(vein != null && configured.get(key) != null, "Missing registered feature " + key);
+            boolean hornfel = rock.name().equals("hornfel");
+            boolean sediment = rock.name().equals("slate") || rock.name().equals("shale");
+            test.assertTrue(hasVein(plains, vein) == !hornfel && hasVein(desert, vein) == !(hornfel || sediment) &&
+                    hasVein(snow, vein) && !hasVein(nether, vein) && !hasVein(end, vein), "Wrong biome placement hooks for " + key);
+        }
+        var granite = configured.get(id("granite_vein"));
+        var center = test.absolutePos(new BlockPos(9, 8, 9));
+        var from = center.offset(-8, -6, -8);
+        var to = center.offset(8, 5, 8);
+        var generator = level.getChunkSource().getGenerator();
+        for (var pos : BlockPos.betweenClosed(from, to)) level.setBlock(pos, Blocks.STONE.defaultBlockState(), Block.UPDATE_CLIENTS);
+        test.assertTrue(granite.place(level, generator, RandomSource.create(237), center), "No stone replaced by the staged granite feature");
+        var replacement = BuiltInRegistries.BLOCK.get(id("granite"));
+        var replaced = new ArrayList<BlockPos>();
+        for (var pos : BlockPos.betweenClosed(from, to)) {
+            if (level.getBlockState(pos).is(replacement)) {
+                replaced.add(pos.immutable());
+                level.setBlock(pos, Blocks.STONE.defaultBlockState(), Block.UPDATE_CLIENTS);
+            } else {
+                test.assertTrue(level.getBlockState(pos).is(Blocks.STONE), "Unexpected generated state at " + pos);
+            }
+        }
+        test.assertTrue(replaced.size() >= 4, "Need four known targets for the ore preservation comparison");
+        Block[] exclusions = {Blocks.DIAMOND_ORE, Blocks.DEEPSLATE, Blocks.ANDESITE};
+        for (int marker = 0; marker < exclusions.length; ++marker) {
+            level.setBlock(replaced.get(marker), exclusions[marker].defaultBlockState(), Block.UPDATE_CLIENTS);
+        }
+        test.assertTrue(granite.place(level, generator, RandomSource.create(237), center), "Excluded targets prevented valid placements");
+        for (int marker = 0; marker < exclusions.length; ++marker) {
+            test.assertTrue(level.getBlockState(replaced.get(marker)).is(exclusions[marker]), "Feature replaced " + exclusions[marker]);
+        }
+        test.assertTrue(level.getBlockState(replaced.get(3)).is(replacement), "Same seed did not replace the remaining plain stone");
+        test.succeed();
+    }
+
+    private static boolean hasVein(Biome biome, PlacedFeature feature) {
+        var steps = biome.getGenerationSettings().features();
+        int step = GenerationStep.Decoration.UNDERGROUND_DECORATION.ordinal();
+        return steps.size() > step && steps.get(step).stream().anyMatch(holder -> holder.value() == feature);
     }
 
     private static void craft(GameTestHelper test, String rock, String shape, int count, String... pattern) {

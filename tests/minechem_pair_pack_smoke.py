@@ -120,7 +120,7 @@ def check(root: Path) -> None:
         assert not any(name.startswith(("modMimicry/", "assets/minecraft/")) or name.endswith(("CatalystChecks.class", ".jar"))
                        for name in jar.namelist())
     evidence = report["native_builds"][rocks.name]
-    assert evidence["status"] == "preview" and evidence["gametests"]["passed"] == 2, evidence
+    assert evidence["status"] == "preview" and evidence["gametests"]["passed"] == 3, evidence
     assert evidence["original_sha256"] == rocks_original.sha256 == before[source / rocks_original.label]
     assert evidence["legacy_ids"] == {"geostrata": ROCK_ID} and evidence["jar_sha256"] == file_digest(rocks)
     with ZipFile(rocks) as jar, ZipFile(source / rocks_original.label) as original:
@@ -128,7 +128,7 @@ def check(root: Path) -> None:
         assert proof["preview"] and not proof["parity_verified"] and not proof["imports"]
         assert proof["original_sha256"] == rocks_original.sha256
         assert all(jar.read(new) == original.read(old) for old, new in rock_textures().items())
-        assert not any(name.startswith(("Reika/", "assets/geostrata/")) or name.endswith(".jar") or "GeoRockChecks" in name
+        assert not any(name.startswith(("Reika/", "assets/geostrata/")) or name.endswith(".jar") or "GeoRockChecks" in name or name.endswith("vein_room.nbt")
                        for name in jar.namelist())
     boot(out, report["instance_runtime"]["launch"]["unix"])
     check_recipes_in_game(root / "preview-staged-smoke", [artifacts[0]], minechem_394=artifacts[1],
@@ -144,12 +144,12 @@ def check(root: Path) -> None:
     assert code == 1 and not report["ready"] and not delta.exists() and not report["native_builds"], report["problems"]
     assert not report["legacy_selection_conflicts"] and report["legacy_identity_splits"], report["legacy_selection_conflicts"]
     note("Combined native previews booted", "Both Minechem previews, the ICBM plate, the Atomic Science thermal machines, GeoStrata rocks "
-         "and the Mimicry catalyst reached dedicated server ready with unchanged Multipart and CCL. Eighteen source and 24 staged-JAR tests passed. "
+         "and the Mimicry catalyst reached dedicated server ready with unchanged Multipart and CCL. Nineteen source and 25 staged-JAR tests passed. "
          "All eight still block without writing a pack.")
     summary(["## Combined native previews", "",
              "Six previews built in one updater invocation and staged with unchanged CB Multipart and CodeChickenLib: both Minechem releases, "
-             "ICBM plate, Atomic Science thermal machines, GeoStrata rocks, and Mimicry catalyst. Eighteen source GameTests, stock dedicated boot, "
-             "and 24 staged-JAR GameTests passed. These are bounded previews, not full ports. The all-eight selection staged nothing.", ""])
+             "ICBM plate, Atomic Science thermal machines, GeoStrata rocks, and Mimicry catalyst. Nineteen source GameTests, stock dedicated boot, "
+             "and 25 staged-JAR GameTests passed. These are bounded previews, not full ports. The all-eight selection staged nothing.", ""])
 
 
 if __name__ == "__main__":

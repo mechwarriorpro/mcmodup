@@ -1,10 +1,12 @@
 """Observe the pinned GeoStrata/DragonAPI pair, without replacing either archive."""
 
 import argparse
+from collections import Counter
 from pathlib import Path
 import traceback
 from zipfile import ZipFile
 
+from mcmodup.geostrata_rocks import VEINS, VEIN_SIZE
 from mixed_legacy_pack_smoke import ORIGINALS, note
 from voltz_legacy import probe
 
@@ -14,6 +16,24 @@ DRAGONAPI = "DragonAPI 1.6 v23b.zip"
 DRAGONAPI_SHA256 = "bf30330e9ada3efa3810747ac3ed096cd7ada35371dd8554a357a36c8703c86f"  # FTB Monster 1.1.2
 
 
+def check_terrain(properties: str, generated: str, terrain: str) -> None:
+    assert terrain.startswith(f"base=24; vein size={VEIN_SIZE}; dimensions={{0=true, -1=false, 1=false, 7=true, 42=true}}; "), terrain
+    profiles = {name.lower(): row.split(",") for name, row in (entry.split("=", 1) for entry in properties.split(";"))}
+    settings = {name.lower(): row.split("/") for name, row in (entry.split("=", 1) for entry in
+                terrain.split("; density/effective ceiling/plains-desert-snow-lava={", 1)[1].removesuffix("}").split(", "))}
+    assert profiles.keys() == settings.keys() == VEINS.keys(), (profiles.keys(), settings.keys())
+    masks = {"any_overworld": "1111", "not_desert": "1011", "snowy": "0010", "adjacent_lava": "0001"}
+    bounds: Counter[int] = Counter()
+    for name, vein in VEINS.items():
+        assert tuple(map(int, profiles[name][3:5])) == (vein.min_y, vein.max_y), name
+        assert settings[name][1:] == [str(vein.attempts), masks[vein.condition]], (name, settings[name])
+        bounds[16] += 2 * vein.attempts
+        bounds[vein.max_y - vein.min_y] += vein.attempts
+    calls = {int(bound): int(count) for bound, count in (entry.split("=", 1) for entry in
+             generated.split("; direct generator RNG bounds={", 1)[1].removesuffix("}").split(", "))}
+    assert calls == bounds, (calls, bounds)
+
+
 def run(root: Path) -> None:
     original = root / GEOSTRATA.filename
     evidence = probe(root, "LegacyGeoRockSurvey", {}, (), "MCMODUP_GEO", providers=(), supplied={
@@ -21,6 +41,7 @@ def run(root: Path) -> None:
         f"mods/{DRAGONAPI}": (root / DRAGONAPI, DRAGONAPI_SHA256),
     })
     cases, properties, generated, terrain = evidence.split(" | ")
+    check_terrain(properties, generated, terrain)
     note("Exact GeoStrata v23b rock survey on Forge", cases)
     note("Original hardness, blast resistance, pickaxe tier, height bounds and rarity", properties)
     note("Exact GeoStrata controlled stone replacement", generated)
