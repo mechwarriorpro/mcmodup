@@ -1,5 +1,5 @@
 # Exact Minechem 5.0.5.394 / Forge 10.13.2.1291; Java 7.
-# https://github.com/mechwarriorpro/mcmodup/actions/runs/44517029043/job/135535582699
+# https://github.com/mechwarriorpro/mcmodup/actions/runs/44517907300/job/135538617974
 config=true/true
 dispense_blocked_bucket=ok/stone/{be26=1}/{}
 dispense_bucket=ok/e26:0/{bucket=1}/{}

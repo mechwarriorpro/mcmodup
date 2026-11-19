@@ -135,8 +135,8 @@ final class ChemistryFluids {
                 () -> spec.source(), () -> BuiltInRegistries.FLUID.get(id("flowing_" + spec.path())))
                 .tickRate(Math.max(1, spec.viscosity() / 200)).levelDecreasePerBlock(spec.density() == 0 ? 8 : 1);
             // Both variants exist even for the registered, non-placeable FINAL fluids.
-            var still = FLUIDS.register(spec.path(), () -> new BaseFlowingFluid.Source(properties));
-            FLUIDS.register("flowing_" + spec.path(), () -> new BaseFlowingFluid.Flowing(properties));
+            var still = FLUIDS.register(spec.path(), () -> @SOURCE_TYPE@);
+            FLUIDS.register("flowing_" + spec.path(), () -> @FLOWING_TYPE@);
             if (!spec.placeable()) continue;
             var block = BLOCKS.register(spec.path(), () -> ChemistryRadiation.tier(spec.chemical()) > 0
                 ? new RadioactiveBlock((FlowingFluid) still.get(), spec) : new ChemicalBlock((FlowingFluid) still.get(), spec));

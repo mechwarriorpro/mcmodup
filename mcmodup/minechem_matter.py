@@ -9,8 +9,9 @@ from .minechem_materials import PRODUCT, TEMPLATES, chemical_id, observations
 
 
 JAVA = ("ChemistryFluids", "FluidPresentation", "ChemicalBucketRecipe", "ChemistryRadiation",
-        "ShieldedStorage", "ShieldedStorageScreen", "FinalFluidCollector", "TubeWorldUse", "FluidDispensing", "FluidReactions", "ChemicalFuels")
-RELEASE_394_ONLY = {"TubeWorldUse", "FluidDispensing", "FluidReactions", "ChemicalFuels"}
+        "ShieldedStorage", "ShieldedStorageScreen", "FinalFluidCollector", "TubeWorldUse", "FluidDispensing", "FluidReactions",
+        "ChemicalFuels", "ChemicalFlow394")
+RELEASE_394_ONLY = {"TubeWorldUse", "FluidDispensing", "FluidReactions", "ChemicalFuels", "ChemicalFlow394"}
 AUTOMATION_TRACE = "release394-fluid-automation.txt"
 RESOURCES = "src/main/resources"
 ANIMATED_PNGS = {"assets/minechem/textures/blocks/fluid_still.png": (16, 128),
@@ -187,6 +188,8 @@ def project(namespace: str, package: str, ids: dict[str, str], names: dict[str, 
             .replace("@REGISTER_EMPTY_TUBE@", '        buckets.add(items.registerItem("test_tube", p -> new TubeWorldUse.TubeItem(p, true)));' if prepaid else "")
             .replace("@WATER_BUCKET_CRAFT@", observations(trace_name(True, "fluids")).get("water", "false").split("/", 1)[0])
             .replace("@FLUID_REACTION_HOOKS@", REACTION_HOOKS if prepaid else "")
+            .replace("@SOURCE_TYPE@", "new ChemicalFlow394(properties, spec.density(), true)" if prepaid else "new BaseFlowingFluid.Source(properties)")
+            .replace("@FLOWING_TYPE@", "new ChemicalFlow394(properties, spec.density(), false)" if prepaid else "new BaseFlowingFluid.Flowing(properties)")
             .replace("@BUCKET_FUEL_OVERRIDE@", fuel_override(8) if automation.get("furnace_fuels") and
                      any(":bucket_" in key for key in automation["furnace_fuels"]) else ""))
     if prepaid:
@@ -289,6 +292,7 @@ def features(prepaid: bool) -> dict[str, str]:
                 ".394 dispenser transfer, split payment, and vanilla fallback": "release394dispensertransfers",
                 ".394 block fluid reactions, source/flow output and ignition": "release394fluidreactions",
                 ".394 dropped chemical bucket contact and config guards": "release394itemcontact",
+                ".394 upward gas, downward liquid and stationary solid flow": "release394directionalflow",
                 ".394 original furnace fuel values and actual furnace consumption": "release394furnacefuels"} if prepaid else
                {"FINAL does not inherit .394 furnace fuels": "finalfurnaceisolation"})}
 

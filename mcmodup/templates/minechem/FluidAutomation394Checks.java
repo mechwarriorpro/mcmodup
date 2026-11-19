@@ -110,6 +110,43 @@
         });
     }
 
+    @GameTest(template = "fluid_room")
+    public static void release394DirectionalFlow(GameTestHelper test) {
+        var level = test.getLevel();
+        var gas = test.absolutePos(new BlockPos(3, 5, 3));
+        var liquid = test.absolutePos(new BlockPos(10, 5, 3));
+        var solid = test.absolutePos(new BlockPos(10, 5, 10));
+        var capped = test.absolutePos(new BlockPos(3, 5, 10));
+        for (var dir : List.of(Direction.UP, Direction.NORTH, Direction.SOUTH, Direction.WEST))
+            level.setBlockAndUpdate(capped.relative(dir), Blocks.STONE.defaultBlockState());
+        setFluid(level, gas, "fluid_element_h", true);
+        setFluid(level, liquid, "fluid_molecule_ethanol", true);
+        setFluid(level, solid, "fluid_element_fe", true);
+        setFluid(level, capped, "fluid_element_h", true);
+        test.runAfterDelay(3, () -> {
+            test.assertTrue(level.getFluidState(gas).isSource() && fluidAmount(level, gas.above(), "flowing_fluid_element_h") == 7 &&
+                level.isEmptyBlock(gas.below()), "A gas did not extend an upward seven-quanta cell while keeping its source");
+            test.assertTrue(fluidAmount(level, capped.east(), "flowing_fluid_element_h") == 7 && level.getBlockState(capped.above()).is(Blocks.STONE),
+                "A cap did not deflect gas sideways, or was overwritten");
+            test.assertTrue(level.isEmptyBlock(liquid.below()), "A liquid ignored its five-tick delay");
+            level.setBlockAndUpdate(capped, Blocks.AIR.defaultBlockState());
+            test.runAfterDelay(5, () -> {
+                test.assertTrue(level.isEmptyBlock(capped.east()) && level.isEmptyBlock(capped.east().above()),
+                    "Unsupported gas left a new column after the feeder was removed");
+                test.assertTrue(level.getFluidState(liquid).isSource() && fluidAmount(level, liquid.below(), "flowing_fluid_molecule_ethanol") == 7 &&
+                    level.isEmptyBlock(liquid.above()), "A liquid did not extend a downward seven-quanta cell while keeping its source");
+                test.assertTrue(level.getFluidState(solid).isSource() && level.isEmptyBlock(solid.below()) &&
+                    level.isEmptyBlock(solid.above()) && level.isEmptyBlock(solid.east()), "A one-quanta solid source started flowing");
+                test.succeed();
+            });
+        });
+    }
+
+    private static int fluidAmount(ServerLevel level, BlockPos pos, String path) {
+        var state = level.getFluidState(pos);
+        return state.getType() == BuiltInRegistries.FLUID.get(id(path)) ? state.getAmount() : 0;
+    }
+
     @GameTest(template = "test_room", timeoutTicks = 240)
     public static void release394FurnaceFuels(GameTestHelper test) {
 @FUEL_CHECKS@

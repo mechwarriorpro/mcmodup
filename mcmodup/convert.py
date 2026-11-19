@@ -230,7 +230,7 @@ def _project_files(profile: Profile, entries: list[CatalogEntry], textures: dict
                      "journal cloning, uranium ore, radioactive decay, and shielded storage.")
         features += (" .394 includes native chemical fluid blocks, dispenser exchanges, contact reactions and furnace fuels." if mode == DecomposerMode.RELEASE_394 else
                      " FINAL registers its non-placeable fluids in a volatile, fill-only collector.")
-        not_ported = ("Unmapped materials, optional third-party fluids, exact solid/gas flow and rendering, legacy radiation hooks, "
+        not_ported = ("Unmapped materials, optional third-party fluids, exact fluid rendering and legacy displacement rules, legacy radiation hooks, "
                       "legacy power or add-on integrations, and old saves. Some materials, recipes and effect interactions "
                       "use native substitutions. Other machines and the original lens chain require a paired or expanded build. "
                       + minechem_polytool.LIMIT)

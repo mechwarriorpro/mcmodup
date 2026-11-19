@@ -60,12 +60,16 @@ class MatterTests(unittest.TestCase):
         self.assertEqual(data["furnace_fuels"][ids["e6"]], 200)
         self.assertFalse(any(":bucket_" in item for item in data["furnace_fuels"]))
         self.assertEqual(trace["dispense_molecule_short"], "ok/air/{m0=4}/{}")
+        self.assertEqual(trace["propagate_gas"], "air/e1:0/e1:1")
+        self.assertEqual(trace["propagate_liquid"], "m62:1/m62:0/air")
+        self.assertEqual(trace["propagate_solid"], "air/e26:0/air")
+        self.assertIn("new ChemicalFlow394", paths["src/main/java/test/port/ChemistryFluids.java"])
         self.assertTrue(data["reactionFluidMeetFluid"] and data["reactionItemMeetFluid"])
         for code in ("FluidReactions", "ChemicalFuels", "ChemistryFluids"):
             self.assertNotRegex(paths[f"src/main/java/test/port/{code}.java"], r"@[A-Z_]+@")
         final_ns, final_ids = self.ids(False)
         final, _ = project(final_ns, "test.port", final_ids, {}, False)
-        self.assertFalse(any(path.endswith(("FluidReactions.java", "ChemicalFuels.java", "FluidDispensing.java", "fluid_automation.json"))
+        self.assertFalse(any(path.endswith(("FluidReactions.java", "ChemicalFuels.java", "FluidDispensing.java", "ChemicalFlow394.java", "fluid_automation.json"))
                              for path in final))
         self.assertNotIn("FluidReactions", final["src/main/java/test/port/ChemistryFluids.java"])
 
