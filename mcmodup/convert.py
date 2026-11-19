@@ -69,7 +69,7 @@ def _textures(entries: list[CatalogEntry], mod: PackMod, locations: list[ClassLo
     return textures
 
 
-def _java(package: str, namespace: str, entries: list[CatalogEntry], mode: DecomposerMode | None) -> str:
+def _java(package: str, namespace: str, entries: list[CatalogEntry], mode: DecomposerMode | None, *, reactors: bool = False) -> str:
     definitions = []
     for entry in entries:
         keys = [f"item.{namespace}.{entry.path}.detail_{i}" for i in range(len(entry.details))]
@@ -79,6 +79,8 @@ def _java(package: str, namespace: str, entries: list[CatalogEntry], mode: Decom
     if mode is not None:
         definitions.append("        entries.addAll(ChemistryMachines.register(bus, items));")
         definitions.append("        entries.addAll(ChemistryResearch.register(bus, items));")
+    if reactors:
+        definitions.append("        entries.addAll(ReactorMachines.register(bus, items));")
     body = "\n".join(definitions)
     return f'''package {package};
 
@@ -164,7 +166,8 @@ def _icon_paths(namespace: str, originals) -> dict[str, str]:
 
 def _project_files(profile: Profile, entries: list[CatalogEntry], textures: dict[str, bytes],
                    digest: str, dependency_summary: dict, locations: list[ClassLocation], *,
-                   linked_decomposer: bool = False, project_version: str | None = None) -> tuple[dict[str, str | bytes], int]:
+                   linked_decomposer: bool = False, project_version: str | None = None,
+                   paired_limitations: tuple[str, ...] = ()) -> tuple[dict[str, str | bytes], int]:
     namespace = profile.namespace
     package = f"mcmodup.generated.{namespace}"
     mode = _decomposer_mode(profile, digest)
@@ -198,6 +201,9 @@ def _project_files(profile: Profile, entries: list[CatalogEntry], textures: dict
     if mode in (DecomposerMode.FINAL, DecomposerMode.RELEASE_394):
         features += " Journal cloning preserves item components in an ordered two-item craft."
     not_ported = ("Journal cloning requires the exact FINAL release. " if mode == DecomposerMode.BATCH else "") + profile.not_ported
+    if paired_limitations:
+        features += " Includes both original reactor blueprints, a staged projector and release-specific reactor operation."
+        not_ported = " ".join(paired_limitations)
     description = f"Partial mod with new IDs. {features} Not ported: {not_ported}"
     code_notice = ("Includes only selected, rewritten legacy method bodies; no original classes or legacy dependencies are bundled."
                    if linked_decomposer else "This JAR contains no legacy JVM classes or dependencies.")
@@ -220,7 +226,7 @@ adaptations without the owner's permission. {code_notice}
         "settings.gradle": f"pluginManagement {{ repositories {{ gradlePluginPortal() }} }}\nrootProject.name = '{namespace}'\n",
         "build.gradle": _build_gradle(namespace, package, version),
         "gradle.properties": "org.gradle.jvmargs=-Xmx2G\n",
-        f"src/main/java/{package.replace('.', '/')}/CatalogPort.java": _java(package, namespace, entries, mode),
+        f"src/main/java/{package.replace('.', '/')}/CatalogPort.java": _java(package, namespace, entries, mode, reactors=bool(paired_limitations)),
         f"{src}/META-INF/neoforge.mods.toml": _metadata(ModMetadata("", description=description), namespace, profile.title, version, profile.license),
         f"{src}/META-INF/MCModUp-NOTICE.txt": notice,
         f"{src}/data/{namespace}/mcmodup/catalog.json": _document({

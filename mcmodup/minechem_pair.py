@@ -7,7 +7,7 @@ import shutil
 import tempfile
 from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
 
-from . import NEOFORGE_VERSION
+from . import NEOFORGE_VERSION, minechem_reactors
 from .api import ClassLocation
 from .catalogs import PROFILES, RELEASE_394_PROFILE, RELEASE_394_SHA256, CatalogEntry, Profile
 from .classfiles import CLASS_LIMIT
@@ -25,8 +25,8 @@ STACK = "net/minecraft/item/ItemStack"
 RESOURCE = "src/main/resources/"
 FINAL = PROFILES["minechem-chemistry"]
 RELEASE_394 = PROFILES[RELEASE_394_PROFILE]
-VERSIONS = {FINAL.namespace: "1.3.3-partial", RELEASE_394.namespace: "1.4.2-partial"}
-FEATURES = {"Buffered iron decomposition and saved remaining output": "savedbufferdrains",
+VERSIONS = {FINAL.namespace: "1.3.4-partial", RELEASE_394.namespace: "1.4.3-partial"}
+FEATURES = minechem_reactors.FEATURES | {"Buffered iron decomposition and saved remaining output": "savedbufferdrains",
             "Original decomposer output-slot method": "linkedslotrule",
             "Journal cloning preserves discovery and selection components": "journalcloningpreservescomponents"}
 FEATURES_394 = FEATURES | {"All 198 measured item and molecule decomposition rules": "materialdecompositionmatchestrace",
@@ -129,6 +129,7 @@ def _recipe(original: Path, profile: Profile, checksum: str, output: Path) -> di
     (plan,) = parse_method_ports([methods], aliases)
     locations = [ClassLocation(original, owner + ".class", owner) for owner in profile.owners]
     entries = _catalog_entries(profile, locations)
+    reactor_icons = minechem_reactors.asset_paths(namespace, prepaid)
     with open_input(original) as source:
         if source.warnings:
             raise InputError("Cannot verify a Minechem original with duplicate or unsafe members")
@@ -138,9 +139,13 @@ def _recipe(original: Path, profile: Profile, checksum: str, output: Path) -> di
         for name, data in textures.items():
             if not data.startswith(PNG_SIGNATURE) or f"{name}.mcmeta" in source.files:
                 raise InputError(f"Expected a standalone catalog PNG: {name!r}")
+        reactor_assets = {name: source.read(name, 1024 * 1024) for name in reactor_icons}
+        for name, data in reactor_assets.items():
+            if not data.startswith(PNG_SIGNATURE if name.endswith(".png") else b"OggS"):
+                raise InputError(f"Unexpected reactor asset format: {name!r}")
     deps = {"bundled_legacy_dependencies": False, "adapter": "native FE and isolated item slots"}
     files, _ = _project_files(profile, entries, textures, checksum, deps, locations,
-                              linked_decomposer=True, project_version=version)
+                              linked_decomposer=True, project_version=version, paired_limitations=minechem_reactors.LIMITS)
     icons = _icon_paths(namespace, textures)
     # The template ZIP carries recovered declarations only. The build reads
     # image bytes and method bodies from the same fingerprinted original.
@@ -148,6 +153,9 @@ def _recipe(original: Path, profile: Profile, checksum: str, output: Path) -> di
         files.pop(RESOURCE + target)
     package = f"mcmodup.generated.{namespace}"
     java_root = package.replace(".", "/")
+    minechem_reactors.add_project(files, namespace, package, entries, release_394=prepaid)
+    files[f"src/main/java/{java_root}/ReactorChecks.java"] = minechem_reactors.checks(package, namespace, namespace, prepaid)
+    files[RESOURCE + f"data/{namespace}/structure/reactor_room.nbt"] = empty_test_structure(29)
     tests = f"{java_root}/DecomposerChecks"
     files[f"src/main/java/{tests}.java"] = ((TEMPLATES / "minechem/DecomposerChecks.java").read_text(encoding="utf-8")
         .replace("@NAMESPACE@", namespace).replace("@PREPAID@", str(prepaid).lower()))
@@ -171,7 +179,7 @@ def _recipe(original: Path, profile: Profile, checksum: str, output: Path) -> di
 tasks.named('compileJava') {{ classpath += files('src/main/resources') }}
 tasks.named('jar') {{
     archiveFileName = '{artifact}'
-    exclude '{tests}.class', '{java_root}/Release394Checks*.class', '{java_root}/Synthesis394Checks*.class', '{java_root}/Sided394Checks*.class', '{java_root}/JournalCloneChecks*.class', '{java_root}/FinalWaterChecks*.class', 'data/{namespace}/structure/*.nbt'
+    exclude '{tests}.class', '{java_root}/Release394Checks*.class', '{java_root}/Synthesis394Checks*.class', '{java_root}/Sided394Checks*.class', '{java_root}/JournalCloneChecks*.class', '{java_root}/FinalWaterChecks*.class', '{java_root}/ReactorChecks*.class', 'data/{namespace}/structure/*.nbt'
 }}
 neoForge.runs.create('gameTestServer') {{
     type = 'gameTestServer'
@@ -197,12 +205,13 @@ neoForge.runs.create('gameTestServer') {{
             "ids": aliases, "legacy_ids": {"minechem": namespace}, "neoforge": f"[{NEOFORGE_VERSION}]",
             "artifact": f"build/libs/{artifact}", "tasks": ["jar", "runGameTestServer"], "game_report": "build/gametest.xml",
             "minimum_tests": len(FEATURES_394 if prepaid else FEATURES_FINAL), "features": FEATURES_394 if prepaid else FEATURES_FINAL,
-            "status": "preview", "limitations": [profile.not_ported, "Fresh worlds only; no legacy ID/save migration or add-on API.",
+            "status": "preview", "limitations": [*minechem_reactors.LIMITS, "Fresh worlds only; no legacy ID/save migration or add-on API.",
                 "Native FE, menus and item components replace legacy power, GUI and stack APIs; no original client comparison.",
                 "Journal cloning is ordered within the trimmed crafting grid; unlike the originals it does not consume extra ingredients."],
             "method_imports": [methods],
-            "import_assets": {old: RESOURCE + new for old, new in icons.items()},
-            "asset_map": {old: {"path": new, "sha256": hashlib.sha256(textures[old]).hexdigest()} for old, new in icons.items()}}
+            "import_assets": {old: RESOURCE + new for old, new in (icons | reactor_icons).items()},
+            "asset_map": {old: {"path": new, "sha256": hashlib.sha256((textures | reactor_assets)[old]).hexdigest()}
+                          for old, new in (icons | reactor_icons).items()}}
 
 
 def prepare(final: Path, release394: Path, output: Path) -> Path:

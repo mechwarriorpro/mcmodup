@@ -8,6 +8,7 @@ on:
       - 'mcmodup/legacy_testbed.py'
       - 'mcmodup/__main__.py'
       - 'mcmodup/minechem_pair.py'
+      - 'mcmodup/minechem_reactors.py'
       - 'mcmodup/machines.py'
       - 'mcmodup/catalogs.py'
       - 'mcmodup/source_ports.py'

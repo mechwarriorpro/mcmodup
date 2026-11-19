@@ -456,7 +456,9 @@ public final class CatalogSmoke {
         var diamond = new ItemStack(Items.DIAMOND);
         check(helper, CraftingInput.of(3, 3, List.of(iron, iron, iron, iron, piston, iron, iron, dust, iron)), MINECHEM, "decomposer");
         check(helper, CraftingInput.of(3, 3, List.of(iron, dust, iron, iron, piston, iron, iron, diamond, iron)), MINECHEM, "synthesizer");
-        check(helper, CraftingInput.of(3, 3, List.of(ItemStack.EMPTY, new ItemStack(Items.SPYGLASS), iron,
+        var lensId = ResourceLocation.fromNamespaceAndPath(MINECHEM, "microscope_lens");
+        var microscopeLens = new ItemStack(BuiltInRegistries.ITEM.containsKey(lensId) ? BuiltInRegistries.ITEM.get(lensId) : Items.SPYGLASS);
+        check(helper, CraftingInput.of(3, 3, List.of(ItemStack.EMPTY, microscopeLens, iron,
                 ItemStack.EMPTY, new ItemStack(Items.GLASS_PANE), iron, iron, iron, iron)), MINECHEM, "microscope");
         check(helper, CraftingInput.of(2, 1, List.of(new ItemStack(Items.BOOK), new ItemStack(Items.GLASS))), MINECHEM, "chemist_journal");
         helper.succeed();
