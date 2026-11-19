@@ -217,6 +217,7 @@ def _java_recipes(package: str, namespace: str, entries: list[CatalogEntry], rec
     decomposition = ("MaterialRules.recipes(false)" if mode != DecomposerMode.BATCH else f"List.of(\n{rows('decomposer')}\n    )")
     fluids = ("MaterialRules.recipes(true)" if mode != DecomposerMode.BATCH else "List.of()")
     roll = "MaterialRules.roll(recipe, random)" if mode != DecomposerMode.BATCH else "recipe.outputs()"
+    variable = "MaterialRules.variable(recipe)" if mode != DecomposerMode.BATCH else "false"
     key = "MaterialRules.validInput(stack)" if mode != DecomposerMode.BATCH else "true"
     chemical_ids = ",\n".join(f'        "{namespace}:{entry.path}"' for entry in entries)
     return f'''package {package};
@@ -250,6 +251,8 @@ final class ChemistryRecipes {{
     static Recipe input(ItemStack stack) {{
         return {key} ? DECOMPOSE.get(BuiltInRegistries.ITEM.getKey(stack.getItem()).toString()) : null;
     }}
+
+    static boolean variable(Recipe recipe) {{ return {variable}; }}
 
     static List<Part> roll(Recipe recipe, RandomSource random) {{ return {roll}; }}
 
@@ -340,13 +343,15 @@ def machine_project(namespace: str, package: str, entries: list[CatalogEntry], r
         "synthesis_cost": "Batch: %s FE", "synthesis_power": "Stored: %s FE",
         "auto_help": "Toggle repeated processing using the current recipe, input and FE",
         "decompose": "Insert one material to split", "charge": "Optional fuel: Redstone Dust (+500 FE when needed)",
-        "water_tank": "Fluid: %s/%s mB", "empty_tank": "Empty tank",
+        "water_tank": "%s %s/%s mB", "empty_tank": "Empty tank",
+        "tank_water": "Water", "tank_lava": "Lava", "tank_empty": "Fluid:",
         "requirement": "%s × %s", "recipe_help": "Recipe ingredients (hold Shift to skip 10 recipes)",
         "state_0": "Ready · %s FE", "state_1": "Working · %s FE", "state_2": "Need input · %s FE",
         "state_3": "Need power · %s FE", "state_4": "Output full · %s FE", "state_5": "Done · %s FE",
         "inspect_sample": "Insert an item to inspect", "inspect_book": "Insert a journal to record the recipe",
         "inspect_synthesis": "Synthesis", "inspect_decomposition": "Decomposition",
         "inspect_inputs": "Ingredients · %s FE", "inspect_outputs": "Products · %s FE",
+        "inspect_example": "Example yield · %s FE",
         "no_recipe": "No supported recipe in this mode",
         "journal_owner": "Last used by %s", "journal_count": "Discovered recipes: %s", "journal_active": "Active: %s",
         "journal_empty": "Discover recipes in a Microscope", "journal_choose": "Choose a discovered recipe",

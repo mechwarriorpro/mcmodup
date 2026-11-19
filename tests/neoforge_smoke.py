@@ -11,7 +11,7 @@ from mcmodup import minechem_final_synthesis
 from mcmodup.catalogs import RELEASE_394_SHA256, CatalogEntry
 from mcmodup.machines import FINAL_LEGACY_SHA256, DecomposerMode, machine_recipes
 from mcmodup.method_ports import PROVENANCE
-from mcmodup.minechem_pair import FINAL, RELEASE_394, journal_clone_checks, release394_checks, synthesis394_checks
+from mcmodup.minechem_pair import FINAL, RELEASE_394, chemistry_gameplay_checks, journal_clone_checks, release394_checks, synthesis394_checks
 from mcmodup.port import _build_gradle, _metadata, empty_test_structure, write_workspace
 
 
@@ -92,6 +92,7 @@ neoForge.runs.create('gameTestServer') {{
         tests["src/main/java/mcmodup/test/CatalogAspectSmoke.java"] = (FIXTURES / "CatalogAspectSmoke.java").read_bytes()
     research_rooms = {}
     if buffered:
+        tests["src/main/java/mcmodup/test/ChemistryGameplayChecksFinal.java"] = chemistry_gameplay_checks("mcmodup.test", namespace, False)
         tests["src/main/java/mcmodup/test/JournalCloneChecks.java"] = journal_clone_checks("mcmodup.test", namespace, FINAL.namespace)
         tests["src/main/java/mcmodup/test/SynthesisFinalChecks.java"] = minechem_final_synthesis.checks(
             "mcmodup.test", namespace, minechem_final_synthesis.entries_from_catalog(catalog))
@@ -100,6 +101,7 @@ neoForge.runs.create('gameTestServer') {{
         assert buffered, "The paired tests require the actual FINAL-based build"
         entries = check_minechem_artifacts(outputs[0], minechem_394)
         tests["src/main/java/mcmodup/test/MinechemPairChecks.java"] = (FIXTURES / "MinechemPairChecks.java").read_bytes()
+        tests["src/main/java/mcmodup/test/ChemistryGameplayChecks394.java"] = chemistry_gameplay_checks("mcmodup.test", namespace, True)
         tests["src/main/java/mcmodup/test/Release394Checks.java"] = release394_checks("mcmodup.test", namespace, entries)
         tests["src/main/java/mcmodup/test/Synthesis394Checks.java"] = synthesis394_checks("mcmodup.test", namespace, entries)
         tests["src/main/java/mcmodup/test/JournalCloneChecks394.java"] = journal_clone_checks(
@@ -180,9 +182,8 @@ neoForge.runs.create('gameTestServer') {{
     })
     run = subprocess.run(["./gradlew", "--no-daemon", "--console=plain", "runGameTestServer"],
                          cwd=project, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=420)
-    count = (7 + (1 + len(minechem_final_synthesis.FEATURES) if buffered else 0) + include_aspects + (8 if minechem_394 else 0) + bool(controls)
-             + (6 if icbm_plate else 0) + (5 if atomic_thermometer else 0) + cross_voltz
-             + (2 if mimicry else 0) + (4 if geostrata else 0))
+    # Keep the exact count tied to the probe sources installed into this run.
+    count = sum((source.decode("utf-8") if isinstance(source, bytes) else source).count("@GameTest(") for source in tests.values())
     if run.returncode or f"All {count} required tests passed" not in run.stdout:
         issues = [line for line in run.stdout.splitlines() if any(word in line for word in ("error:", " failed!", "Exception:"))]
         raise AssertionError("\n".join(issues[:12]) + "\n" + run.stdout[-6500:])

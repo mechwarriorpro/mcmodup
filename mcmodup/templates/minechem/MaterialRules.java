@@ -6,9 +6,11 @@ import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.item.ItemStack;
@@ -22,6 +24,11 @@ import @PACKAGE@.ChemistryRecipes.Recipe;
 final class MaterialRules {
     private record Ref(String key, double weight) {}
     private record Node(float chance, List<Part> parts, List<Node> choices, List<Ref> refs) {
+        boolean variable() {
+            return chance < 1F || choices.size() > 1 || choices.stream().anyMatch(Node::variable) ||
+                refs.stream().anyMatch(ref -> ref.weight() % 1 != 0 || GRAPH.get(ref.key()).variable());
+        }
+
         void roll(RandomSource random, List<Part> result) {
             if (chance < 1F && random.nextFloat() >= chance) return;
             if (!choices.isEmpty()) {
@@ -45,6 +52,8 @@ final class MaterialRules {
     private static final Map<String, Node> GRAPH = new HashMap<>();
     private static final Map<String, Entry> ITEMS = new HashMap<>(), FLUIDS = new HashMap<>();
 
+    private static final Set<String> VARIABLE_ITEMS = new HashSet<>();
+
     static {
         var path = "/data/" + CatalogPort.MOD_ID + "/mcmodup/materials.txt";
         try (var reader = new BufferedReader(new InputStreamReader(Objects.requireNonNull(
@@ -65,6 +74,7 @@ final class MaterialRules {
         } catch (IOException e) {
             throw new IllegalStateException("Cannot read Minechem material table " + path, e);
         }
+        ITEMS.forEach((id, entry) -> { if (GRAPH.get(entry.node()).variable()) VARIABLE_ITEMS.add(id); });
     }
 
     private static List<Part> parts(String row) {
@@ -108,6 +118,8 @@ final class MaterialRules {
         GRAPH.get(entry.node()).roll(random, products);
         return products;
     }
+
+    static boolean variable(Recipe recipe) { return VARIABLE_ITEMS.contains(recipe.id()); }
 
     static boolean validInput(ItemStack stack) {
         // The old rows name metadata zero for equipment and the water variant of bottles.

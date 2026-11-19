@@ -182,8 +182,8 @@ def _project_files(profile: Profile, entries: list[CatalogEntry], textures: dict
     namespace = profile.namespace
     package = f"mcmodup.generated.{namespace}"
     mode = _decomposer_mode(profile, digest)
-    version = project_version or {DecomposerMode.FINAL: "1.3.2-partial", DecomposerMode.BATCH: "1.2.0-partial",
-                                  DecomposerMode.RELEASE_394: "1.3.1-partial"}.get(mode, "1.0.0-partial")
+    version = project_version or {DecomposerMode.FINAL: "1.3.3-partial", DecomposerMode.BATCH: "1.2.0-partial",
+                                  DecomposerMode.RELEASE_394: "1.3.2-partial"}.get(mode, "1.0.0-partial")
     machine_rules = machine_recipes(namespace, entries, mode=mode, linked=linked_decomposer) if mode else []
     if mode:
         recipe_files, extra_locales = machine_project(namespace, package, entries, machine_rules, mode=mode,
@@ -196,17 +196,16 @@ def _project_files(profile: Profile, entries: list[CatalogEntry], textures: dict
                                           "decomposer_output" if f"{namespace}:{entry.path}" in outputs else "catalog_only")
                              for entry in entries}
             decomposition = sum(rule.machine == "decomposer" for rule in machine_rules)
-            features = (f"Recovered .394 catalog items, {decomposition} measured decomposition rules and a plain-water tank, "
-                        f"and {count - decomposition} measured synthesis rules with ghost templates and payment on extraction. "
-                        "The microscope records supported discoveries in a journal, which can load an active synthesis pattern. "
-                        "CoFH RF linkage is not provided.")
+            features = (f"Recovered .394 catalog items, {decomposition} mapped decomposition rules (including weighted and recursive recipes), "
+                        "a saved water/lava tank, and "
+                        f"{count - decomposition} measured synthesis registrations with virtual templates and full batches paid on extraction. "
+                        "Recipe browsing and journals can select either result of an identical pattern. The microscope records supported discoveries.")
         elif mode == DecomposerMode.FINAL:
             synthesis = {rule.id: rule for rule in machine_rules if rule.machine == "synthesizer"}
             recipe_status = {entry.path: ("synthesis_shadowed_canonical" if synthesis[f"{namespace}:{entry.path}"].canonical.startswith("shadow:")
                                           else "powered_synthesis") for entry in entries if f"{namespace}:{entry.path}" in synthesis}
-            features = ("Recovered 5.0.5 FINAL items, an ordered synthesis grid with native FE and on-extraction payment, "
-                        "sided storage gates, microscope and journal discovery, and a partial buffered decomposer. "
-                        "The Polytool synthesis result is not implemented.")
+            features = ("Recovered 5.0.5 FINAL catalog items, chance-based material decomposition with the observed output buffer, "
+                        "and an ordered synthesis grid with native FE and on-extraction payment, sided storage gates, and microscope and journal discovery.")
         else:
             recipe_status = {entry.path: "powered_synthesis" for entry in entries if entry.components}
             features = ("Recovered items, powered synthesis/decomposition, and microscope and journal discovery for the recovered recipes. "
@@ -216,9 +215,15 @@ def _project_files(profile: Profile, entries: list[CatalogEntry], textures: dict
         extra_locales = {}
         count = len(recipe_files)
         features = "Recovered aspect items and crafting-table combinations. This is not the original research system."
+    not_ported = profile.not_ported
     if mode in (DecomposerMode.FINAL, DecomposerMode.RELEASE_394):
-        features += " Journal cloning preserves item components in an ordered two-item craft."
-    not_ported = ("Journal cloning requires the exact FINAL release. " if mode == DecomposerMode.BATCH else "") + profile.not_ported
+        features += (" Includes the base Polytool result, release-local molecule drinking, coating and spiked food, "
+                     "and journal cloning with component preservation.")
+        not_ported = ("Unmapped materials, chemical/other third-party fluids, radiation and decay, Polytool modules and energy, "
+                      "legacy power or add-on integrations, and old saves. Some materials, recipes and effect interactions "
+                      "use native substitutions. Other machines and the original lens chain require a paired or expanded build.")
+    elif mode == DecomposerMode.BATCH:
+        not_ported = "Journal cloning requires the exact FINAL release. The generic profile does not include chemical effects. " + not_ported
     if paired_limitations:
         features += " Includes both original reactor blueprints, a staged projector and release-specific reactor operation."
         not_ported = " ".join(paired_limitations)

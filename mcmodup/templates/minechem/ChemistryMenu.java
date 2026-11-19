@@ -19,7 +19,7 @@ final class ChemistryMenu extends AbstractContainerMenu {
     private final ContainerData values;
 
     ChemistryMenu(int id, Inventory player) {
-        this(id, player, null, new ItemStackHandler(SLOTS), new SimpleContainerData(PREPAID_DECOMPOSER ? 7 : 6));
+        this(id, player, null, new ItemStackHandler(SLOTS), new SimpleContainerData(PREPAID_DECOMPOSER ? 8 : 6));
     }
 
     ChemistryMenu(int id, Inventory player, ChemistryMachines.Machine machine) {
@@ -65,7 +65,14 @@ final class ChemistryMenu extends AbstractContainerMenu {
     int status() { return values.get(3); }
     int remaining() { return values.get(4); }
     boolean automatic() { return values.get(5) != 0; }
-    int waterVolume() { return PREPAID_DECOMPOSER ? values.get(6) : 0; }
+    int fluidVolume() { return PREPAID_DECOMPOSER ? values.get(6) : 0; }
+    String fluidLabel() {
+        return switch (values.get(7)) {
+            case 1 -> "tank_water";
+            case 2 -> "tank_lava";
+            default -> "tank_empty";
+        };
+    }
 
     @Override
     public boolean clickMenuButton(Player player, int button) {

@@ -216,11 +216,12 @@ public final class ChemistryMachines {
                         case 4 -> bufferedDecomposer() ? decompositionBuffer.stream().mapToInt(ItemStack::getCount).sum() : remaining;
                         case 5 -> (bufferedDecomposer() || automatic) ? 1 : 0;
                         case 6 -> waterTank != null ? waterTank.getFluidAmount() : 0;
+                        case 7 -> waterTank == null || waterTank.getFluid().isEmpty() ? 0 : waterTank.getFluid().getFluid() == Fluids.LAVA ? 2 : 1;
                         default -> 0;
                     };
                 }
                 @Override public void set(int index, int value) {} // Server is authoritative.
-                @Override public int getCount() { return PREPAID_DECOMPOSER ? 7 : 6; }
+                @Override public int getCount() { return PREPAID_DECOMPOSER ? 8 : 6; }
             };
         }
 

@@ -124,13 +124,16 @@ public final class @CLASS@ {
             } finally { option.set(before); }
             var recreational = config("RECREATIONAL");
             var setting = recreational.get();
+            var optional = item("molecule_psilocybin");
+            test.assertTrue(craft(test, base, optional).is(Items.BREAD), "Missing default optional .394 treatment");
             try {
                 recreational.set(false);
-                var optional = item("molecule_psilocybin");
                 test.assertTrue(craft(test, base, optional).isEmpty(), "Optional .394 treatment still matched with its setting off");
                 var unaffected = player(test);
-                drink(test, unaffected, optional);
-                test.assertTrue(!unaffected.hasEffect(MobEffects.CONFUSION) && unaffected.getHealth() == unaffected.getMaxHealth(),
+                float health = unaffected.getHealth();
+                // Test just this completion, not ambient damage while ticking a mock player.
+                optional.getItem().finishUsingItem(optional, test.getLevel(), unaffected);
+                test.assertTrue(!unaffected.hasEffect(MobEffects.CONFUSION) && unaffected.getHealth() == health,
                         "Disabling optional profiles did not block their drink effects");
             } finally { recreational.set(setting); }
         }
