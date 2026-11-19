@@ -66,6 +66,7 @@ public final class GeoConnectedClientSmoke {
     private int age, emptyHandSlot;
     private CompletableFuture<Void> reload;
     private CompletableFuture<Boolean> meleeReady;
+    private long firstOrbitFrame;
     private String decayWarning;
     private UUID combatTarget;
     private boolean combat394, sawNeon;
@@ -306,6 +307,7 @@ public final class GeoConnectedClientSmoke {
                     var screen = polytoolScreen(client, false);
                     if (screen == null || !screen.getMenu().getCarried().isEmpty() ||
                         !screen.getMenu().getSlot(12).getItem().isEmpty() || !hasTooltip(client.player.getMainHandItem(), client, "Neon")) return;
+                    if (!verifyOrbit(screen, false, 3)) return;
                     client.player.closeContainer();
                     advance(Stage.FINAL_CHARGE);
                 }
@@ -338,6 +340,7 @@ public final class GeoConnectedClientSmoke {
                     var screen = polytoolScreen(client, true);
                     if (screen == null || !screen.getMenu().getSlot(12).getItem().isEmpty() ||
                         !hasTooltip(client.player.getMainHandItem(), client, "Neon")) return;
+                    if (!verifyOrbit(screen, true, 2)) return;
                     client.player.closeContainer();
                     prepareCombat(client, true);
                 }
@@ -437,7 +440,7 @@ public final class GeoConnectedClientSmoke {
                     if (decayWarning == null || !slot.is(BuiltInRegistries.ITEM.get(release394Id("element_pa")))) return;
                     require(slot.getCount() == 3 && decayWarning.startsWith("Radiation Warning: Element Uranium decayed into Protactinium after "),
                         "Wrong localized .394 decay warning or daughter count: " + decayWarning);
-                    finish(client, " The .394 projector synced its blueprint; FINAL paid for a 144-tube ghost recipe and cleared its journal. .394 paid for regular and bulk stone batches and synced its coating and Delirium. FINAL infused aluminium and Lithium and charged its tool; .394 shift-infused without an FE capability. Both infused Neon and synced night vision and damage from a real survival attack. A survival iron vial filled the .394 machine, returned an empty tube, and synced the 125 mB and fluid name. The leaded chest synced an overdue sample; it stayed uranium on the cursor and became three protactinium tubes in the hotbar. Received: " + decayWarning);
+                    finish(client, " The .394 projector synced its blueprint; FINAL paid for a 144-tube ghost recipe and cleared its journal. .394 paid for regular and bulk stone batches and synced its coating and Delirium. FINAL infused aluminium and Lithium and charged its tool; .394 shift-infused without an FE capability. Both infusers rendered their orbital icons; the .394 help tab opened and closed. Both infused Neon and synced night vision and damage from a real survival attack. A survival iron vial filled the .394 machine, returned an empty tube, and synced the 125 mB and fluid name. The leaded chest synced an overdue sample; it stayed uranium on the cursor and became three protactinium tubes in the hotbar. Received: " + decayWarning);
                 }
                 default -> { }
             }
@@ -541,6 +544,40 @@ public final class GeoConnectedClientSmoke {
     }
 
     private static ResourceLocation toolId(boolean newer, String path) { return newer ? release394Id(path) : finalId(path); }
+
+    private boolean verifyOrbit(AbstractContainerScreen<?> screen, boolean newer, int ranks) throws ReflectiveOperationException {
+        var type = screen.getClass();
+        var icons = type.getDeclaredField("satellites");
+        icons.setAccessible(true);
+        var sprites = (List<?>) icons.get(screen);
+        if (sprites.size() < ranks) return false; // Wait for a frame drawn after the inventory synchronization.
+        require(sprites.size() == ranks, "Infusion did not create exactly one orbit icon per rank");
+        var frame = type.getDeclaredField("orbitFrame");
+        frame.setAccessible(true);
+        long rendered = frame.getLong(screen);
+        if (firstOrbitFrame == 0) { firstOrbitFrame = rendered; return false; }
+        if (rendered <= firstOrbitFrame) return false;
+        firstOrbitFrame = 0;
+        for (var sprite : sprites) {
+            var distance = sprite.getClass().getDeclaredMethod("radius");
+            distance.setAccessible(true);
+            int radius = (Integer) distance.invoke(sprite);
+            require(radius == 20 || radius == 40, "The Polytool used an unobserved orbit radius");
+        }
+        var tab = type.getDeclaredField("helpButton");
+        tab.setAccessible(true);
+        var button = (net.minecraft.client.gui.components.Button) tab.get(screen);
+        require((button != null) == newer, "Wrong release's Polytool help tab");
+        if (newer) {
+            var shown = type.getDeclaredField("helpOpen");
+            shown.setAccessible(true);
+            button.onPress();
+            require(shown.getBoolean(screen), "The .394 help tab would not open");
+            button.onPress();
+            require(!shown.getBoolean(screen), "The .394 help tab would not close");
+        }
+        return true;
+    }
 
     private static AbstractContainerScreen<?> polytoolScreen(Minecraft client, boolean newer) {
         if (client.screen instanceof AbstractContainerScreen<?> screen &&

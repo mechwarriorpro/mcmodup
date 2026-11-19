@@ -15,7 +15,8 @@ from mixed_legacy_pack_smoke import note
 from mcmodup.minechem_final_synthesis import TRACE
 from mcmodup.minechem_materials import observations
 from mcmodup.minechem_matter import AUTOMATION_TRACE, trace_name as matter_trace_name
-from mcmodup.minechem_polytool import combat_trace_name, mining_trace_name, trace_name
+from mcmodup.minechem_polytool import combat_trace_name, layout_trace_name, mining_trace_name, trace_name
+from minechem_polytool_layout import layout
 from mcmodup.machines import SYNTHESIS_394_COLLISION, release394_synthesis_trace, release394_trace
 from mcmodup.runtime import file_digest
 
@@ -104,6 +105,10 @@ def original(root: Path, version: str, matter_only: bool = False, ore_disable: b
         command = legacy_command("1.7.10", options)
         if matter:
             command[0] = str(jdk / "java")
+    if not ore_disable and not matter_only:
+        geometry = layout(jdk / "javap", server / "mods" / name)
+        assert geometry == observations(layout_trace_name(version == "1.7.10")), geometry
+        note(f"Pinned Minechem {version} Polytool client layout", str(geometry))
     try:
         evidence = run_server(server, command, legacy=True, success_marker="MCMODUP_MINECHEM_ORIGINAL_PASS",
                               failure_marker="MCMODUP_MINECHEM_ORIGINAL_FAIL",

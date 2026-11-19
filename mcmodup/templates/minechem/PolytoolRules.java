@@ -147,6 +147,7 @@ final class PolytoolRules {
     static void register(IEventBus bus) { COMPONENTS.register(bus); }
     static State state(ItemStack tool) { return tool.getOrDefault(STATE.get(), State.EMPTY); }
     static void write(ItemStack tool, State state) { tool.set(STATE.get(), state); }
+    static Infusion element(int atomic) { return BY_ATOMIC.get(atomic); }
     static Infusion element(ItemStack stack) { return BY_ITEM.get(BuiltInRegistries.ITEM.getKey(stack.getItem())); }
     static boolean isPayment(ItemStack stack) { return stack.getCount() == BATCH && element(stack) != null; }
     static Component rankLine(Rank rank) {

@@ -1,0 +1,6 @@
+# Static client constants from the checksum-pinned .394 binary (not a rendered legacy client).
+sheet=176x218
+radius=20/40
+step=0.01
+center=80/42
+help=The PolyTool is a multi-purpose tool that can be upgraded with certain elements to give it special effects.

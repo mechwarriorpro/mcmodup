@@ -15,7 +15,11 @@ TEMPLATES = Path(__file__).with_name("templates") / "minechem"
 JAVA = ("PolytoolItem", "PolytoolRules", "PolytoolMenu", "PolytoolScreen", "PolytoolMining", "PolytoolCombat", "PolytoolWorld")
 LIMIT = ("Polytool ports the original module roster with native combat, inventories, drops and world hooks. "
          "Modern armor, cooldowns, FE, explosions and guarded fire placement differ; no legacy NBT, UE/CoFH "
-         "item API, original infuser graphics or orbit animation.")
+         "item API or reference-client pixel comparison. The infuser uses the original orbit geometry with native rendering.")
+
+
+def layout_trace_name(release_394: bool) -> str:
+    return f"{'release394' if release_394 else 'final'}-polytool-layout.txt"
 
 
 def trace_name(release_394: bool) -> str:
@@ -86,10 +90,18 @@ def project(namespace: str, package: str, entries: list[CatalogEntry], release_3
     if (len(gold) != 5 or gold[0] != "1" or gold[1] != ("true" if release_394 else "UNKNOWN") or gold[3] != "false"
             or not re.fullmatch(r"[1-9][0-9]{0,9}", gold[2]) or int(gold[2]) >= 2**31):
         raise InputError("Invalid original Gold transfer observation")
+    layout = observations(layout_trace_name(release_394))
+    if (layout["sheet"] != "176x218" or not re.fullmatch(r"[1-9]\d?/[1-9]\d?", layout["radius"])
+            or not re.fullmatch(r"[1-9]\d?/[1-9]\d?", layout["center"])
+            or not re.fullmatch(r"0\.0[1-9]", layout["step"]) or (layout["help"] == "-") == release_394):
+        raise InputError("Invalid original Polytool layout observation")
+    center_x, center_y = layout["center"].split("/")
+    inner, outer = layout["radius"].split("/")
     files = {f"{java}/{name}.java": (TEMPLATES / f"{name}.java").read_text(encoding="utf-8")
              .replace("@PACKAGE@", package).replace("@NAMESPACE@", namespace)
              .replace("@RELEASE_394@", str(release_394).lower()).replace("@INFUSIONS@", ",\n".join(cases))
-             .replace("@GOLD_REQUEST@", gold[2])
+             .replace("@GOLD_REQUEST@", gold[2]).replace("@ORBIT_X@", center_x).replace("@ORBIT_Y@", center_y)
+             .replace("@ORBIT_INNER@", inner).replace("@ORBIT_OUTER@", outer).replace("@ORBIT_STEP@", layout["step"])
              for name in JAVA}
     gui = {"infuse": "Infuse", "prompt": "64 tubes", "title": "Polytool · " + (".394" if release_394 else "FINAL"),
            "sword": "Sword: %s", "ore": "Ores: %s", "stone": "Stone: %s", "axe": "Axe: %s", "shovel": "Shovel: %s",
@@ -136,6 +148,8 @@ def project(namespace: str, package: str, entries: list[CatalogEntry], release_3
            "francium": "Francium: hits and mining cause explosions in rainy weather",
            "uranium": "Uranium: withers nearby living entities on a hit",
            "inactive": "Rank is saved; this module effect isn't ported"}
+    if release_394:
+        gui.update(help_tab="Polytool help", help_page=layout["help"])
     return files, {f"gui.{namespace}.polytool.{key}": value for key, value in gui.items()}
 
 

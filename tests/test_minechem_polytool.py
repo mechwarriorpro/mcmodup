@@ -77,6 +77,17 @@ class MinechemPolytoolTests(unittest.TestCase):
         self.assertEqual((final["francium_mining"], newer["francium_mining"]), ("0/3", "3/0"))
         self.assertIn('Map.entry("helium_unselected", "0.30")', checks("test.probe", "test", "final", catalog(False), False))
 
+    def test_infuser_uses_both_original_radii_and_release_local_help(self):
+        for newer in (False, True):
+            ns = "minechem_chemistry_394" if newer else "minechem_chemistry"
+            files, lang = project(ns, "test.port", catalog(newer), newer)
+            screen = files["src/main/java/test/port/PolytoolScreen.java"]
+            self.assertIn("CENTER_X = 80, CENTER_Y = 42", screen)
+            self.assertIn("INNER = 20, OUTER = 40", screen)
+            self.assertIn("RADIANS_PER_FRAME = 0.01", screen)
+            self.assertNotRegex(screen, r"@[A-Z_]+@")
+            self.assertEqual(f"gui.{ns}.polytool.help_page" in lang, newer)
+
     def test_unobserved_catalog_or_inconsistent_trace_fails_closed(self):
         entries = catalog(True)
         with self.assertRaisesRegex(InputError, "Polytool element e13"):
