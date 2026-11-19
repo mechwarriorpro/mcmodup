@@ -16,10 +16,9 @@ from pack_release_smoke import boot
 from updater_sample import fingerprints, run
 from voltz_legacy import FIXTURES, FORGE_SHA256, VOLTZ_SHA256, probe, unpack
 
-from mcmodup.icbm_plate import launch_checks
 from mcmodup.audit import ModMetadata
 from mcmodup.classfiles import read_class
-from mcmodup.icbm_plate import ARCHIVE, FEATURES, KERNEL, LEGACY_SHA256, MOD_ID, PLATFORM, TEXTURES, building_checks, checks, platform_checks
+from mcmodup.icbm_plate import ARCHIVE, FEATURES, KERNEL, LEGACY_SHA256, MOD_ID, PLATFORM, TEXTURES, building_checks, checks, launch_checks, platform_checks
 from mcmodup.method_ports import PROVENANCE
 from mcmodup.native_pack import REPORT_NAME
 from mcmodup.port import _build_gradle, _metadata, empty_test_structure, write_workspace

@@ -101,8 +101,18 @@ public final class GeoConnectedClientSmoke {
                     reload.join();
                     checkBlock(client, Set.of("1", "3", "5", "6", "7", "8", "9"));
                     checkItem(client);
+                    checkModel(client, NAMESPACE, "cave_crystal_cyan");
+                    checkModel(client, NAMESPACE, "crystal_lamp_red");
+                    if (Boolean.getBoolean("mcmodup.testbedClient")) {
+                        checkModel(client, "icbm_glass_plate", "launcher_screen_mk3");
+                        checkModel(client, "icbm_glass_plate", "laser_turret");
+                        checkModel(client, "atomic_thermometer", "particle_accelerator");
+                        checkModel(client, "atomic_thermometer", "creative_fe_supply");
+                        checkModel(client, "minechem_chemistry", "decomposer");
+                        checkModel(client, "minechem_chemistry_394", "synthesizer");
+                    }
                     Files.writeString(Path.of(System.getProperty("mcmodup.geoEvidence")),
-                        "Actual staged client: isolated borders, same-rock smooth/brick neighbors, different-rock diagonal, inventory border and resource reload verified.\n");
+                        "Actual staged client: isolated borders, same-rock smooth/brick neighbors, different-rock diagonal, inventory border, additional block models and resource reload verified.\n");
                     advance(Stage.DONE);
                     client.stop();
                 }
@@ -157,6 +167,15 @@ public final class GeoConnectedClientSmoke {
         List<ResourceLocation> quads = model.getQuads(null, Direction.UP, RANDOM, ModelData.EMPTY, null).stream().map(GeoConnectedClientSmoke::sprite).toList();
         require(quads.contains(ResourceLocation.fromNamespaceAndPath(NAMESPACE, "block/granite")) &&
             quads.contains(ResourceLocation.fromNamespaceAndPath(NAMESPACE, "block/connected/0")), "Missing item border or granite base: " + quads);
+    }
+
+    private static void checkModel(Minecraft client, String namespace, String block) {
+        var id = ResourceLocation.fromNamespaceAndPath(namespace, block);
+        require(BuiltInRegistries.BLOCK.containsKey(id), "Missing client block: " + id);
+        var state = BuiltInRegistries.BLOCK.get(id).defaultBlockState();
+        var model = client.getBlockRenderer().getBlockModel(state);
+        require(model != client.getModelManager().getMissingModel() && !model.getParticleIcon(ModelData.EMPTY).contents().name().getPath().equals("missingno"),
+                "Missing baked block model or sprite: " + id);
     }
 
     private static ResourceLocation sprite(BakedQuad quad) { return quad.getSprite().contents().name(); }

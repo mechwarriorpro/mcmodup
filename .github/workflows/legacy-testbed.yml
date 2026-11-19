@@ -8,6 +8,9 @@ on:
       - 'mcmodup/legacy_testbed.py'
       - 'mcmodup/__main__.py'
       - 'mcmodup/minechem_pair.py'
+      - 'mcmodup/machines.py'
+      - 'mcmodup/catalogs.py'
+      - 'mcmodup/source_ports.py'
       - 'mcmodup/icbm_plate.py'
       - 'mcmodup/atomic_thermometer.py'
       - 'mcmodup/geostrata_rocks.py'
@@ -17,6 +20,8 @@ on:
       - 'mcmodup/templates/atomic_thermometer/**'
       - 'mcmodup/templates/geostrata_rocks/**'
       - 'tests/legacy_testbed_smoke.py'
+      - 'tests/geostrata_client_smoke.py'
+      - 'tests/fixtures/GeoConnectedClientSmoke.java'
       - 'tests/test_legacy_testbed.py'
 
 permissions:
@@ -37,7 +42,9 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
-      - name: Fetch pinned inputs and boot only the combined production JAR
+      - name: Check the flat JAR contract
+        run: python -m unittest discover -s tests -p 'test_legacy_testbed.py' -v
+      - name: Build and boot the combined production JAR on server and client
         env:
           PYTHONPATH: .:tests
         shell: bash
@@ -49,11 +56,7 @@ jobs:
               --retry 3 --max-time 120 --max-filesize "$4" --output "$root/$1" "$2"
             printf '%s  %s\n' "$3" "$root/$1" | sha256sum --check
           }
-          download voltz.zip https://raw.githubusercontent.com/TechnicPack/Technic/8c4e20f9225bcd6612fca4cb29c53366317d3e13/servers/voltz/Voltz_Server_v3.0.0c.zip 2eda607746a22edbf45612243adce37a876251e36d46c692a48344fe98eec84e 76658094
-          download Minechem-1.6.4-5.0.5.FINAL.jar https://edge.forgecdn.net/files/2214/881/Minechem-1.6.4-5.0.5.FINAL.jar 2443c7f91351f0e6c2323636be28a6fe8697704f20edf378dfe1a9d7a3070bea 1410748
-          download Minechem-1.7.10-5.0.5.394.jar https://edge.forgecdn.net/files/2230/655/Minechem-1.7.10-5.0.5.394.jar ea802167b760d43828a0648de3727a58d5c1f7737613123ae49f2743188cdae7 1090147
-          download 'GeoStrata 1.6 v23b.zip' https://dist.modpacks.ch/Reika/GeoStrata/Gamma/a4c4318549d1ac6de878c5dce95ac9fa3f55dbb6 afd68aa6ca1222a0f53ee25323c18bd3c2473c346a15345b216c9ef1042a0414 1138465
           download installer.jar https://maven.neoforged.net/releases/net/neoforged/neoforge/21.1.267/neoforge-21.1.267-installer.jar 25bbe66e82205abeccdfd23bdac61e6a8e9ff1333885f3c9f31d392a5ec97e60 12000000
           java -jar "$root/installer.jar" --installServer "$root/server" > "$root/installer.log" 2>&1 || { tail -75 "$root/installer.log"; exit 1; }
-          python -m legacy_testbed_smoke "$root"
+          xvfb-run -a python -m legacy_testbed_smoke "$root" --fetch-originals --client
           # Do not publish private-use GeoStrata textures or derivative archives.

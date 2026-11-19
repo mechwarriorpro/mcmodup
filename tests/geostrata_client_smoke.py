@@ -14,7 +14,7 @@ from mcmodup.source_ports import BuildOptions, build, load_ports
 from neoforge_smoke import FIXTURES
 
 
-def check_client(root: Path, jar: Path) -> str:
+def check_client(root: Path, jar: Path, *, testbed: bool = False) -> str:
     namespace = "mcmodup_geo_client"
     evidence = root / "run/client-evidence.txt"
     expected = file_digest(jar)
@@ -27,6 +27,7 @@ neoForge.runs.named('client') {{
     jvmArgument '-Xmx3G'
     programArguments.addAll '--width', '1024', '--height', '576'
     systemProperty 'mcmodup.geoJar', '{jar.name}'
+    systemProperty 'mcmodup.testbedClient', '{str(testbed).lower()}'
     systemProperty 'mcmodup.geoEvidence', '{evidence.as_posix()}'
 }}
 """,

@@ -48,7 +48,7 @@ public final class Synthesis394Checks {
     @GameTest(template = "test_room")
     public static void exactSynthesisBatches(GameTestHelper test) {
         var machine = place(test, BlockPos.ZERO);
-        test.assertTrue(machine.input().getSlots() == 18 && machine.output().getSlots() == 1, "Unexpected exposed synthesizer slots");
+        test.assertTrue(machine.input().getSlots() == 19 && machine.output().getSlots() == 19, "Unexpected exposed synthesizer slots");
         test.assertTrue(machine.power().getMaxEnergyStored() == 100_000 && machine.power().receiveEnergy(1000, true) == 100,
                 "Wrong .394 synthesis FE limits");
         for (String row : TRACE) {

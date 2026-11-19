@@ -1,6 +1,7 @@
 package @PACKAGE@;
 
 import com.mojang.serialization.MapCodec;
+import java.util.EnumMap;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.HolderLookup;
@@ -61,7 +62,7 @@ final class Synthesizer394 extends BaseEntityBlock {
         bus.addListener((RegisterCapabilitiesEvent event) -> {
             event.registerBlockEntity(Capabilities.EnergyStorage.BLOCK, ENTITY.get(), (tile, side) -> tile.power);
             event.registerBlockEntity(Capabilities.ItemHandler.BLOCK, ENTITY.get(), (tile, side) ->
-                side == null || side == Direction.UP ? tile.input : tile.output);
+                tile.faces.get(side == null ? Direction.UP : side));
         });
         return items.registerSimpleBlockItem(BLOCK);
     }
@@ -128,28 +129,51 @@ final class Synthesizer394 extends BaseEntityBlock {
         final Power power = new Power();
         private Synthesis394Rules.Rule selected;
         private int cursor = -1;
-        private final IItemHandler output = new IItemHandler() {
-            @Override public int getSlots() { return 1; }
-            @Override public ItemStack getStackInSlot(int slot) { return slot == 0 && plan() != null ? preview() : ItemStack.EMPTY; }
-            @Override public ItemStack insertItem(int slot, ItemStack stack, boolean simulate) { return stack; }
-            @Override public ItemStack extractItem(int slot, int amount, boolean simulate) {
-                return slot == 0 ? extract(amount, simulate) : ItemStack.EMPTY;
-            }
-            @Override public int getSlotLimit(int slot) { return slot == 0 ? 64 : 0; }
-            @Override public boolean isItemValid(int slot, ItemStack stack) { return false; }
-        };
-        private final IItemHandler input = new IItemHandler() {
-            @Override public int getSlots() { return STORAGE_SLOTS; }
-            @Override public ItemStack getStackInSlot(int slot) { return storage.getStackInSlot(slot); }
-            @Override public ItemStack insertItem(int slot, ItemStack stack, boolean simulate) {
-                return storage.insertItem(slot, stack, simulate);
-            }
-            @Override public ItemStack extractItem(int slot, int amount, boolean simulate) { return ItemStack.EMPTY; }
-            @Override public int getSlotLimit(int slot) { return storage.getSlotLimit(slot); }
-            @Override public boolean isItemValid(int slot, ItemStack stack) { return storage.isItemValid(slot, stack); }
-        };
+        private final EnumMap<Direction, IItemHandler> faces = new EnumMap<>(Direction.class);
 
-        Tile(BlockPos pos, BlockState state) { super(ENTITY.get(), pos, state); }
+        /** Mirror the idle 10..28 and ready {0,28} layouts without exposing template slots. */
+        private final class FaceInventory implements IItemHandler {
+            private static final int JOURNAL = STORAGE_SLOTS, RESULT = STORAGE_SLOTS + 1;
+            private final Direction side;
+            FaceInventory(Direction side) { this.side = side; }
+            private boolean resultMode() { return side != Direction.UP && ready(); }
+            private int map(int slot) {
+                if (slot < 0) return -1;
+                if (resultMode()) return slot == 0 ? RESULT : slot == 1 ? JOURNAL : -1;
+                return slot <= JOURNAL ? slot : -1;
+            }
+            @Override public int getSlots() { return resultMode() ? 2 : STORAGE_SLOTS + 1; }
+            @Override public ItemStack getStackInSlot(int slot) {
+                int index = map(slot);
+                return index == JOURNAL ? journal.getStackInSlot(0) : index == RESULT ? preview()
+                    : index >= 0 ? storage.getStackInSlot(index) : ItemStack.EMPTY;
+            }
+            @Override public ItemStack insertItem(int slot, ItemStack stack, boolean simulate) {
+                int index = map(slot);
+                if (index == JOURNAL) return journal.insertItem(0, stack, simulate);
+                return index >= 0 && index < STORAGE_SLOTS && side != Direction.DOWN ? storage.insertItem(index, stack, simulate) : stack;
+            }
+            @Override public ItemStack extractItem(int slot, int amount, boolean simulate) {
+                int index = map(slot);
+                if (amount <= 0) return ItemStack.EMPTY;
+                if (index == JOURNAL && side != Direction.DOWN) return journal.extractItem(0, amount, simulate);
+                return index == RESULT && side == Direction.DOWN ? extract(amount, simulate) : ItemStack.EMPTY;
+            }
+            @Override public int getSlotLimit(int slot) {
+                int index = map(slot);
+                return index == JOURNAL ? 1 : index >= 0 ? 64 : 0;
+            }
+            @Override public boolean isItemValid(int slot, ItemStack stack) {
+                int index = map(slot);
+                if (index == JOURNAL) return journal.getStackInSlot(0).isEmpty() && journal.isItemValid(0, stack);
+                return index >= 0 && index < STORAGE_SLOTS && side != Direction.DOWN && storage.isItemValid(index, stack);
+            }
+        }
+
+        Tile(BlockPos pos, BlockState state) {
+            super(ENTITY.get(), pos, state);
+            for (var direction : Direction.values()) faces.put(direction, new FaceInventory(direction));
+        }
         @Override public Component getDisplayName() { return Component.translatable("block.@NAMESPACE@.synthesizer"); }
         @Override public AbstractContainerMenu createMenu(int id, Inventory player, Player opener) {
             return new Synthesis394Menu(id, player, this);

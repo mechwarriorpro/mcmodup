@@ -25,7 +25,7 @@ STACK = "net/minecraft/item/ItemStack"
 RESOURCE = "src/main/resources/"
 FINAL = PROFILES["minechem-chemistry"]
 RELEASE_394 = PROFILES[RELEASE_394_PROFILE]
-VERSIONS = {FINAL.namespace: "1.3.3-partial", RELEASE_394.namespace: "1.4.1-partial"}
+VERSIONS = {FINAL.namespace: "1.3.3-partial", RELEASE_394.namespace: "1.4.2-partial"}
 FEATURES = {"Buffered iron decomposition and saved remaining output": "savedbufferdrains",
             "Original decomposer output-slot method": "linkedslotrule",
             "Journal cloning preserves discovery and selection components": "journalcloningpreservescomponents"}
@@ -33,7 +33,8 @@ FEATURES_394 = FEATURES | {"All 198 measured item and molecule decomposition rul
                            "5,000 mB water tank, shared input priority and buffer save": "watertankroundtripandpriority",
                            "Measured .394 synthesis batches with exact ghost slot counts and extraction cost": "exactsynthesisbatches",
                            "Ghost editing and saved synthesis, no unpaid extraction": "ghosteditingandsavedsynthesis",
-                           "Microscope research, journal selection, and saved synthesis template": "discoveredjournalrestoresactivesynthesis"}
+                           "Microscope research, journal selection, and saved synthesis template": "discoveredjournalrestoresactivesynthesis",
+                           "Sided journal automation and on-extraction payment": "sidedjournalandpaidextraction"}
 
 
 FEATURES_FINAL = FEATURES | {"FINAL fluid boundary, volatile remainder and saved converted water": "finalwaterintakeandsave"}
@@ -48,6 +49,11 @@ def journal_clone_checks(package: str, test_namespace: str, namespace: str, name
     return ((TEMPLATES / "minechem/JournalCloneChecks.java").read_text(encoding="utf-8")
             .replace("@PACKAGE@", package).replace("@TEST_NAMESPACE@", test_namespace).replace("@NAMESPACE@", namespace)
             .replace("@CLASS@", name))
+
+
+def sided394_checks(package: str, test_namespace: str) -> str:
+    return ((TEMPLATES / "minechem/Sided394Checks.java").read_text(encoding="utf-8")
+            .replace("@PACKAGE@", package).replace("@TEST_NAMESPACE@", test_namespace))
 
 
 def release394_checks(package: str, test_namespace: str, entries: list[CatalogEntry]) -> str:
@@ -149,6 +155,7 @@ def _recipe(original: Path, profile: Profile, checksum: str, output: Path) -> di
     if prepaid:
         files[f"src/main/java/{java_root}/Release394Checks.java"] = release394_checks(package, namespace, entries)
         files[f"src/main/java/{java_root}/Synthesis394Checks.java"] = synthesis394_checks(package, namespace, entries)
+        files[f"src/main/java/{java_root}/Sided394Checks.java"] = sided394_checks(package, namespace)
     else:
         files[f"src/main/java/{java_root}/FinalWaterChecks.java"] = final_water_checks(package, namespace)
         files[RESOURCE + f"data/{namespace}/structure/water_room.nbt"] = empty_test_structure(5)
@@ -164,7 +171,7 @@ def _recipe(original: Path, profile: Profile, checksum: str, output: Path) -> di
 tasks.named('compileJava') {{ classpath += files('src/main/resources') }}
 tasks.named('jar') {{
     archiveFileName = '{artifact}'
-    exclude '{tests}.class', '{java_root}/Release394Checks*.class', '{java_root}/Synthesis394Checks*.class', '{java_root}/JournalCloneChecks*.class', '{java_root}/FinalWaterChecks*.class', 'data/{namespace}/structure/*.nbt'
+    exclude '{tests}.class', '{java_root}/Release394Checks*.class', '{java_root}/Synthesis394Checks*.class', '{java_root}/Sided394Checks*.class', '{java_root}/JournalCloneChecks*.class', '{java_root}/FinalWaterChecks*.class', 'data/{namespace}/structure/*.nbt'
 }}
 neoForge.runs.create('gameTestServer') {{
     type = 'gameTestServer'

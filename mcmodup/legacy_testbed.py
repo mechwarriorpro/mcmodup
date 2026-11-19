@@ -1,11 +1,15 @@
 """Build the exact, private-use NeoForge testbed as a single flat multi-mod JAR."""
 
+from dataclasses import dataclass
 from hashlib import sha256
 import json
 from pathlib import Path
 import shutil
 import tempfile
 import tomllib
+from urllib.error import URLError
+from urllib.parse import urlsplit
+from urllib.request import HTTPRedirectHandler, Request, build_opener
 from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
 
 from . import MINECRAFT_VERSION, NEOFORGE_VERSION, atomic_thermometer, geostrata_rocks, icbm_plate, minechem_pair
@@ -13,7 +17,7 @@ from .classfiles import CLASS_LIMIT, read_class
 from .inputs import InputError, MOD_ARCHIVE_LIMIT, open_input
 from .method_ports import PROVENANCE
 from .port import _toml
-from .source_ports import BuildOptions, build, digest, load_ports, require_jdk
+from .source_ports import BuildOptions, _copy_limited, build, digest, load_ports, require_jdk
 
 
 JAR_NAME = f"mcmodup-legacy-testbed-{MINECRAFT_VERSION}.jar"
@@ -24,6 +28,61 @@ VOLTZ_MEMBERS = {
     "mods/icbm-1.4.1.344.jar": icbm_plate.LEGACY_SHA256,
     "mods/calclavia-core-development-1.2.0.6-main.jar": "0372d373993769264da00cef69c3814f89295856d5f14dd570d6a7aaac6c5585",
 }
+
+@dataclass(frozen=True)
+class OriginalArchive:
+    filename: str
+    url: str
+    sha256: str
+    size: int
+
+
+ORIGINALS = (
+    OriginalArchive("Minechem-1.6.4-5.0.5.FINAL.jar", "https://edge.forgecdn.net/files/2214/881/Minechem-1.6.4-5.0.5.FINAL.jar", minechem_pair.FINAL_LEGACY_SHA256, 1_410_748),
+    OriginalArchive("Minechem-1.7.10-5.0.5.394.jar", "https://edge.forgecdn.net/files/2230/655/Minechem-1.7.10-5.0.5.394.jar", minechem_pair.RELEASE_394_SHA256, 1_090_147),
+    OriginalArchive("Voltz_Server_v3.0.0c.zip", "https://raw.githubusercontent.com/TechnicPack/Technic/8c4e20f9225bcd6612fca4cb29c53366317d3e13/servers/voltz/Voltz_Server_v3.0.0c.zip", VOLTZ_SHA256, 76_658_094),
+    OriginalArchive("GeoStrata 1.6 v23b.zip", "https://dist.modpacks.ch/Reika/GeoStrata/Gamma/a4c4318549d1ac6de878c5dce95ac9fa3f55dbb6", geostrata_rocks.LEGACY_SHA256, 1_138_465),
+)
+
+
+class _HTTPSRedirect(HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        if urlsplit(newurl).scheme != "https":
+            raise InputError("An original archive download tried to redirect to a non-HTTPS URL")
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+def fetch_originals(directory: Path) -> tuple[Path, ...]:
+    """Fetch only the four pinned originals into a new scratch directory."""
+    directory.mkdir(parents=True, exist_ok=False)
+    opener = build_opener(_HTTPSRedirect())
+    try:
+        paths = []
+        for pin in ORIGINALS:
+            path = directory / pin.filename
+            print(f"Fetching {pin.filename} …", flush=True)
+            request = Request(pin.url, headers={"User-Agent": "mcmodup-legacy-testbed/1"})
+            with opener.open(request, timeout=90) as response:
+                _copy_limited(response, path, pin.size)
+            if path.stat().st_size != pin.size or digest(path) != pin.sha256:
+                raise InputError(f"Unexpected bytes from the {pin.filename} download. Supply the exact original file instead.")
+            paths.append(path)
+        return tuple(paths)
+    except BaseException as error:
+        shutil.rmtree(directory)
+        if isinstance(error, (OSError, URLError)):
+            raise InputError(f"Could not fetch {pin.filename}: {error}. Supply the four exact original files to skip the original-archive downloads.") from error
+        raise
+
+
+def build_known_testbed(output: Path, *, allow_preview: bool = False, timeout: int = 600) -> Path:
+    _validate_request(output, allow_preview, timeout)
+    require_jdk()  # Fail before downloads if this machine cannot compile the port.
+    with tempfile.TemporaryDirectory(prefix="mcmodup-originals-") as temp:
+        paths = fetch_originals(Path(temp) / "originals")
+        return build_testbed(*paths, output, allow_preview=allow_preview, timeout=timeout)
+
+
 COMPONENTS = {
     **minechem_pair.VERSIONS,
     atomic_thermometer.MOD_ID: atomic_thermometer.VERSION,
@@ -36,12 +95,18 @@ ARTIFACT_MARKERS = (PROVENANCE, "META-INF/MCModUp-NOTICE.txt")
 
 # Owners are read from the original archives. A bytecode inventory is not a promise of feature parity.
 TARGETS = {
-    "minechem": ("minechem/tileentity/decomposer/DecomposerTileEntity", "minechem/tileentity/synthesis/SynthesisTileEntity"),
+    "minechem": ("minechem/tileentity/decomposer/DecomposerTileEntity", "minechem/tileentity/synthesis/SynthesisTileEntity",
+                 "minechem/tileentity/multiblock/fission/FissionTileEntity", "minechem/tileentity/multiblock/fusion/FusionTileEntity",
+                 "minechem/tileentity/blueprintprojector/BlueprintProjectorTileEntity"),
     "icbm": ("icbm/explosion/machines/TileLauncherBase", "icbm/explosion/machines/TileLauncherFrame",
              "icbm/explosion/machines/TileLauncherScreen", "icbm/explosion/missile/missile/EntityMissile",
-             "icbm/explosion/missile/modular/TileMissileAssembler", "icbm/sentry/turret/auto/TurretAntiAir"),
+             "icbm/explosion/missile/missile/ItemMissile", "icbm/explosion/missile/modular/TileMissileAssembler",
+             "icbm/sentry/turret/auto/TurretAntiAir", "icbm/sentry/turret/auto/TurretGun", "icbm/sentry/turret/auto/TurretLaser",
+             "icbm/sentry/turret/mounted/MountedRailgun"),
     "atomic": ("atomicscience/particle/accelerator/TileAccelerator", "atomicscience/particle/accelerator/EntityParticle",
-               "atomicscience/schematic/SchematicAccelerator"),
+               "atomicscience/fusion/BlockElectromagnet", "atomicscience/fusion/BlockElectromagnetGlass",
+               "atomicscience/schematic/SchematicAccelerator", "atomicscience/schematic/SchematicFissionReactor",
+               "atomicscience/schematic/SchematicBreedingReactor", "atomicscience/schematic/SchematicFusionReactor"),
     "geostrata": ("Reika/GeoStrata/Blocks/BlockCaveCrystal", "Reika/GeoStrata/Blocks/BlockCrystalLamp",
                   "Reika/GeoStrata/Blocks/BlockSuperCrystal", "Reika/GeoStrata/Items/ItemCrystalShard"),
     "autobuilder": ("calclavia/components/creative/BlockCreativeBuilder", "calclavia/lib/schematic/Schematic"),
@@ -163,8 +228,7 @@ def _combine(partials: dict[str, Path], audit: dict, output: Path) -> None:
             archive.writestr(entry, content, compress_type=ZIP_DEFLATED)
 
 
-def build_testbed(final: Path, release394: Path, voltz: Path, geo: Path, output: Path, *,
-                  allow_preview: bool = False, timeout: int = 600) -> Path:
+def _validate_request(output: Path, allow_preview: bool, timeout: int) -> Path:
     if not allow_preview:
         raise InputError("The one-JAR testbed is incomplete and private-use. Pass --allow-preview-ports to build it.")
     if not 1 <= timeout <= 1800:
@@ -172,6 +236,12 @@ def build_testbed(final: Path, release394: Path, voltz: Path, geo: Path, output:
     output = output.expanduser()
     if output.exists() or output.is_symlink():
         raise InputError("Choose a new output directory outside your installed instances.")
+    return output
+
+
+def build_testbed(final: Path, release394: Path, voltz: Path, geo: Path, output: Path, *,
+                  allow_preview: bool = False, timeout: int = 600) -> Path:
+    output = _validate_request(output, allow_preview, timeout)
     final = _check(final, minechem_pair.FINAL_LEGACY_SHA256)
     release394 = _check(release394, minechem_pair.RELEASE_394_SHA256)
     geo = _check(geo, geostrata_rocks.LEGACY_SHA256)
