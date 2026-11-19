@@ -37,7 +37,7 @@ def compile_probe(root: Path, server: Path, forge: Path, javac: str) -> None:
                                                                  "LegacyMinechemSynthesis394.java", "LegacyMinechemJournal394.java",
                                                                  "LegacyMinechemReactors.java", "LegacyMinechemSynthesisFinal.java",
                                                                  "LegacyMinechemChemistry.java", "LegacyMinechemPolytool.java",
-                                                                 "LegacyMinechemMatter.java", "LegacyMinechemFluidAutomation.java"))],
+                                                                 "LegacyMinechemMatter.java", "LegacyMinechemPlayerDecay.java", "LegacyMinechemFluidAutomation.java"))],
                             capture_output=True, text=True, timeout=60)
     assert result.returncode == 0, result.stderr
     with ZipFile(server / "mods/mcmodup-minechemoracle.jar", "x") as jar:
@@ -93,7 +93,7 @@ def original(root: Path, version: str, matter_only: bool = False) -> None:
         raise
     assert file_digest(server / "mods" / name) == checksum
     note(f"Original Minechem decomposer on Forge {version}", evidence)
-    for kind in (("fluids", "radiation") if matter else ()):
+    for kind in (("fluids", "radiation", "player-decay") if matter else ()):
         path = server / f"minechem-{kind}.txt"
         actual = dict(line.split("=", 1) for line in path.read_text(encoding="utf-8").splitlines())
         expected = observations(matter_trace_name(version == "1.7.10", kind))

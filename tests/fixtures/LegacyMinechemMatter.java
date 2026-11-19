@@ -41,7 +41,7 @@ final class LegacyMinechemMatter {
         survey.fluids();
         survey.decayAndStorage(x, y, z);
         if (!old) LegacyMinechemFluidAutomation.survey(world, x, y + 32, z);
-        return "Measured chemical fluid registry, tube/bucket transactions, decay thresholds and shielded inventories";
+        return "Measured chemical fluid registry, tube/bucket transactions, decay thresholds, player warnings and inventory shielding";
     }
 
     private void fluids() throws Exception {
@@ -196,6 +196,7 @@ final class LegacyMinechemMatter {
         for (Field field : Arrays.asList(generate, density, size)) field.setAccessible(true);
         rows.put("worldgen", generate.getBoolean(null) + "/" + density.getInt(null) + "/" + size.getInt(null));
         write("radiation", rows);
+        write("player-decay", new LegacyMinechemPlayerDecay(this, world, old, uranium, life).survey());
     }
 
     private String chemicalProducts(Object result) throws Exception {
@@ -228,18 +229,30 @@ final class LegacyMinechemMatter {
         return key(tube) + "@" + damage;
     }
 
-    private Object aged(int id, int size, long age) throws Exception {
-        Object tube = make.newInstance(element, size, id);
+    Object aged(int id, int size, long age) throws Exception {
+        return aged(make.newInstance(element, size, id), age);
+    }
+
+    Object aged(Object sample, long age) throws Exception {
         Object tag = nbt.newInstance();
         Method put = nbt.getMethod("func_74772_a", String.class, long.class);
         put.invoke(tag, "lastUpdate", now - age);
         if (old) {
-            Object type = ec.getEnumConstants()[id];
+            Object type = ec.getEnumConstants()[(Integer) meta.invoke(sample)];
             Object radiation = ec.getMethod("radioactivity").invoke(type);
             put.invoke(tag, "life", ((Number) radiation.getClass().getMethod("getLife").invoke(radiation)).longValue());
         } else put.invoke(tag, "decayStart", now - age);
-        stack.getMethod("func_77982_d", nbt).invoke(tube, tag);
-        return tube;
+        stack.getMethod("func_77982_d", nbt).invoke(sample, tag);
+        return sample;
+    }
+
+    Object filledBucket(String key) throws Exception {
+        int id = Integer.parseInt(key.substring(1));
+        Object chemical = (key.startsWith("m") ? mc.getMethod("getById", int.class) : ec.getMethod("getByID", int.class)).invoke(null, id);
+        Class<?> buckets = Class.forName("minechem.item.bucket.MinechemBucketHandler");
+        Object held = buckets.getMethod("getBucket", Class.forName("minechem.item.MinechemChemicalType"))
+            .invoke(buckets.getMethod("getInstance").invoke(null), chemical);
+        return make.newInstance(held, 1, 0);
     }
 
     private String storage(int x, int y, int z, int uranium, long life) throws Exception {
@@ -285,14 +298,18 @@ final class LegacyMinechemMatter {
         return stack.getMethod("func_77977_a").invoke(input) + "/" + chemicalProducts(recipe.getClass().getMethod("getOutput").invoke(recipe));
     }
 
-    private void assignWorld(Object tile) throws Exception {
+    void assignWorld(Object tile) throws Exception {
         if (old) tile.getClass().getField("field_70331_k").set(tile, world);
         else tile.getClass().getMethod("func_145834_a", w).invoke(tile, world);
     }
 
-    private String key(Object value) throws Exception {
+    String key(Object value) throws Exception {
         if (value == null) return "-";
         Object type = itemOf.invoke(value);
+        if (!old && type.getClass().getName().equals("minechem.item.bucket.MinechemBucketItem")) {
+            Object chemical = type.getClass().getField("chemical").get(type);
+            return (ec.isInstance(chemical) ? "be" + ec.getMethod("atomicNumber").invoke(chemical) : "bm" + mc.getMethod("id").invoke(chemical)) + "x" + count.getInt(value);
+        }
         return (type == element ? "e" : type == molecule ? "m" : "item") + meta.invoke(value) + "x" + count.getInt(value);
     }
 
