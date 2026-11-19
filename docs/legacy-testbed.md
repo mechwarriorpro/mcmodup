@@ -60,9 +60,9 @@ These are separate builds of the same in-game machines, not cross-compatible inv
 
 ## Verified build
 
-[Run 44487688782](https://github.com/mechwarriorpro/mcmodup/actions/runs/44487688782/job/135435146739) passed **39 component tests and 22 staged GameTests** on NeoForge 21.1.267, including all six reactor and survival-crafting cases. The produced JAR booted on a clean dedicated server without other mods. A staged client loaded a fresh world, checked models from all five components, reloaded resources, and opened the .394 projector screen with its blueprint synchronized from the integrated server. These are gameplay and loading checks, not original-client visual parity.
+[Run 44492694048](https://github.com/mechwarriorpro/mcmodup/actions/runs/44492694048/job/135452042383) passed **43 component GameTests and 26 tests against the assembled JAR** on NeoForge 21.1.267. The packed FINAL tests replayed 277 paid canonical patterns, 22 earlier winners, and two unavailable outcomes. The same JAR booted and shut down on a clean dedicated server without other mods. In a fresh world, the graphical client checked models from all five components, reloaded resources, synced an actual .394 projector blueprint, and used FINAL's Synthesizer to take a paid output and retrieve its journal. That screen correctly synced a 144-tube ghost and the full stored charge without treating the ghost as a real stack.
 
-The SHA-256 of the JAR tested in that run was `4f517a2bab8dab46e5d3caad850e2ff6996ba42611edae23ac94d104de3e796b`. This identifies that runner's artifact; use the report next to your local output for its own hash.
+That runner's JAR had SHA-256 `43eb53e462ea0fb737fa8d1b625b870a6b6b9d062d7e50bbd833724e828e3660`. Use the report next to your local output for its own hash. This is not an original-client visual comparison or evidence of full parity.
 
 ## What is still missing
 
