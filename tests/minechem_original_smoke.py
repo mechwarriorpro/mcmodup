@@ -14,6 +14,7 @@ from legacy_recipe_fixture import java8, legacy_command, prepare, run_server
 from mixed_legacy_pack_smoke import note
 from mcmodup.minechem_final_synthesis import TRACE
 from mcmodup.minechem_materials import observations
+from mcmodup.minechem_polytool import trace_name
 from mcmodup.machines import SYNTHESIS_394_COLLISION, release394_synthesis_trace, release394_trace
 from mcmodup.runtime import file_digest
 
@@ -86,7 +87,10 @@ def original(root: Path, version: str) -> None:
     assert file_digest(server / "mods" / name) == checksum
     note(f"Original Minechem decomposer on Forge {version}", evidence)
     verify_chemistry(server, version)
-    note(f"Minechem {version} Polytool", (server / "minechem-polytool.txt").read_text(encoding="utf-8"))
+    polytool = (server / "minechem-polytool.txt").read_text(encoding="utf-8").splitlines()
+    expected_tool = [f"{key}={value}" for key, value in observations(trace_name(version == "1.7.10")).items()]
+    assert polytool == expected_tool, ("Polytool trace changed: " + str(sorted(set(polytool).symmetric_difference(expected_tool))[:10]))
+    note(f"Minechem {version} Polytool", "\n".join(polytool))
     shape = (server / "minechem-blueprints.txt").read_text(encoding="utf-8")
     expected_shape = Path(__file__).resolve().parents[1] / "mcmodup/templates/minechem/reactor-blueprints.txt"
     assert shape.splitlines() == expected_shape.read_text(encoding="utf-8").splitlines(), "Blueprint geometry in the original binary changed"

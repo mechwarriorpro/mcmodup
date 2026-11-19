@@ -124,11 +124,8 @@ def resolve(key: str, namespace: str, ids: dict[str, str]) -> tuple[str, bool]:
     return f"minecraft:{item}", True
 
 
-def asset_paths(namespace: str, *, polytool_only: bool = False) -> dict[str, str]:
-    polytool = {"assets/minechem/textures/items/polytool.png": f"assets/{namespace}/textures/item/polytool.png"}
-    if polytool_only:
-        return polytool
-    return polytool | {f"assets/minechem/textures/{old}.png": f"assets/{namespace}/textures/{new}.png" for old, new in (
+def asset_paths(namespace: str) -> dict[str, str]:
+    return {f"assets/minechem/textures/{old}.png": f"assets/{namespace}/textures/{new}.png" for old, new in (
         ("gui/SynthesisGUI", "gui/final_synthesis"), ("blocks/blockSynthesis", "block/synthesizer"),
         ("items/AtomicManipulator", "item/atomic_manipulator"),
     )}
@@ -138,7 +135,7 @@ def read_assets(source, paths: dict[str, str]) -> dict[str, bytes]:
     textures = {name: source.read(name, 1024 * 1024) for name in paths}
     for name, data in textures.items():
         if not data.startswith(PNG_SIGNATURE) or f"{name}.mcmeta" in source.files:
-            raise InputError(f"Expected a standalone FINAL synthesizer PNG: {name!r}")
+            raise InputError(f"Expected a standalone Minechem PNG: {name!r}")
     return textures
 
 

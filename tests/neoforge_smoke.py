@@ -7,7 +7,7 @@ import subprocess
 import zipfile
 
 from mcmodup.audit import ModMetadata
-from mcmodup import minechem_final_synthesis
+from mcmodup import minechem_final_synthesis, minechem_polytool
 from mcmodup.catalogs import RELEASE_394_SHA256, CatalogEntry
 from mcmodup.machines import FINAL_LEGACY_SHA256, DecomposerMode, machine_recipes
 from mcmodup.method_ports import PROVENANCE
@@ -49,7 +49,8 @@ def check_minechem_artifacts(final: Path, release394: Path) -> list[CatalogEntry
             assert all(id_.startswith(f"{profile.namespace}:") for id_ in effect_data)
             for key in ("weapon_coating", "food_spiking"):
                 assert f"data/{profile.namespace}/recipe/{key}.json" in jar.namelist()
-            assert f"assets/{profile.namespace}/textures/item/polytool.png" in jar.namelist()
+            assert not any("PolytoolChecks" in name for name in jar.namelist()), "Production JAR contains Polytool fixtures"
+            assert set(minechem_polytool.asset_paths(profile.namespace).values()) <= set(jar.namelist())
             assert f"data/{profile.namespace}/recipe/journal_clone.json" in jar.namelist()
         return entries
 
@@ -96,6 +97,8 @@ neoForge.runs.create('gameTestServer') {{
         tests["src/main/java/mcmodup/test/JournalCloneChecks.java"] = journal_clone_checks("mcmodup.test", namespace, FINAL.namespace)
         tests["src/main/java/mcmodup/test/SynthesisFinalChecks.java"] = minechem_final_synthesis.checks(
             "mcmodup.test", namespace, minechem_final_synthesis.entries_from_catalog(catalog))
+        tests["src/main/java/mcmodup/test/PolytoolChecksFinal.java"] = minechem_polytool.checks(
+            "mcmodup.test", namespace, FINAL.namespace, minechem_final_synthesis.entries_from_catalog(catalog), False)
         research_rooms[f"src/main/resources/data/{namespace}/structure/synthesis_room.nbt"] = empty_test_structure(5)
     if minechem_394:
         assert buffered, "The paired tests require the actual FINAL-based build"
@@ -106,6 +109,8 @@ neoForge.runs.create('gameTestServer') {{
         tests["src/main/java/mcmodup/test/Synthesis394Checks.java"] = synthesis394_checks("mcmodup.test", namespace, entries)
         tests["src/main/java/mcmodup/test/JournalCloneChecks394.java"] = journal_clone_checks(
             "mcmodup.test", namespace, RELEASE_394.namespace, "JournalCloneChecks394")
+        tests["src/main/java/mcmodup/test/PolytoolChecks394.java"] = minechem_polytool.checks(
+            "mcmodup.test", namespace, RELEASE_394.namespace, entries, True)
         research_rooms[f"src/main/resources/data/{namespace}/structure/journal_room.nbt"] = empty_test_structure(5)
     def integrate_fixture(filename, code, package, own_namespace):
         # The standalone fixtures normally own independent test mod IDs.

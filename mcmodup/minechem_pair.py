@@ -7,7 +7,7 @@ import shutil
 import tempfile
 from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
 
-from . import NEOFORGE_VERSION, minechem_final_synthesis, minechem_reactors
+from . import NEOFORGE_VERSION, minechem_final_synthesis, minechem_polytool, minechem_reactors
 from .api import ClassLocation
 from .catalogs import PROFILES, RELEASE_394_PROFILE, RELEASE_394_SHA256, CatalogEntry, Profile
 from .classfiles import CLASS_LIMIT
@@ -25,7 +25,7 @@ STACK = "net/minecraft/item/ItemStack"
 RESOURCE = "src/main/resources/"
 FINAL = PROFILES["minechem-chemistry"]
 RELEASE_394 = PROFILES[RELEASE_394_PROFILE]
-VERSIONS = {FINAL.namespace: "1.3.6-partial", RELEASE_394.namespace: "1.4.4-partial"}
+VERSIONS = {FINAL.namespace: "1.3.7-partial", RELEASE_394.namespace: "1.4.5-partial"}
 FEATURES = minechem_reactors.FEATURES | {"Buffered iron decomposition and saved remaining output": "savedbufferdrains",
             "Original decomposer output-slot method": "linkedslotrule",
             "Journal cloning preserves discovery and selection components": "journalcloningpreservescomponents"}
@@ -44,7 +44,7 @@ def chemistry_gameplay_checks(package: str, test_namespace: str, prepaid: bool) 
             .replace("@CLASS@", name).replace("@PREFIX@", "release394" if prepaid else "final").replace("@PREPAID@", str(prepaid).lower()))
 
 
-FEATURES_394 = FEATURES | gameplay_features(True) | {"All 198 measured item and molecule decomposition rules": "materialdecompositionmatchestrace",
+FEATURES_394 = FEATURES | gameplay_features(True) | minechem_polytool.features(True) | {"All 198 measured item and molecule decomposition rules": "materialdecompositionmatchestrace",
                            "5,000 mB water tank, shared input priority and buffer save": "watertankroundtripandpriority",
                            "Measured .394 synthesis batches with exact ghost slot counts and extraction cost": "exactsynthesisbatches",
                            "Ghost editing and saved synthesis, no unpaid extraction": "ghosteditingandsavedsynthesis",
@@ -54,7 +54,7 @@ FEATURES_394 = FEATURES | gameplay_features(True) | {"All 198 measured item and 
                            "Sided journal automation and on-extraction payment": "sidedjournalandpaidextraction"}
 
 
-FEATURES_FINAL = FEATURES | gameplay_features(False) | {"FINAL fluid boundary, volatile remainder and saved converted water": "finalwaterintakeandsave"} | minechem_final_synthesis.FEATURES
+FEATURES_FINAL = FEATURES | gameplay_features(False) | minechem_polytool.features(False) | {"FINAL fluid boundary, volatile remainder and saved converted water": "finalwaterintakeandsave"} | minechem_final_synthesis.FEATURES
 
 
 def final_water_checks(package: str, test_namespace: str) -> str:
@@ -150,7 +150,9 @@ def _recipe(original: Path, profile: Profile, checksum: str, output: Path) -> di
     locations = [ClassLocation(original, owner + ".class", owner) for owner in profile.owners]
     entries = _catalog_entries(profile, locations)
     reactor_icons = minechem_reactors.asset_paths(namespace, prepaid)
-    synthesis_icons = minechem_final_synthesis.asset_paths(namespace, polytool_only=prepaid)
+    synthesis_icons = minechem_polytool.asset_paths(namespace)
+    if not prepaid:
+        synthesis_icons.update(minechem_final_synthesis.asset_paths(namespace))
     with open_input(original) as source:
         if source.warnings:
             raise InputError("Cannot verify a Minechem original with duplicate or unsafe members")
@@ -183,6 +185,8 @@ def _recipe(original: Path, profile: Profile, checksum: str, output: Path) -> di
         .replace("@NAMESPACE@", namespace).replace("@PREPAID@", str(prepaid).lower()))
     gameplay_name = "ChemistryGameplayChecks394" if prepaid else "ChemistryGameplayChecksFinal"
     files[f"src/main/java/{java_root}/{gameplay_name}.java"] = chemistry_gameplay_checks(package, namespace, prepaid)
+    suffix = "394" if prepaid else "Final"
+    files[f"src/main/java/{java_root}/PolytoolChecks{suffix}.java"] = minechem_polytool.checks(package, namespace, namespace, entries, prepaid)
     files[f"src/main/java/{java_root}/JournalCloneChecks.java"] = journal_clone_checks(package, namespace, namespace)
     if prepaid:
         files[f"src/main/java/{java_root}/Release394Checks.java"] = release394_checks(package, namespace, entries)
@@ -205,7 +209,7 @@ def _recipe(original: Path, profile: Profile, checksum: str, output: Path) -> di
 tasks.named('compileJava') {{ classpath += files('src/main/resources') }}
 tasks.named('jar') {{
     archiveFileName = '{artifact}'
-    exclude '{tests}.class', '{java_root}/Release394Checks*.class', '{java_root}/Synthesis394Checks*.class', '{java_root}/Sided394Checks*.class', '{java_root}/JournalCloneChecks*.class', '{java_root}/FinalWaterChecks*.class', '{java_root}/SynthesisFinalChecks*.class', '{java_root}/ReactorChecks*.class', '{java_root}/ChemistryGameplayChecks*.class', 'data/{namespace}/structure/*.nbt'
+    exclude '{tests}.class', '{java_root}/Release394Checks*.class', '{java_root}/Synthesis394Checks*.class', '{java_root}/Sided394Checks*.class', '{java_root}/JournalCloneChecks*.class', '{java_root}/FinalWaterChecks*.class', '{java_root}/SynthesisFinalChecks*.class', '{java_root}/ReactorChecks*.class', '{java_root}/ChemistryGameplayChecks*.class', '{java_root}/PolytoolChecks*.class', 'data/{namespace}/structure/*.nbt'
 }}
 neoForge.runs.create('gameTestServer') {{
     type = 'gameTestServer'
@@ -235,8 +239,8 @@ neoForge.runs.create('gameTestServer') {{
             "minimum_tests": len(FEATURES_394 if prepaid else FEATURES_FINAL), "features": FEATURES_394 if prepaid else FEATURES_FINAL,
             "status": "preview", "limitations": [*minechem_reactors.LIMITS, "Fresh worlds only; no legacy ID/save migration or add-on API.",
                 "Native FE, menus and item components replace legacy power, GUI and stack APIs; no original client comparison.",
-                *(() if prepaid else ("FINAL synthesis preserves registered rule order and payment paths. The Polytool result is not yet ported; "
-                                       "native bulk insertion refuses to spend batches that will not fit. Earlier preview synthesizer saves are not migrated.",)),
+                minechem_polytool.LIMIT,
+                *(() if prepaid else ("FINAL synthesis preserves registered rule order and payment paths. Native bulk insertion refuses to spend batches that will not fit. Earlier preview synthesizer saves are not migrated.",)),
                 "Journal cloning is ordered within the trimmed crafting grid; unlike the originals it does not consume extra ingredients."],
             "method_imports": [methods],
             "import_assets": {old: RESOURCE + new for old, new in imported_paths.items()},

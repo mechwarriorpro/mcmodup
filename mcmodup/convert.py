@@ -14,7 +14,7 @@ import zipfile
 
 from . import JAVA_VERSION, MINECRAFT_VERSION, NEOFORGE_VERSION
 from .api import ClassLocation
-from . import minechem_final_synthesis
+from . import minechem_final_synthesis, minechem_polytool
 from .assets import PNG_SIGNATURE
 from .audit import ModMetadata
 from .catalogs import RELEASE_394_PROFILE, CatalogEntry, Profile, recover_catalog
@@ -82,7 +82,8 @@ def _java(package: str, namespace: str, entries: list[CatalogEntry], mode: Decom
                            f'.component(DataComponents.LORE, new ItemLore(List.of({lore})))));')
     if exact:
         definitions.append("        ChemistryEffects.register(bus, mod);")
-        definitions.append('        entries.add(items.registerItem("polytool", PolytoolItem::new));')
+        definitions.extend(('        var polytool = items.registerItem("polytool", PolytoolItem::new);',
+                            '        PolytoolItem.register(bus, polytool);', '        entries.add(polytool);'))
     if mode is not None:
         if final:
             definitions.append("        SynthesizerFinal.registerConfig(mod);")
@@ -182,8 +183,8 @@ def _project_files(profile: Profile, entries: list[CatalogEntry], textures: dict
     namespace = profile.namespace
     package = f"mcmodup.generated.{namespace}"
     mode = _decomposer_mode(profile, digest)
-    version = project_version or {DecomposerMode.FINAL: "1.3.3-partial", DecomposerMode.BATCH: "1.2.0-partial",
-                                  DecomposerMode.RELEASE_394: "1.3.2-partial"}.get(mode, "1.0.0-partial")
+    version = project_version or {DecomposerMode.FINAL: "1.3.4-partial", DecomposerMode.BATCH: "1.2.0-partial",
+                                  DecomposerMode.RELEASE_394: "1.3.3-partial"}.get(mode, "1.0.0-partial")
     machine_rules = machine_recipes(namespace, entries, mode=mode, linked=linked_decomposer) if mode else []
     if mode:
         recipe_files, extra_locales = machine_project(namespace, package, entries, machine_rules, mode=mode,
@@ -217,16 +218,17 @@ def _project_files(profile: Profile, entries: list[CatalogEntry], textures: dict
         features = "Recovered aspect items and crafting-table combinations. This is not the original research system."
     not_ported = profile.not_ported
     if mode in (DecomposerMode.FINAL, DecomposerMode.RELEASE_394):
-        features += (" Includes the base Polytool result, release-local molecule drinking, coating and spiked food, "
+        features += (" Includes release-local Polytool infusion and selected modules, molecule drinking, coating and spiked food, "
                      "and journal cloning with component preservation.")
-        not_ported = ("Unmapped materials, chemical/other third-party fluids, radiation and decay, Polytool modules and energy, "
+        not_ported = ("Unmapped materials, chemical/other third-party fluids, radiation and decay, "
                       "legacy power or add-on integrations, and old saves. Some materials, recipes and effect interactions "
-                      "use native substitutions. Other machines and the original lens chain require a paired or expanded build.")
+                      "use native substitutions. Other machines and the original lens chain require a paired or expanded build. "
+                      + minechem_polytool.LIMIT)
     elif mode == DecomposerMode.BATCH:
         not_ported = "Journal cloning requires the exact FINAL release. The generic profile does not include chemical effects. " + not_ported
     if paired_limitations:
         features += " Includes both original reactor blueprints, a staged projector and release-specific reactor operation."
-        not_ported = " ".join(paired_limitations)
+        not_ported = " ".join((*paired_limitations, minechem_polytool.LIMIT))
     description = f"Partial mod with new IDs. {features} Not ported: {not_ported}"
     code_notice = ("Includes only selected, rewritten legacy method bodies; no original classes or legacy dependencies are bundled."
                    if linked_decomposer else "This JAR contains no legacy JVM classes or dependencies.")
@@ -356,7 +358,9 @@ def convert_catalog(pack: ModPack, mod: PackMod, profile: Profile, output: Path,
         files, recipe_count = _project_files(profile, entries, textures, digest, observed, locations)
         mode = _decomposer_mode(profile, digest)
         if mode in (DecomposerMode.FINAL, DecomposerMode.RELEASE_394):
-            mapping = minechem_final_synthesis.asset_paths(profile.namespace, polytool_only=mode == DecomposerMode.RELEASE_394)
+            mapping = minechem_polytool.asset_paths(profile.namespace)
+            if mode == DecomposerMode.FINAL:
+                mapping.update(minechem_final_synthesis.asset_paths(profile.namespace))
             with open_input(mod.path) as source:
                 reference = minechem_final_synthesis.read_assets(source, mapping)
             files.update({f"src/main/resources/{new}": reference[old] for old, new in mapping.items()})

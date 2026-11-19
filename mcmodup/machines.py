@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 import re
 
-from . import minechem_effects, minechem_final_synthesis, minechem_materials
+from . import minechem_effects, minechem_final_synthesis, minechem_materials, minechem_polytool
 from .catalogs import CatalogEntry
 from .inputs import InputError
 
@@ -28,7 +28,7 @@ class DecomposerMode(StrEnum):
 
 
 def machine_classes(mode: DecomposerMode) -> tuple[str, ...]:
-    research = () if mode == DecomposerMode.BATCH else ("JournalClone", "MaterialRules", "PolytoolItem", *minechem_effects.JAVA)
+    research = () if mode == DecomposerMode.BATCH else ("JournalClone", "MaterialRules", *minechem_effects.JAVA, *minechem_polytool.JAVA)
     synthesis = {DecomposerMode.FINAL: SYNTHESIS_FINAL_CLASSES, DecomposerMode.RELEASE_394: SYNTHESIS_394_CLASSES}.get(mode, ())
     return JAVA_CLASSES + research + synthesis
 
@@ -296,7 +296,7 @@ def machine_project(namespace: str, package: str, entries: list[CatalogEntry], r
                                                "List.of(items.registerSimpleBlockItem(SYNTHESIZER), decomposer)"))
              .replace("@RESEARCH_KEY@", "MaterialRules.validInput(stack) ? id : \"\"" if clone_journal else "id")
              .replace("@FINAL_CAN_UNJAM@", jam_test).replace("@COMPACT_PREPAID@", compact)
-             for name in machine_classes(mode) if name not in ("ChemistryRecipes", *SYNTHESIS_394_CLASSES, *SYNTHESIS_FINAL_CLASSES)}
+             for name in machine_classes(mode) if name not in ("ChemistryRecipes", *SYNTHESIS_394_CLASSES, *SYNTHESIS_FINAL_CLASSES, *minechem_polytool.JAVA)}
     files[f"{java}/ChemistryRecipes.java"] = _java_recipes(package, namespace, entries, recipes, mode)
     if clone_journal:
         ids = minechem_final_synthesis.chemical_ids(namespace, entries)
@@ -363,6 +363,9 @@ def machine_project(namespace: str, package: str, entries: list[CatalogEntry], r
             "final_template_count": "Template: %s"} if final else {}),
     }.items()}
     if clone_journal:
+        tool_files, tool_locales = minechem_polytool.project(namespace, package, entries, prepaid)
+        files.update(tool_files)
+        locales.update(tool_locales)
         locales.update({f"item.{namespace}.polytool": "Polytool", f"effect.{namespace}.delirium": "Delirium",
                         f"item.{namespace}.treatment.coated": "Coated with %s", f"item.{namespace}.treatment.spiked": "Mixed with %s"})
         files[f"{assets}/models/item/polytool.json"] = document({

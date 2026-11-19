@@ -17,7 +17,7 @@ FEATURES = {
     "Survival lens, blueprint and reactor casing crafts resolve to this release": "reactorcraftchain",
 }
 LIMITS = (
-    "Unmapped recipes, chemical and third-party fluids, radiation and decay, Polytool modules and energy, other machines, legacy integrations and saves are incomplete.",
+    "Unmapped recipes, chemical and third-party fluids, radiation and decay, other machines, legacy integrations and saves are incomplete.",
     "Native chemistry uses reviewed flattened materials, saved treatment components and NeoForge effect hooks. Rates, power and tank behavior are release-local; stochastic products are not guaranteed.",
     "Reactor projector, menus and electrical proxies are native adapters. Original projector model animation, GUI tabs and cross-mod integration are not verified.",
     "When both releases are loaded, .394 uses a blank map and glass panes for otherwise identical blueprint and lens recipes. Native cores refuse occupied manager positions; outputs and durability use native limits.",

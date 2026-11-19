@@ -35,7 +35,7 @@ class FinalSynthesisTraceTests(unittest.TestCase):
             resolve('v31:2', namespace, ids)
         self.assertEqual(set(asset_paths(namespace).values()), {
             f'assets/{namespace}/textures/gui/final_synthesis.png', f'assets/{namespace}/textures/block/synthesizer.png',
-            f'assets/{namespace}/textures/item/atomic_manipulator.png', f'assets/{namespace}/textures/item/polytool.png',
+            f'assets/{namespace}/textures/item/atomic_manipulator.png',
         })
 
     def test_bad_trace_rejected_before_build(self):
