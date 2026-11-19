@@ -232,23 +232,25 @@ final class LegacyMinechemCombat {
     private void worldEffects() throws Exception {
         Field wet = entity.getDeclaredField("field_70171_ac");
         wet.setAccessible(true);
-        Method rain = w.getMethod("func_72894_k", float.class);
         Field rainStrength = w.getDeclaredField("field_73004_o");
         rainStrength.setAccessible(true);
         Field priorRain = w.getDeclaredField("field_73003_n");
         priorRain.setAccessible(true);
         float before = rainStrength.getFloat(world), previous = priorRain.getFloat(world);
         try {
-            rain.invoke(world, 0F);
+            rainStrength.setFloat(world, 0F);
+            priorRain.setFloat(world, 0F);
             blastHit("hydrogen_dry", 1, false, false, wet);
             blastHit("hydrogen_burning", 1, true, false, wet);
             blastHit("rubidium_dry", 37, false, false, wet);
             blastHit("rubidium_wet", 37, false, true, wet);
             blastHit("francium_clear", 87, false, false, wet);
-            rain.invoke(world, 1F);
+            rainStrength.setFloat(world, 1F);
+            priorRain.setFloat(world, 1F);
             blastHit("francium_raining", 87, false, false, wet);
             blastMine("francium_mining", 87, 1);
-            rain.invoke(world, 0F);
+            rainStrength.setFloat(world, 0F);
+            priorRain.setFloat(world, 0F);
             blastMine("caesium_stone", 55, 1);
             blastMine("caesium_dirt", 55, 3);
             wet.setBoolean(actor, true);
