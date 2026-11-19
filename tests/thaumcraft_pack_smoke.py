@@ -11,7 +11,7 @@ from mcmodup.audit import ModMetadata
 from mcmodup.native_pack import REPORT_NAME
 from mcmodup.port import _build_gradle, _metadata, write_workspace
 from mcmodup.source_ports import digest
-from mcmodup.thaumcraft_parity import VERSION as TC_RESTORED_VERSION
+from mcmodup.thaumcraft_parity import SOURCE_ROOT as TC_SOURCE_ROOT, VERSION as TC_RESTORED_VERSION
 from native_pack_smoke import run_gradle
 from neoforge_smoke import empty_test_structure
 from mcmodup.tinkerer_port import CODE_CHICKEN_LIB_VERSION, ENDER_STORAGE_INPUTS, ENDER_STORAGE_VERSION, TT_ROOT
@@ -101,6 +101,17 @@ def cc_test_sources(source: Path, source_sha256: str) -> dict[str, bytes]:
     return files
 
 
+def frost_test_sources(source: Path, source_sha256: str) -> dict[str, bytes]:
+    """Compile the two exact upstream checks against the staged production JARs."""
+    assert digest(source) == source_sha256, "The Frost fixtures must come from the exact source used for the staged port"
+    files = {}
+    with ZipFile(source) as archive:
+        for name in ("FrostFocusRuntimeChecks", "FrostShardRuntimeChecks"):
+            path = f"java/thaumcraft/common/testing/{name}.java"
+            files[f"src/main/{path}"] = archive.read(f"{TC_SOURCE_ROOT}/common/src/gameTest/{path}")
+    return files
+
+
 def staged_flat_preset(staged: Path, built: dict[str, str]) -> str:
     # NeoForge 1.21.1's GameTestServer uses the flat preset instead of merging the mods' dimension
     # files like the normal client and dedicated server do. Include the exact LevelStems from the JARs,
@@ -115,7 +126,7 @@ def staged_flat_preset(staged: Path, built: dict[str, str]) -> str:
 
 def check_server(staged: Path, project: Path, expected: dict[str, str], with_tinkerer: bool,
                  cc_fixtures: dict[str, bytes], flat_preset: str, with_ender_storage: bool = False, *,
-                 restored: bool = False) -> None:
+                 restored: bool = False, frost_fixtures: dict[str, bytes] | None = None) -> None:
     java = f"src/main/java/{PACKAGE.replace('.', '/')}"
     gradle = _build_gradle(SERVER_ID, PACKAGE, "1.0.0") + f"""
 neoForge.runs.create('gameTestServer') {{
@@ -141,7 +152,11 @@ neoForge.runs.create('gameTestServer') {{
         files[f"src/main/resources/data/{SERVER_ID}/structure/test_room.nbt"] = empty_test_structure(8)
     if restored:
         files[f"{java}/ThaumcraftRestoredChecks.java"] = (FIXTURES / "ThaumcraftRestoredChecks.java").read_bytes()
-    if restored or with_tinkerer:
+    if frost_fixtures:
+        files.update(frost_fixtures)
+        files[f"{java}/ThaumcraftFrostPackSmoke.java"] = (FIXTURES / "ThaumcraftFrostPackSmoke.java").read_bytes()
+        files[f"src/main/resources/data/{SERVER_ID}/structure/frost_room.nbt"] = empty_test_structure(9)
+    if restored or with_tinkerer or frost_fixtures:
         gradle += "\ndependencies { compileOnly fileTree(dir: 'run/mods', include: ['*.jar']) }\n"
     if with_ender_storage:
         files[f"{java}/EnderStoragePackSmoke.java"] = (FIXTURES / "EnderStoragePackSmoke.java").read_bytes()
@@ -149,13 +164,16 @@ neoForge.runs.create('gameTestServer') {{
     write_workspace(project, files)
     mods = copy_mods(staged, project, expected)
     log = run_gradle(project, "runGameTestServer")
-    tests = 1 + 4 * with_tinkerer + (len(CC_CASES) if cc_fixtures else 0) + with_ender_storage + 2 * restored
+    tests = 1 + 4 * with_tinkerer + (len(CC_CASES) if cc_fixtures else 0) + with_ender_storage + 2 * restored + 2 * bool(frost_fixtures)
     assert f"All {tests} required tests passed" in log, log[-12000:]
     assert mod_hashes(mods) == expected, "A server runtime input changed"
     print("Staged production Thaumcraft and Architectury passed the native NeoForge crucible smoke test without Connector.")
     if restored:
         print("The staged JAR matched exact TC4 enchanted golden apple aspects and coordinate-derived overworld node identity, "
               "including identity preservation through block-entity save/load and recreation at the same position.")
+    if frost_fixtures:
+        print("The staged Frost focus matched the original base cost, color, and cooldown. The native tests also exercised "
+              "research, recipe payment, casting, shard ricochets, damage, and native persistence from the production JAR.")
     if with_tinkerer:
         print("The staged Bedrock generator matched the legacy population seed for two complete chunks (using modern ore tags). "
               "Imbued Fire used the side-sensitive flammability of another mod's block.")
@@ -165,7 +183,7 @@ neoForge.runs.create('gameTestServer') {{
 
 
 def check(staged: Path, project: Path, with_tinkerer: bool = False, client: bool = False,
-          cc_source: Path | None = None, with_ender_storage: bool = False) -> None:
+          cc_source: Path | None = None, with_ender_storage: bool = False, frost_source: Path | None = None) -> None:
     report = json.loads((staged / REPORT_NAME).read_text(encoding="utf-8"))
     rows = {mod_id: row for row in report["files"] for mod_id in row["ids"]}
     expected = {Path(row["file"]).name: row["sha256"] for row in report["files"]}
@@ -216,7 +234,13 @@ def check(staged: Path, project: Path, with_tinkerer: bool = False, client: bool
     restored = rows["thaumcraft"]["ids"]["thaumcraft"] == TC_RESTORED_VERSION
     if not with_tinkerer:
         assert restored, "Standalone build did not stage the pinned Thaumcraft parity fixes"
-    check_server(staged, project, expected, with_tinkerer, cc_fixtures, flat_preset, with_ender_storage, restored=restored)
+    frost_fixtures = None
+    if frost_source is not None:
+        covered = base["gametests"]["covered_features"].values()
+        assert {"frostfocuscraftsselectsandpays", "frostshardricochetsdamagesandpersists"}.issubset(covered), covered
+        frost_fixtures = frost_test_sources(frost_source, base["source_sha256"])
+    check_server(staged, project, expected, with_tinkerer, cc_fixtures, flat_preset, with_ender_storage,
+                 restored=restored, frost_fixtures=frost_fixtures)
     if with_ender_storage:
         print(f"Ender Storage {ENDER_STORAGE_VERSION}: the staged Ender Rift opens the linked owner's remote inventory, "
               "survives a wand serialization round trip, resets for free on obsidian, and retains the vanilla cast.")
@@ -250,8 +274,10 @@ if __name__ == "__main__":
     parser.add_argument("--client", action="store_true", help="also launch a graphical client (requires a display)")
     parser.add_argument("--computercraft-source", type=Path, help="exact Tinkerer source ZIP saved by build-jars --keep-recipe")
     parser.add_argument("--with-ender-storage", action="store_true", help="test the exact Ender Storage and CodeChicken Lib in the stage")
+    parser.add_argument("--frost-source", type=Path, help="exact Thaumcraft build source ZIP saved by build-jars --keep-recipe")
     args = parser.parse_args()
     if (args.computercraft_source or args.with_ender_storage) and not args.with_tinkerer:
         parser.error("The integration checks require --with-tinkerer")
     with tempfile.TemporaryDirectory(prefix="mcmodup-thaumcraft-staged-test-") as directory:
-        check(args.staged, Path(directory) / "project", args.with_tinkerer, args.client, args.computercraft_source, args.with_ender_storage)
+        check(args.staged, Path(directory) / "project", args.with_tinkerer, args.client, args.computercraft_source,
+              args.with_ender_storage, frost_source=args.frost_source)

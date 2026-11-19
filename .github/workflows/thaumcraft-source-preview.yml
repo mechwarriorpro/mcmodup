@@ -26,6 +26,7 @@ on:
       - 'tests/thaumcraft_pack_smoke.py'
       - 'tests/fixtures/ThaumcraftPackSmoke.java'
       - 'tests/fixtures/ThaumcraftRestoredChecks.java'
+      - 'tests/fixtures/ThaumcraftFrostPackSmoke.java'
       - 'tests/fixtures/ThaumcraftClientSmoke.java'
       - 'tests/fixtures/ThaumcraftFlatPreset.json'
 
@@ -105,6 +106,9 @@ jobs:
               smoke+=(--with-ender-storage)
             fi
             smoke+=(--with-tinkerer)
+          else
+            build+=(--keep-recipe "$scratch/thaumcraft-recipe")
+            smoke+=(--frost-source "$scratch/thaumcraft-recipe/thaumcraft-reload-patched.zip")
           fi
           mcmodup build-jars "$old" --target "$target" --mod "mods/$(basename "$old_jar")" \
             --allow-preview-ports -o "$scratch/staged" "${build[@]}"
