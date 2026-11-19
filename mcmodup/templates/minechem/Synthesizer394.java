@@ -118,9 +118,9 @@ final class Synthesizer394 extends BaseEntityBlock {
                     for (var rule : Synthesis394Rules.ALL) {
                         if (!rule.result().id().equals(active)) continue;
                         apply(rule);
-                        break;
+                        return;
                     }
-                    setChanged();
+                    clear();
                 }
             }
         };
@@ -129,6 +129,7 @@ final class Synthesizer394 extends BaseEntityBlock {
         final Power power = new Power();
         private Synthesis394Rules.Rule selected;
         private int cursor = -1;
+        private String preferredResult = ""; // Native stable tie-breaker for explicit recipe choice.
         private final EnumMap<Direction, IItemHandler> faces = new EnumMap<>(Direction.class);
 
         /** Mirror the idle 10..28 and ready {0,28} layouts without exposing template slots. */
@@ -180,6 +181,7 @@ final class Synthesizer394 extends BaseEntityBlock {
         }
 
         void clear() {
+            preferredResult = "";
             for (int i = 0; i < GHOST_SLOTS; ++i) display.setStackInSlot(i, ItemStack.EMPTY);
             refresh();
         }
@@ -191,6 +193,7 @@ final class Synthesizer394 extends BaseEntityBlock {
         }
 
         private void apply(Synthesis394Rules.Rule rule) {
+            preferredResult = rule.result().id();
             for (int i = 0; i < GHOST_SLOTS; ++i) display.setStackInSlot(i, rule.pattern().get(i).stack());
             refresh();
         }
@@ -206,6 +209,7 @@ final class Synthesizer394 extends BaseEntityBlock {
                 updated = new ItemStack(held.getItem(), Math.min(count, held.getMaxStackSize()));
             }
             display.setStackInSlot(slot, updated);
+            preferredResult = "";
             refresh();
         }
 
@@ -221,9 +225,12 @@ final class Synthesizer394 extends BaseEntityBlock {
             var rows = Synthesis394Rules.ALL;
             for (int i = 0; i < rows.size(); ++i) {
                 if (!rows.get(i).matches(ghosts)) continue;
-                cursor = i;
-                selected = rows.get(i);
-                break;
+                var candidate = rows.get(i);
+                if (selected == null || candidate.result().id().equals(preferredResult)) {
+                    cursor = i;
+                    selected = candidate;
+                }
+                if (candidate.result().id().equals(preferredResult)) break;
             }
             display.setStackInSlot(GHOST_SLOTS, preview());
             setChanged();
@@ -265,6 +272,7 @@ final class Synthesizer394 extends BaseEntityBlock {
             super.saveAdditional(tag, lookup);
             tag.putInt("energy", power.getEnergyStored());
             tag.put("chemical_storage", saveStacks(storage, STORAGE_SLOTS, lookup));
+            tag.putString("preferred_result", preferredResult);
             tag.put("templates", saveStacks(display, GHOST_SLOTS, lookup));
             tag.put("journal", journal.getStackInSlot(0).saveOptional(lookup));
         }
@@ -274,6 +282,7 @@ final class Synthesizer394 extends BaseEntityBlock {
             power.restore(tag.getInt("energy"));
             loadStacks(storage, STORAGE_SLOTS, tag.getCompound("chemical_storage"), lookup);
             loadStacks(display, GHOST_SLOTS, tag.getCompound("templates"), lookup);
+            preferredResult = tag.getString("preferred_result");
             loading = true;
             try {
                 journal.setStackInSlot(0, ItemStack.parseOptional(lookup, tag.getCompound("journal")));

@@ -25,6 +25,7 @@ def staged(root: Path, jar: Path) -> str:
 
     with ZipFile(jar) as archive:
         entries = minechem_final_synthesis.entries_from_catalog(json.loads(archive.read("data/minechem_chemistry/mcmodup/catalog.json")))
+        entries394 = minechem_final_synthesis.entries_from_catalog(json.loads(archive.read("data/minechem_chemistry_394/mcmodup/catalog.json")))
     package = "mcmodup.testbedcheck"
     source = f"src/main/java/{package.replace('.', '/')}"
     resources = "src/main/resources"
@@ -51,6 +52,9 @@ neoForge.runs.create('gameTestServer') {{
         f"{source}/ReactorChecks394.java": minechem_reactors.checks(package, CHECK, minechem_pair.RELEASE_394.namespace, True, "ReactorChecks394"),
         f"{source}/Sided394Checks.java": minechem_pair.sided394_checks(package, CHECK),
         f"{source}/FinalWaterChecks.java": minechem_pair.final_water_checks(package, CHECK),
+        f"{source}/ChemistryGameplayChecksFinal.java": minechem_pair.chemistry_gameplay_checks(package, CHECK, False),
+        f"{source}/ChemistryGameplayChecks394.java": minechem_pair.chemistry_gameplay_checks(package, CHECK, True),
+        f"{source}/Synthesis394Checks.java": minechem_pair.synthesis394_checks(package, CHECK, entries394),
         f"{source}/SynthesisFinalChecks.java": minechem_final_synthesis.checks(package, CHECK, entries),
         f"{source}/JournalCloneChecks.java": minechem_pair.journal_clone_checks(package, CHECK, minechem_pair.FINAL.namespace),
         f"{source}/JournalCloneChecks394.java": minechem_pair.journal_clone_checks(package, CHECK, minechem_pair.RELEASE_394.namespace, "JournalCloneChecks394"),
@@ -61,7 +65,7 @@ neoForge.runs.create('gameTestServer') {{
     result = run_gradle(root, "runGameTestServer")
     marker = next((line.split("required tests passed", 1)[0].rsplit("All ", 1)[-1].strip()
                    for line in result.splitlines() if "All " in line and "required tests passed" in line), None)
-    assert marker == str(22 + len(minechem_final_synthesis.FEATURES)), result[-5400:]
+    assert marker == str(22 + len(minechem_final_synthesis.FEATURES) + 6 + 3), result[-5400:]
     assert digest(root / "run/mods" / JAR_NAME) == digest(jar), "Staged test mutated the JAR"
     return marker
 

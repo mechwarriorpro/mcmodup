@@ -1,0 +1,24 @@
+# Original FINAL food crafting allowlist (metadata).
+m34=yes
+m35=yes
+m46=yes
+m62=yes
+m63=yes
+m64=yes
+m66=yes
+m67=yes
+m71=yes
+m72=yes
+m77=yes
+m79=yes
+m82=yes
+m85=yes
+m86=yes
+m87=yes
+m94=yes
+m98=yes
+m100=yes
+m101=yes
+m109=yes
+m110=yes
+m111=yes

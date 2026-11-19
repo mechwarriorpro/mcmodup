@@ -73,11 +73,16 @@ def _textures(entries: list[CatalogEntry], mod: PackMod, locations: list[ClassLo
 def _java(package: str, namespace: str, entries: list[CatalogEntry], mode: DecomposerMode | None, *, reactors: bool = False) -> str:
     definitions = []
     final = mode == DecomposerMode.FINAL
+    exact = mode in (DecomposerMode.FINAL, DecomposerMode.RELEASE_394)
     for entry in entries:
         keys = [f"item.{namespace}.{entry.path}.detail_{i}" for i in range(len(entry.details))]
         lore = ", ".join(f'Component.translatable("{key}")' for key in keys)
-        definitions.append(f'        entries.add(items.registerSimpleItem("{entry.path}", new Item.Properties()'
+        method = f'registerItem("{entry.path}", ChemistryEffects.MoleculeItem::new, ' if exact and entry.path.startswith("molecule_") else f'registerSimpleItem("{entry.path}", '
+        definitions.append(f'        entries.add(items.{method}new Item.Properties()'
                            f'.component(DataComponents.LORE, new ItemLore(List.of({lore})))));')
+    if exact:
+        definitions.append("        ChemistryEffects.register(bus, mod);")
+        definitions.append('        entries.add(items.registerItem("polytool", PolytoolItem::new));')
     if mode is not None:
         if final:
             definitions.append("        SynthesizerFinal.registerConfig(mod);")
@@ -86,8 +91,8 @@ def _java(package: str, namespace: str, entries: list[CatalogEntry], mode: Decom
     if reactors:
         definitions.append("        entries.addAll(ReactorMachines.register(bus, items));")
     body = "\n".join(definitions)
-    config_import = "import net.neoforged.fml.ModContainer;\n" if final else ""
-    config_argument = ", ModContainer mod" if final else ""
+    config_import = "import net.neoforged.fml.ModContainer;\n" if exact else ""
+    config_argument = ", ModContainer mod" if exact else ""
     return f'''package {package};
 
 import java.util.ArrayList;
@@ -179,7 +184,7 @@ def _project_files(profile: Profile, entries: list[CatalogEntry], textures: dict
     mode = _decomposer_mode(profile, digest)
     version = project_version or {DecomposerMode.FINAL: "1.3.2-partial", DecomposerMode.BATCH: "1.2.0-partial",
                                   DecomposerMode.RELEASE_394: "1.3.1-partial"}.get(mode, "1.0.0-partial")
-    machine_rules = machine_recipes(namespace, entries, mode=mode) if mode else []
+    machine_rules = machine_recipes(namespace, entries, mode=mode, linked=linked_decomposer) if mode else []
     if mode:
         recipe_files, extra_locales = machine_project(namespace, package, entries, machine_rules, mode=mode,
                                                       linked_decomposer=linked_decomposer)
@@ -344,8 +349,9 @@ def convert_catalog(pack: ModPack, mod: PackMod, profile: Profile, output: Path,
     with tempfile.TemporaryDirectory(prefix="mcmodup-convert-") as scratch:
         workspace = Path(scratch) / "project"
         files, recipe_count = _project_files(profile, entries, textures, digest, observed, locations)
-        if digest == FINAL_LEGACY_SHA256:
-            mapping = minechem_final_synthesis.asset_paths(profile.namespace)
+        mode = _decomposer_mode(profile, digest)
+        if mode in (DecomposerMode.FINAL, DecomposerMode.RELEASE_394):
+            mapping = minechem_final_synthesis.asset_paths(profile.namespace, polytool_only=mode == DecomposerMode.RELEASE_394)
             with open_input(mod.path) as source:
                 reference = minechem_final_synthesis.read_assets(source, mapping)
             files.update({f"src/main/resources/{new}": reference[old] for old, new in mapping.items()})

@@ -113,12 +113,18 @@ final class Synthesis394Menu extends AbstractContainerMenu {
         if (machine == null || !stillValid(player) || index < OUTPUT || index >= slots.size()) return ItemStack.EMPTY;
         if (index == OUTPUT) {
             var result = machine.extract(64, true);
-            if (result.isEmpty() || room(result) < result.getCount()) return ItemStack.EMPTY;
-            // Commit one batch at a time, after confirming destination space.
-            var made = machine.extract(result.getCount(), false);
-            if (made.isEmpty()) return ItemStack.EMPTY;
-            moveItemStackTo(made, PLAYER, slots.size(), true);
-            return result;
+            if (result.isEmpty()) return ItemStack.EMPTY;
+            // Capacity is checked before each payment; unlike the old menu, storage slots
+            // aren't counted as destination room. Match its bulk output, not item loss.
+            int batches = room(result) / result.getCount();
+            boolean moved = false;
+            while (batches-- > 0) {
+                var made = machine.extract(result.getCount(), false);
+                if (made.isEmpty()) break;
+                moveItemStackTo(made, PLAYER, slots.size(), true);
+                moved = true;
+            }
+            return moved ? result : ItemStack.EMPTY;
         }
         var slot = slots.get(index);
         if (!slot.hasItem()) return ItemStack.EMPTY;

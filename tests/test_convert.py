@@ -204,16 +204,16 @@ class ConvertTests(unittest.TestCase):
     def test_394_profile_is_hash_bound_and_does_not_duplicate_final_recipes(self):
         profile = PROFILES[RELEASE_394_PROFILE]
         trace = release394_trace()
-        symbols = sorted({key for outputs in trace.values() for key, _ in outputs} | {key for key in trace if re.fullmatch(r"m\d+", key)})
+        symbols = [f"e{i}" for i in range(1, 114)] + [key for key in trace if re.fullmatch(r"m\d+", key)]
         entries = [CatalogEntry({"e26": "element_fe", "m1": "molecule_water"}.get(key,
                                 ("element_" if key[0] == "e" else "molecule_") + key[1:]),
                                 key, "test.png", (), {"legacy_metadata": int(key[1:])}) for key in symbols]
         files, count = _project_files(profile, entries, {"test.png": PNG}, RELEASE_394_SHA256, {}, [])
-        self.assertEqual(count, 381)
+        self.assertEqual(count, 966)
         self.assertEqual(len([key for key in trace if re.fullmatch(r"m\d+", key)]), 173)
         with self.assertRaisesRegex(InputError, "catalog does not match"):
             _project_files(profile, [row for row in entries if row.path != "molecule_water"], {"test.png": PNG}, RELEASE_394_SHA256, {}, [])
-        with self.assertRaisesRegex(InputError, "Could not map original .394 chemical metadata e26"):
+        with self.assertRaisesRegex(InputError, "Could not map original Minechem chemical metadata e26"):
             _project_files(profile, [row for row in entries if row.path != "element_fe"], {"test.png": PNG}, RELEASE_394_SHA256, {}, [])
         package = "src/main/java/mcmodup/generated/minechem_chemistry_394"
         self.assertIn("PREPAID_DECOMPOSER = true;", files[f"{package}/ChemistryMachines.java"])
@@ -230,9 +230,9 @@ class ConvertTests(unittest.TestCase):
         rows = {row["id"]: row for row in catalog["machine_recipes"] if row["machine"] == "decomposer"}
         self.assertEqual({row["energy_fe"] for row in rows.values()}, {1_000})
         synth = {row["id"]: row for row in catalog["machine_recipes"] if row["machine"] == "synthesizer"}
-        self.assertEqual(len(synth), 182)
-        self.assertNotIn("minechem_chemistry_394:molecule_140", synth)
-        self.assertNotIn("minechem_chemistry_394:molecule_143", synth)
+        self.assertEqual(len(synth), 398)
+        self.assertIn("minechem_chemistry_394:molecule_140", synth)
+        self.assertIn("minechem_chemistry_394:molecule_143", synth)
         self.assertEqual(json.loads(files[f"{resources}/recipe/journal_clone.json"]),
                          {"type": "minechem_chemistry_394:journal_clone", "category": "misc"})
         for block in ("decomposer", "synthesizer", "microscope"):
@@ -253,7 +253,7 @@ class ConvertTests(unittest.TestCase):
         self.assertFalse(rows["minecraft:water"]["inputs"])
         self.assertEqual(next(row for row in catalog["entries"] if row["new_id"].endswith(":molecule_water"))["recipe_status"],
                          "powered_decomposition")
-        self.assertNotIn("minecraft:stone", rows)  # A chance-based recipe is not direct.
+        self.assertTrue(rows["minecraft:stone"]["material_rule"].startswith("S0.2!"))
         for digest in (FINAL_LEGACY_SHA256, "0" * 64):
             with self.assertRaisesRegex(InputError, "requires the exact original archive"):
                 _project_files(profile, entries, {}, digest, {}, [])
@@ -300,7 +300,7 @@ class ConvertTests(unittest.TestCase):
                                          ("1" * 64, DecomposerMode.BATCH, "false")):
             with self.subTest(mode=mode):
                 keys = {row.key for row in observations() if row.key.startswith("m")}
-                keys |= {part[0] for row in observations() for part in row.pattern if part}
+                keys |= {f"e{i}" for i in range(113)}
                 entries = [CatalogEntry(("element_" if key[0] == "e" else "molecule_") + key[1:], key, "test.png", (),
                                         {"legacy_metadata": int(key[1:])}) for key in sorted(keys)] if mode == DecomposerMode.FINAL else []
                 files, _ = _project_files(profile, entries, {"test.png": PNG} if entries else {}, checksum, {}, [])

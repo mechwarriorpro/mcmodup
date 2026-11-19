@@ -28,14 +28,14 @@ class FinalSynthesisTraceTests(unittest.TestCase):
         namespace = 'minechem_chemistry'
         ids = {'m1': f'{namespace}:molecule_water'}
         self.assertEqual(resolve('m1', namespace, ids), (ids['m1'], True))
-        self.assertEqual(resolve('v4360:0', namespace, ids), (f'{namespace}:polytool', False))
+        self.assertEqual(resolve('v4360:0', namespace, ids), (f'{namespace}:polytool', True))
         self.assertEqual(resolve('v351:15', namespace, ids), ('minecraft:bone_meal', True))
         self.assertEqual(resolve('v6:1', namespace, ids), ('minecraft:spruce_sapling', True))
         with self.assertRaisesRegex(InputError, 'No verified FINAL vanilla output'):
             resolve('v31:2', namespace, ids)
         self.assertEqual(set(asset_paths(namespace).values()), {
             f'assets/{namespace}/textures/gui/final_synthesis.png', f'assets/{namespace}/textures/block/synthesizer.png',
-            f'assets/{namespace}/textures/item/atomic_manipulator.png',
+            f'assets/{namespace}/textures/item/atomic_manipulator.png', f'assets/{namespace}/textures/item/polytool.png',
         })
 
     def test_bad_trace_rejected_before_build(self):

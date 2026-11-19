@@ -61,7 +61,7 @@ public final class Release394Checks {
         test.assertTrue(tank.getTanks() == 1 && tank.getTankCapacity(0) == 5_000, "Wrong .394 water tank geometry");
         test.assertTrue(tank.fill(oversized, FluidAction.SIMULATE) == 5_000 && tank.getFluidInTank(0).isEmpty(), "Simulated fill mutated the tank");
         test.assertTrue(tank.fill(oversized, FluidAction.EXECUTE) == 5_000, "Wrong fill size");
-        test.assertTrue(tank.fill(new FluidStack(Fluids.LAVA, 1), FluidAction.EXECUTE) == 0, "Lava is outside the measured native recipes");
+        test.assertTrue(tank.fill(new FluidStack(Fluids.LAVA, 1), FluidAction.EXECUTE) == 0, "A single-fluid tank cannot mix lava with water");
         test.assertTrue(tank.drain(4001, FluidAction.SIMULATE).getAmount() == 4001 && tank.getFluidInTank(0).getAmount() == 5000,
                 "Simulated drain mutated the tank");
         test.assertTrue(tank.drain(4001, FluidAction.EXECUTE).getAmount() == 4001 && tank.getFluidInTank(0).getAmount() == 999,

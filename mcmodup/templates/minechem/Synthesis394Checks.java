@@ -26,6 +26,8 @@ import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.ClickType;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.item.alchemy.PotionContents;
+import net.minecraft.world.item.alchemy.Potions;
 import net.minecraft.world.item.component.CustomData;
 import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.block.entity.BlockEntity;
@@ -54,6 +56,7 @@ public final class Synthesis394Checks {
         for (String row : TRACE) {
             String[] recipe = row.split(";", 4);
             var expected = item(recipe[0], Integer.parseInt(recipe[1]));
+            if (expected.is(Items.POTION)) expected.set(DataComponents.POTION_CONTENTS, new PotionContents(Potions.WATER));
             int cost = Integer.parseInt(recipe[2]);
             String[] pattern = recipe[3].split(",");
             test.assertTrue(machine.menu().clickMenuButton(machine.player(), NEXT), "Cannot set .394 ghost pattern");

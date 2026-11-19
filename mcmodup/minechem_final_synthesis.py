@@ -115,9 +115,7 @@ def resolve(key: str, namespace: str, ids: dict[str, str]) -> tuple[str, bool]:
             raise InputError(f"Missing FINAL chemical metadata {key}")
         return ids[key], True
     if key == "v4360:0":
-        # Unported Polytool: keep its earlier match in the selector so a large
-        # diamond ghost pattern can't fall through to a cheaper output.
-        return f"{namespace}:polytool", False
+        return f"{namespace}:polytool", True
     numeric, damage = map(int, key[1:].split(":"))
     variants = _VARIANTS.get(numeric, ())
     item = variants[damage] if damage < len(variants) else (_VANILLA.get(numeric) if damage == 0 else None)
@@ -126,8 +124,11 @@ def resolve(key: str, namespace: str, ids: dict[str, str]) -> tuple[str, bool]:
     return f"minecraft:{item}", True
 
 
-def asset_paths(namespace: str) -> dict[str, str]:
-    return {f"assets/minechem/textures/{old}.png": f"assets/{namespace}/textures/{new}.png" for old, new in (
+def asset_paths(namespace: str, *, polytool_only: bool = False) -> dict[str, str]:
+    polytool = {"assets/minechem/textures/items/polytool.png": f"assets/{namespace}/textures/item/polytool.png"}
+    if polytool_only:
+        return polytool
+    return polytool | {f"assets/minechem/textures/{old}.png": f"assets/{namespace}/textures/{new}.png" for old, new in (
         ("gui/SynthesisGUI", "gui/final_synthesis"), ("blocks/blockSynthesis", "block/synthesizer"),
         ("items/AtomicManipulator", "item/atomic_manipulator"),
     )}
