@@ -214,8 +214,10 @@ neoForge.runs.create('gameTestServer') {{
     # Keep the exact count tied to the probe sources installed into this run.
     count = sum((source.decode("utf-8") if isinstance(source, bytes) else source).count("@GameTest(") for name, source in (tests | terrain).items() if name.endswith(".java"))
     if run.returncode or f"All {count} required tests passed" not in run.stdout:
-        issues = [line for line in run.stdout.splitlines() if any(word in line for word in ("error:", " failed!", "Exception:"))]
-        raise AssertionError("\n".join(issues[:12]) + "\n" + run.stdout[-6500:])
+        log = run.stdout.splitlines()
+        failures = [line for line in log if any(word in line for word in (" failed at ", "Failed test cases:", "AssertionError:"))]
+        issues = [line for line in log if any(word in line for word in ("error:", " failed!", "Exception:"))]
+        raise AssertionError("\n".join((failures + issues)[:12]) + "\n" + run.stdout[-3300:])
     parsing_errors = [line for line in run.stdout.splitlines() if "Parsing error loading recipe" in line
                       and any(f"{mod}:" in line for mod in ("minechem_chemistry", "minechem_chemistry_394", "geostrata_rocks", "thaumcraft_aspects", "atomic_thermometer", "icbm_glass_plate"))]
     if parsing_errors:

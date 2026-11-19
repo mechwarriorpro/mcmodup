@@ -3,19 +3,29 @@ package @PACKAGE@;
 import java.util.Arrays;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.tags.TagKey;
 import net.minecraft.world.level.BlockGetter;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.SnowLayerBlock;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.StateDefinition;
 import net.minecraft.world.level.material.Fluid;
 import net.minecraft.world.level.material.FluidState;
 import net.neoforged.neoforge.fluids.BaseFlowingFluid;
 
-/** The measured .394 quanta and direction rules, with bounded flow that never displaces other blocks. */
+/** The measured .394 quanta, direction and displacement rules in loaded native chunks. */
 final class ChemicalFlow394 extends BaseFlowingFluid {
     private static final Direction[] HORIZONTAL = {Direction.WEST, Direction.EAST, Direction.NORTH, Direction.SOUTH};
     private static final int FULL = 8, NO_OUTLET = 1000, SEARCH_DISTANCE = 4;
+    private static final TagKey<Block> FRAGILE = TagKey.create(Registries.BLOCK,
+        ResourceLocation.fromNamespaceAndPath(CatalogPort.MOD_ID, "chemical_fluid_displaceable"));
     private final int density;
     private final boolean source;
 
@@ -55,11 +65,11 @@ final class ChemicalFlow394 extends BaseFlowingFluid {
             }
         }
         var toward = pos.relative(vertical);
-        if (open(level, toward)) {
+        if (canDisplace(level, toward)) {
             flow(level, toward, FULL - 1);
             return;
         }
-        if (amount <= 1 || (!state.isSource() && amountAt(level, toward) > 0)) return;
+        if (amount <= 1 || (!state.isSource() && (amountAt(level, toward) > 0 || canRoute(level, toward)))) return;
         int next = amountAt(level, feed) > 0 ? FULL - 1 : amount - 1;
         int[] costs = new int[HORIZONTAL.length];
         Arrays.fill(costs, NO_OUTLET);
@@ -67,25 +77,27 @@ final class ChemicalFlow394 extends BaseFlowingFluid {
         for (int i = 0; i < HORIZONTAL.length; i++) {
             var dir = HORIZONTAL[i];
             var step = pos.relative(dir);
-            if (!canRoute(level, step)) continue;
+            if (!canRoute(level, step) || (amountAt(level, step) == FULL)) continue;
             costs[i] = outlet(level, step, vertical, dir, 0);
             best = Math.min(best, costs[i]);
         }
         for (int i = 0; i < HORIZONTAL.length; i++) {
             if (costs[i] != best) continue;
-            var step = pos.relative(HORIZONTAL[i]);
-            if (open(level, step)) flow(level, step, next);
+            // In Forge, blocked candidates tie at 1000. The final write still checks displacement,
+            // which can replace vanilla liquid even though route planning won't go through it.
+            flow(level, pos.relative(HORIZONTAL[i]), next);
         }
     }
 
     private int outlet(ServerLevel level, BlockPos pos, Direction vertical, Direction incoming, int steps) {
-        if (open(level, pos.relative(vertical))) return steps;
+        if (canRoute(level, pos.relative(vertical))) return steps;
         if (steps >= SEARCH_DISTANCE) return NO_OUTLET;
         int best = NO_OUTLET;
         for (var dir : HORIZONTAL) {
             if (dir == incoming.getOpposite()) continue;
             var next = pos.relative(dir);
-            if (canRoute(level, next)) best = Math.min(best, outlet(level, next, vertical, dir, steps + 1));
+            if (canRoute(level, next) && amountAt(level, next) != FULL)
+                best = Math.min(best, outlet(level, next, vertical, dir, steps + 1));
         }
         return best;
     }
@@ -105,12 +117,35 @@ final class ChemicalFlow394 extends BaseFlowingFluid {
     private boolean canRoute(ServerLevel level, BlockPos pos) {
         if (!loaded(level, pos)) return false;
         var state = level.getBlockState(pos);
-        return state.isAir() || (isSame(state.getFluidState().getType()) && !state.getFluidState().isSource());
+        if (isSame(state.getFluidState().getType())) return true;
+        return !vanillaLiquid(state) && displaceable(state);
     }
+
+    private static boolean vanillaLiquid(BlockState state) { return state.is(Blocks.WATER) || state.is(Blocks.LAVA); }
+
+    private boolean displaceable(BlockState state) {
+        if (state.isAir() || vanillaLiquid(state)) return true;
+        var target = state.getFluidState().getType();
+        if (target instanceof ChemicalFlow394 chemical) return !isSame(target) && density > chemical.density;
+        // Never destroy a container/attachment or a waterlogged block. Other mod fluids
+        // need an explicit compatibility rule instead of guessing their density scale.
+        return state.getFluidState().isEmpty() && state.is(FRAGILE) && !state.hasBlockEntity();
+    }
+
+    private boolean canDisplace(ServerLevel level, BlockPos pos) { return loaded(level, pos) && displaceable(level.getBlockState(pos)); }
+
     private void flow(ServerLevel level, BlockPos pos, int amount) {
-        level.setBlockAndUpdate(pos, getFlowing(amount, false).createLegacyBlock());
+        if (!canDisplace(level, pos)) return;
+        var previous = level.getBlockState(pos);
+        if (!level.setBlockAndUpdate(pos, getFlowing(amount, false).createLegacyBlock()) || !previous.is(FRAGILE)) return;
+        if (previous.is(Blocks.SNOW)) {
+            // Legacy Forge drops the removed layer even without a shovel. NeoForge's vanilla loot table doesn't.
+            if (level.getGameRules().getBoolean(net.minecraft.world.level.GameRules.RULE_DOBLOCKDROPS))
+                Block.popResource(level, pos, new ItemStack(Items.SNOWBALL, previous.getValue(SnowLayerBlock.LAYERS)));
+        } else {
+            Block.dropResources(previous, level, pos, null);
+        }
     }
-    private static boolean open(ServerLevel level, BlockPos pos) { return loaded(level, pos) && level.isEmptyBlock(pos); }
     private static boolean loaded(ServerLevel level, BlockPos pos) {
         return !level.isOutsideBuildHeight(pos) && level.hasChunkAt(pos) && level.getWorldBorder().isWithinBounds(pos);
     }

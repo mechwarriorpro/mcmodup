@@ -157,6 +157,130 @@
         });
     }
 
+    private record Displacement(String label, String block, boolean flows, int drops) {}
+    private static final Displacement[] DOWNWARD = {
+@DOWNWARD@
+    };
+
+    @GameTest(template = "fluid_room")
+    public static void release394Displacement(GameTestHelper test) {
+        var level = test.getLevel();
+        String ethanol = "fluid_molecule_ethanol";
+        for (int i = 0; i < DOWNWARD.length; i++) {
+            var sample = DOWNWARD[i];
+            var target = test.absolutePos(new BlockPos(2 + i % 4 * 3, 5, 2 + i / 4 * 3));
+            var incoming = target.above();
+            level.setBlockAndUpdate(target.below(), Blocks.GRASS_BLOCK.defaultBlockState());
+            if (sample.label().equals("reeds")) level.setBlockAndUpdate(target.below().east(), Blocks.WATER.defaultBlockState());
+            var previous = BuiltInRegistries.BLOCK.get(ResourceLocation.parse(sample.block()));
+            level.setBlock(target, previous.defaultBlockState(), 2);
+            setFluid(level, incoming, ethanol, true);
+            var box = new AABB(target).inflate(1);
+            var before = level.getEntitiesOfClass(ItemEntity.class, box);
+            tickFluid(level, incoming);
+            boolean replaced = fluidAmount(level, target, "flowing_" + ethanol) == 7;
+            int drops = level.getEntitiesOfClass(ItemEntity.class, box).stream().filter(entity -> !before.contains(entity))
+                .mapToInt(entity -> entity.getItem().getCount()).sum();
+            test.assertTrue(replaced == sample.flows() && drops == sample.drops(),
+                "Downward displacement " + sample.label() + ": " + replaced + " / " + drops + " drops, state " + level.getBlockState(target));
+            if (!sample.flows()) test.assertTrue(level.getBlockState(target).is(previous), "Blocked fluid displaced " + previous);
+        }
+        var gas = test.absolutePos(new BlockPos(2, 5, 11));
+        setFluid(level, gas, "fluid_element_h", true);
+        level.setBlockAndUpdate(gas.above(), Blocks.WATER.defaultBlockState());
+        tickFluid(level, gas);
+        test.assertTrue(fluidAmount(level, gas.above(), "flowing_fluid_element_h") == 7, "Gas could not displace vanilla water above");
+        var density = gas.east(4);
+        setFluid(level, density, "fluid_element_h", true);
+        setFluid(level, density.above(), ethanol, true);
+        tickFluid(level, density);
+        test.assertTrue(fluidAmount(level, density.above(), ethanol) == 8, "Hydrogen displaced denser ethanol");
+        for (boolean outlet : new boolean[]{false, true}) {
+            var source = test.absolutePos(new BlockPos(3 + (outlet ? 7 : 0), 5, 13));
+            for (var side : new Direction[]{Direction.DOWN, Direction.NORTH, Direction.SOUTH, Direction.WEST}) {
+                if (outlet && side == Direction.WEST) continue;
+                level.setBlockAndUpdate(source.relative(side), Blocks.STONE.defaultBlockState());
+            }
+            level.setBlockAndUpdate(source.east(), Blocks.WATER.defaultBlockState());
+            setFluid(level, source, ethanol, true);
+            tickFluid(level, source);
+            test.assertTrue(outlet ? level.getFluidState(source.east()).is(Fluids.WATER) :
+                fluidAmount(level, source.east(), "flowing_" + ethanol) == 7, "Fluid skipped Forge's blocked-route tie rule");
+        }
+        test.succeed();
+    }
+
+    private static void tickFluid(ServerLevel level, BlockPos pos) {
+        var fluid = level.getFluidState(pos);
+        fluid.getType().tick(level, pos, fluid);
+    }
+
+    @GameTest(template = "fluid_room")
+    public static void release394SourceAgeAndContact(GameTestHelper test) throws ReflectiveOperationException {
+        var level = test.getLevel();
+        var radiation = Class.forName("mcmodup.generated." + MOD + ".ChemistryRadiation");
+        var field = radiation.getDeclaredField("FLUID_EFFECTS");
+        field.setAccessible(true);
+        var option = (ModConfigSpec.BooleanValue)field.get(null);
+        boolean original = option.get();
+        test.assertTrue(original == @CONTACT_ENABLED@, "Wrong .394 fluid contact default");
+        var chemicals = List.of("element_u", @RADCHLOR_PATH@);
+        var clocks = new ArrayList<CompoundTag>();
+        for (int index = 0; index < chemicals.size(); index++) {
+            var path = chemicals.get(index);
+            var source = test.absolutePos(new BlockPos(4 + index * 5, 5, 4));
+            var fluidPath = "fluid_" + path;
+            var bucket = radioactive(test, "bucket_" + path, 1, 3_000_000, level.getGameTime());
+            clocks.add(clock(test, bucket));
+            setFluid(level, source, fluidPath, true);
+            ((net.minecraft.world.item.BucketItem)bucket.getItem()).checkExtraContent(null, level, bucket, source);
+            var flow = source.south(4);
+            setFluid(level, flow, fluidPath, false);
+            test.assertTrue(level.getBlockEntity(source) != null && level.getBlockEntity(flow) == null,
+                "Only .394 radioactive sources own saved clocks");
+            var pig = EntityType.PIG.create(level);
+            try {
+                var state = level.getBlockState(source);
+                state.entityInside(level, source, pig);
+                String expected = index == 0 ? @CONTACT_URANIUM@ : @CONTACT_RADCHLOR@;
+                test.assertTrue(contactEffects(pig).equals(expected), "Wrong .394 contact effects for " + path + ": " + contactEffects(pig));
+                pig.removeAllEffects();
+                option.set(false);
+                state.entityInside(level, source, pig);
+                test.assertTrue(pig.getActiveEffects().isEmpty(), "Disabled fluid effects still dosed a mob in " + path);
+            } finally { option.set(original); }
+        }
+        test.runAfterDelay(26, () -> {
+            for (int index = 0; index < chemicals.size(); index++) {
+                var pos = test.absolutePos(new BlockPos(4 + index * 5, 5, 4));
+                var path = chemicals.get(index);
+                var state = level.getBlockState(pos);
+                var source = level.getBlockEntity(pos);
+                test.assertTrue(source != null && level.getFluidState(pos).isSource() && state.is(BuiltInRegistries.BLOCK.get(id("fluid_" + path))),
+                    "An overdue fluid source decayed in the world instead of waiting for collection");
+                var tag = source.saveWithoutMetadata(level.registryAccess());
+                level.removeBlock(pos, false);
+                level.setBlockAndUpdate(pos, state);
+                level.getBlockEntity(pos).loadWithComponents(tag, level.registryAccess());
+                var recovered = ((net.minecraft.world.level.block.BucketPickup) state.getBlock()).pickupBlock(null, level, pos, state);
+                test.assertTrue(recovered.is(item("bucket_" + path, 1).getItem()) && clocks.get(index).equals(clock(test, recovered)),
+                    "Pickup after reload changed the overdue source identity or clock");
+            }
+            test.succeed();
+        });
+    }
+
+    private static String contactEffects(net.minecraft.world.entity.LivingEntity entity) {
+        var effects = new ArrayList<String>();
+        for (var effect : entity.getActiveEffects()) {
+            var type = effect.getEffect();
+            int oldId = type == MobEffects.WEAKNESS ? 18 : type == MobEffects.POISON ? 19 : type == MobEffects.WITHER ? 20 : -1;
+            effects.add(oldId + ":" + effect.getAmplifier() + "/" + effect.getDuration());
+        }
+        effects.sort(String::compareTo);
+        return effects.toString();
+    }
+
     private static int fluidAmount(ServerLevel level, BlockPos pos, String path) {
         var state = level.getFluidState(pos);
         return state.getType() == BuiltInRegistries.FLUID.get(id(path)) ? state.getAmount() : 0;

@@ -1,6 +1,12 @@
-# Exact Minechem 5.0.5.394 / Forge 10.13.2.1291; Java 7.
-# https://github.com/mechwarriorpro/mcmodup/actions/runs/44517907300/job/135538617974
+# Exact .394 Forge observations: dispenser, reaction, furnace, flow and source lifetime controls.
 config=true/true
+contact_disabled_e92=[]
+contact_disabled_m109=[]
+contact_e92=[19:0/10]
+contact_handler_e92=FluidBlockElement/FluidBlockElement
+contact_handler_m109=FluidBlockMolecule/FluidBlockMolecule
+contact_m109=[18:6/2400, 19:6/400, 20:1/600]
+contact_potion_control=[19:1/10]
 dispense_blocked_bucket=ok/stone/{be26=1}/{}
 dispense_bucket=ok/e26:0/{bucket=1}/{}
 dispense_element_air=ok/air/{e26=8}/{}
@@ -12,7 +18,27 @@ dispense_molecule_split=ok/m0:0/{e0=8}/{}
 dispense_pickup_flow=ok/air/{be26=1}/{}
 dispense_pickup_source=ok/air/{be26=1}/{}
 dispense_water_fallback=ok/air/{water_bucket=1}/{}
+displace_down_air=true/{}
+displace_down_flower=true/{vanilla=1}
+displace_down_gas=true/{}
+displace_down_lava=true/{}
+displace_down_reeds=false/{}
+displace_down_same_source=false/{}
+displace_down_sign=false/{}
+displace_down_snow=true/{vanilla=1}
+displace_down_solid=true/{}
+displace_down_stone=false/{}
+displace_down_water=true/{}
+displace_down_web=true/{vanilla=1}
+displace_lateral_water_closed=m62:1
+displace_lateral_water_outlet=m1:0
+displace_up_gas=e2:0
+displace_up_liquid=m62:0
+displace_up_water=e1:1
 fire_sources=fire,flowing_lava,lava
+flow_has_clock_e92=false
+flow_has_clock_m109=false
+fluid_effects_enabled=true
 fuel_e1=100
 fuel_e15=250
 fuel_e16=300
@@ -30,6 +56,8 @@ fuel_m92=800
 ignite_disabled_reactions=air
 ignite_lava=air
 ignite_m6=2.0
+overdue_source_e92=e92:0/true/true
+overdue_source_m109=m109:0/true/true
 propagate_capped_gas=air/e1:0/stone/air/e1:1/e1:1
 propagate_gas=air/e1:0/e1:1
 propagate_liquid=m62:1/m62:0/air

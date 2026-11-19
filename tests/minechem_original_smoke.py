@@ -158,7 +158,7 @@ def original(root: Path, version: str, matter_only: bool = False, ore_disable: b
         if os.environ.get("MCMODUP_CAPTURE_CHEMISTRY") == "1" or mismatched:
             note("Original .394 fluid automation", text)
         assert not mismatched, f".394 fluid automation changed: {mismatched}"
-        note("Pinned .394 fluid automation", f"{len(expected)} furnace, dispenser, reaction and ignition rows re-observed")
+        note("Pinned .394 fluid automation", f"{len(expected)} furnace, dispenser, reaction, flow and source controls re-observed")
         return
     verify_chemistry(server, version)
     polytool = (server / "minechem-polytool.txt").read_text(encoding="utf-8").splitlines()

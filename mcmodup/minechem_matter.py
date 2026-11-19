@@ -209,6 +209,8 @@ def project(namespace: str, package: str, ids: dict[str, str], names: dict[str, 
         files[f"{java}/ChemicalFuels.java"] = files[f"{java}/ChemicalFuels.java"].replace("@FURNACE_FUELS@", ",\n".join(
             f"        Map.entry(ResourceLocation.parse({json.dumps(key)}), {ticks})" for key, ticks in automation["furnace_fuels"].items()))
         files[f"{data}/mcmodup/fluid_automation.json"] = out(automation)
+        files[f"{data}/tags/block/chemical_fluid_displaceable.json"] = out({"replace": False,
+            "values": ["#minecraft:flowers", "minecraft:snow", "minecraft:cobweb"]})
     warning = "Radiation Warning: Element %s decayed into %s" + (" after %s." if prepaid else ".")
     locales = {f"gui.{namespace}.tank_empty": "Empty", f"item.{namespace}.radioactive": "Radioactivity %s · %s s to decay",
                f"message.{namespace}.radiation_decay": warning}
@@ -278,6 +280,8 @@ def features(prepaid: bool) -> dict[str, str]:
                 ".394 block fluid reactions, source/flow output and ignition": "release394fluidreactions",
                 ".394 dropped chemical bucket contact and config guards": "release394itemcontact",
                 ".394 upward gas, downward liquid and stationary solid flow": "release394directionalflow",
+                ".394 fluid displacement, density and route ties": "release394displacement",
+                ".394 overdue fluid sources retain their serialized clock and contact effects": "release394sourceageandcontact",
                 ".394 original furnace fuel values and actual furnace consumption": "release394furnacefuels"} if prepaid else
                {"FINAL does not inherit .394 furnace fuels": "finalfurnaceisolation"})}
 
@@ -292,7 +296,7 @@ def checks(package: str, test_namespace: str, namespace: str, ids: dict[str, str
             .replace("@LIFETIME@", lifetime).replace("@FLUIDS@", flows)
             .replace("@PLAYER_DECAY_CHECKS@", player_decay_checks(ids, prepaid, reactors))
             .replace("@BUCKET_CHECKS@", (TEMPLATES / "Matter394Checks.java").read_text(encoding="utf-8") if prepaid else "")
-            .replace("@AUTOMATION_CHECKS@", automation_checks(ids) if prepaid else FINAL_FUEL_CHECK))
+            .replace("@AUTOMATION_CHECKS@", automation_checks(ids).replace("@NAMESPACE@", namespace) if prepaid else FINAL_FUEL_CHECK))
 
 
 def player_decay_checks(ids: dict[str, str], prepaid: bool, reactors: bool) -> str:
@@ -351,7 +355,24 @@ def player_decay_checks(ids: dict[str, str], prepaid: bool, reactors: bool) -> s
 def automation_checks(ids: dict[str, str]) -> str:
     fuels = automation_rows(ids)["furnace_fuels"]
     fuel_checks = "\n".join(f"        fuel(test, {json.dumps(key.split(':', 1)[1])}, {ticks});" for key, ticks in fuels.items())
-    return (TEMPLATES / "FluidAutomation394Checks.java").read_text(encoding="utf-8").replace("@FUEL_CHECKS@", fuel_checks)
+    trace = observations(AUTOMATION_TRACE)
+    down = {"air": "minecraft:air", "stone": "minecraft:stone", "water": "minecraft:water", "lava": "minecraft:lava",
+            "flower": "minecraft:poppy", "sign": "minecraft:oak_sign", "reeds": "minecraft:sugar_cane", "snow": "minecraft:snow",
+            "web": "minecraft:cobweb", "gas": "@NAMESPACE@:fluid_element_he", "solid": "@NAMESPACE@:fluid_element_fe",
+            "same_source": "@NAMESPACE@:fluid_molecule_ethanol"}
+    samples = []
+    for label, block in down.items():
+        row = trace.get("displace_down_" + label, "")
+        result = re.fullmatch(r"(true|false)/\{(?:vanilla=([1-9]\d*))?\}", row)
+        if result is None:
+            raise InputError(f"Invalid original down-flow observation for {label}: {row}")
+        flows, drops = result.groups()
+        samples.append(f"        new Displacement({json.dumps(label)}, {json.dumps(block)}, {flows}, {drops or 0})")
+    return ((TEMPLATES / "FluidAutomation394Checks.java").read_text(encoding="utf-8").replace("@FUEL_CHECKS@", fuel_checks)
+            .replace("@DOWNWARD@", ",\n".join(samples)).replace("@CONTACT_ENABLED@", trace["fluid_effects_enabled"])
+            .replace("@CONTACT_URANIUM@", json.dumps(trace["contact_e92"]))
+            .replace("@CONTACT_RADCHLOR@", json.dumps(trace["contact_m109"]))
+            .replace("@RADCHLOR_PATH@", json.dumps(chemical_id("m109", ids).split(":", 1)[1])))
 
 
 FINAL_FUEL_CHECK = """
