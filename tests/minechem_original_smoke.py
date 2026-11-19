@@ -97,6 +97,14 @@ def original(root: Path, version: str, matter_only: bool = False) -> None:
         path = server / f"minechem-{kind}.txt"
         actual = dict(line.split("=", 1) for line in path.read_text(encoding="utf-8").splitlines())
         expected = observations(matter_trace_name(version == "1.7.10", kind))
+        if version == "1.6.4" and kind == "fluids":
+            # FINAL's molecule enum assigns random colors to uncolored molecules at startup.
+            # Keep a recorded tint for the native preview; identity, density, and container behavior must still match.
+            def without_molecule_tints(rows):
+                return {key: ("|".join(value.split("|")[:4] + value.split("|")[5:])
+                              if key.startswith("m") and key[1:].isdigit() and key != "m1" else value)
+                        for key, value in rows.items()}
+            expected, actual = map(without_molecule_tints, (expected, actual))
         mismatch = [key for key in sorted(expected.keys() | actual.keys()) if expected.get(key) != actual.get(key)]
         if os.environ.get("MCMODUP_CAPTURE_CHEMISTRY") == "1" or mismatch:
             capture(path, f"Minechem {version} matter {kind}")

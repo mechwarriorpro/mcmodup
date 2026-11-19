@@ -30,7 +30,8 @@ class DecomposerMode(StrEnum):
 def machine_classes(mode: DecomposerMode) -> tuple[str, ...]:
     research = () if mode == DecomposerMode.BATCH else ("JournalClone", "MaterialRules", *minechem_effects.JAVA, *minechem_polytool.JAVA)
     synthesis = {DecomposerMode.FINAL: SYNTHESIS_FINAL_CLASSES, DecomposerMode.RELEASE_394: SYNTHESIS_394_CLASSES}.get(mode, ())
-    matter = tuple(name for name in minechem_matter.JAVA if name != "FinalFluidCollector" or mode == DecomposerMode.FINAL) if research else ()
+    matter = tuple(name for name in minechem_matter.JAVA if (name != "FinalFluidCollector" or mode == DecomposerMode.FINAL)
+                   and (name != "TubeWorldUse" or mode == DecomposerMode.RELEASE_394)) if research else ()
     return JAVA_CLASSES + research + synthesis + matter
 
 
@@ -324,7 +325,13 @@ def machine_project(namespace: str, package: str, entries: list[CatalogEntry], r
         effects = dict((id_, {"coating": coat, "spiking": food, "requires_recreational_effects": optional, "actions": actions})
                        for id_, coat, food, optional, actions in minechem_effects.entries(ids, prepaid=prepaid))
         effects_java = f"{java}/ChemistryEffects.java"
-        files[effects_java] = files[effects_java].replace("@EFFECT_ROWS@", minechem_effects.java_rows(ids, prepaid=prepaid))
+        pour = """            if (!player.isShiftKeyDown()) {
+                var hit = getPlayerPOVHitResult(level, player, net.minecraft.world.level.ClipContext.Fluid.NONE);
+                var poured = TubeWorldUse.pour(level, player, hand, hit);
+                if (poured.getResult() != net.minecraft.world.InteractionResult.PASS) return poured;
+            }""" if prepaid else ""
+        files[effects_java] = (files[effects_java].replace("@EFFECT_ROWS@", minechem_effects.java_rows(ids, prepaid=prepaid))
+                               .replace("@POUR_MOLECULE@", pour))
         files[f"{data}/{namespace}/mcmodup/pharmacology.json"] = document(effects)
         files[f"{assets}/textures/mob_effect/delirium.png"] = minechem_effects.delirium_icon()
         for recipe in ("weapon_coating", "food_spiking"):

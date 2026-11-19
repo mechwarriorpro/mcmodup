@@ -9,7 +9,7 @@ from .minechem_materials import PRODUCT, TEMPLATES, chemical_id, observations
 
 
 JAVA = ("ChemistryFluids", "FluidPresentation", "ChemicalBucketRecipe", "ChemistryRadiation",
-        "ShieldedStorage", "ShieldedStorageScreen", "FinalFluidCollector")
+        "ShieldedStorage", "ShieldedStorageScreen", "FinalFluidCollector", "TubeWorldUse")
 RESOURCES = "src/main/resources"
 LIVES = (0, 1_728_000, 864_000, 432_000, 216_000, 72_000)
 DAMAGE = (0, 1, 2, 6, 8, 16)
@@ -114,12 +114,13 @@ def project(namespace: str, package: str, ids: dict[str, str], names: dict[str, 
         rad_java.append(f"        Map.entry({json.dumps(item)}, new Rule({tier}, List.of({parts})))")
     files: dict[str, str] = {}
     for name in JAVA:
-        if name == "FinalFluidCollector" and prepaid:
+        if (name == "FinalFluidCollector" and prepaid) or (name == "TubeWorldUse" and not prepaid):
             continue
         files[f"{java}/{name}.java"] = ((TEMPLATES / f"{name}.java").read_text(encoding="utf-8")
             .replace("@PACKAGE@", package).replace("@NAMESPACE@", namespace).replace("@RELEASE_394@", str(prepaid).lower())
             .replace("@FLUID_ROWS@", ",\n".join(fluid_java)).replace("@RADIATION_ROWS@", ",\n".join(rad_java))
             .replace("@HALF_LIFE@", percent).replace("@DECAY_SAFE@", safe).replace("@FLUID_EFFECTS@", contact)
+            .replace("@REGISTER_EMPTY_TUBE@", '        buckets.add(items.registerItem("test_tube", p -> new TubeWorldUse.TubeItem(p, true)));' if prepaid else "")
             .replace("@WATER_BUCKET_CRAFT@", observations(trace_name(True, "fluids")).get("water", "false").split("/", 1)[0]))
     locales = {f"gui.{namespace}.tank_empty": "Empty", f"item.{namespace}.radioactive": "Radioactivity %s · %s s to decay"}
     blocks = [("leaded_chest", "Leaded Chest", "leaded_chest"), ("uranium_ore", "Uranium Ore", "uranium_ore")]

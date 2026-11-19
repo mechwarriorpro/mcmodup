@@ -64,7 +64,6 @@ final class ShieldedStorage {
         var entries = new ArrayList<DeferredItem<?>>();
         entries.add(items.registerSimpleBlockItem(CHEST));
         entries.add(items.registerSimpleBlockItem(ORE));
-        if (!FINAL) entries.add(items.registerSimpleItem("test_tube"));
         if (FINAL) entries.add(items.registerSimpleBlockItem(CABINET));
         return entries;
     }

@@ -78,6 +78,8 @@ def _java(package: str, namespace: str, entries: list[CatalogEntry], mode: Decom
         keys = [f"item.{namespace}.{entry.path}.detail_{i}" for i in range(len(entry.details))]
         lore = ", ".join(f'Component.translatable("{key}")' for key in keys)
         method = f'registerItem("{entry.path}", ChemistryEffects.MoleculeItem::new, ' if exact and entry.path.startswith("molecule_") else f'registerSimpleItem("{entry.path}", '
+        if mode == DecomposerMode.RELEASE_394 and entry.path.startswith("element_"):
+            method = f'registerItem("{entry.path}", p -> new TubeWorldUse.TubeItem(p, false), '
         definitions.append(f'        entries.add(items.{method}new Item.Properties()'
                            f'.component(DataComponents.LORE, new ItemLore(List.of({lore})))));')
     if exact:

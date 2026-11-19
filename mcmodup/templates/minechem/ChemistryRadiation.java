@@ -81,6 +81,14 @@ final class ChemistryRadiation {
         return (long)(LIVES[tier] * (percent / 100F));
     }
     private static String dimension(Level level) { return level.dimension().location().toString(); }
+    static boolean olderThan(Clock candidate, Clock existing) {
+        if (candidate == null) return false;
+        if (existing == null) return true;
+        // Network- or save-provided times can be long; don't subtract unbounded longs here.
+        long left = Math.max(0, candidate.tick()) - Math.max(0, candidate.age());
+        long right = Math.max(0, existing.tick()) - Math.max(0, existing.age());
+        return left < right;
+    }
     private static Clock fresh(Level level) { return new Clock(0, level.getGameTime(), dimension(level)); }
     private static long elapsed(Clock clock, Level level) {
         return clock.tick() >= 0 && level.getGameTime() >= clock.tick() && dimension(level).equals(clock.dimension())

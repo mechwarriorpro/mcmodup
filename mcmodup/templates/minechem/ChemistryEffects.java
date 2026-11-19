@@ -189,6 +189,7 @@ final class ChemistryEffects {
         @Override public UseAnim getUseAnimation(ItemStack stack) { return UseAnim.DRINK; }
         @Override public int getUseDuration(ItemStack stack, LivingEntity user) { return 16; }
         @Override public InteractionResultHolder<ItemStack> use(Level level, Player player, InteractionHand hand) {
+@POUR_MOLECULE@
             return ItemUtils.startUsingInstantly(level, player, hand);
         }
         @Override public ItemStack finishUsingItem(ItemStack stack, Level level, LivingEntity user) {

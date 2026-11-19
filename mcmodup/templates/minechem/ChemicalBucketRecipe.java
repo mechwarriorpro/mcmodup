@@ -57,7 +57,7 @@ final class ChemicalBucketRecipe extends CustomRecipe {
             if (chemical != null && !stack.is(chemical)) return ItemStack.EMPTY;
             chemical = stack.getItem();
             var clock = stack.get(ChemistryRadiation.CLOCK.get());
-            if (clock != null && (oldest == null || clock.tick() - clock.age() < oldest.tick() - oldest.age())) oldest = clock;
+            if (ChemistryRadiation.olderThan(clock, oldest)) oldest = clock;
         }
         if (!foundBucket || chemical == null) return ItemStack.EMPTY;
         Item bucket = ChemistryFluids.bucketForTube(chemical);
