@@ -8,6 +8,7 @@ from unittest.mock import patch
 import zipfile
 
 from mcmodup.inputs import InputError
+from mcmodup.method_ports import PROVENANCE
 from mcmodup.native_pack import REPORT_NAME, inventory, plan, stage
 from mcmodup.source_ports import BuildOptions, _gradle, digest, load_ports
 from test_cli import run_cli
@@ -123,16 +124,25 @@ class SourcePortTests(unittest.TestCase):
         self.assertTrue(allowed.recipes[label].partial)
         self.assertFalse(allowed.providers.get("techbase"))
         self.assertIn("fresh --output-pack", " ".join(plan(allowed, [label]).problems))
-        self.assertTrue(plan(allowed, [label], output_pack=True).report["ready"])
+        staged = plan(allowed, [label], output_pack=True)
+        self.assertTrue(staged.report["ready"])
+        with patch("mcmodup.native_pack.require_jdk", return_value="unused"), patch("mcmodup.source_ports._gradle", self._fake_gradle):
+            stage(staged, self.output)
+        with zipfile.ZipFile(self.output / "mods/techbase.jar") as artifact:
+            marker = json.loads(artifact.read(PROVENANCE))
+            self.assertTrue(marker["preview"])
+            self.assertFalse(marker["imports"])
+        self.assertFalse(inventory(self.src, self.output).providers.get("techbase"), "A reimported preview is not a provider")
         other = legacy(self.src, "mods/Tools.jar", "addon", requirements=("required-after:techbase",))
         addon = recipe(other, self.base_src, "addon", dependencies=(("techbase", "[2.0]"),))
         write_manifest(self.manifest, row, addon)
         blocked = plan(self._list(allow=True), [label], output_pack=True)
         self.assertFalse(blocked.report["ready"])
         self.assertIn("preview cannot replace its legacy provider", " ".join(blocked.problems))
+        refused = self.root / "refused"
         with self.assertRaises(InputError):
-            stage(blocked, self.output)
-        self.assertFalse(self.output.exists())
+            stage(blocked, refused)
+        self.assertFalse(refused.exists())
         for invalid in (self.base | {"standalone_preview": True}, row | {"standalone_preview": "true"}):
             write_manifest(self.manifest, invalid)
             with self.assertRaisesRegex(InputError, "standalone_preview must be a boolean"):

@@ -63,11 +63,25 @@ python3 -m mcmodup update-pack LegacyPack --target NeoForgePack \
 
 The source ZIP contains neither the original classes nor the textures. The build links four threshold methods from the exact JAR and imports the original item and block icons. The [original Forge probe](https://github.com/mechwarriorpro/mcmodup/actions/runs/44379371950/job/135067111296) observed a 1,000 threshold, a 295 initial reading, ten-tick sampling, and signal 15 at the threshold (0 below) on all sides. The old threshold-adjustment paths wrap at 5,000, and the threshold and tracked coordinates survived an NBT round trip.
 
-In the native preview, get `atomic_thermometer:thermometer` from the creative Redstone Blocks tab or `/give`. Use the placed block with an empty hand to lower the threshold by 100; crouch to raise it. Crouch-use the held item on a block to copy its position, then place the sensor. Use the item in the air to clear that position. The preview reads either a native temperature capability or the biome at the sampled position; it does not force-load a remote chunk. These are inputs to the same redstone comparison, not a port of the Calclavia thermal grid. Add `--include-native cb_multipart` if the two pinned native control JARs are installed in the target.
+In the native preview, get `atomic_thermometer:thermometer` from the creative Redstone Blocks tab or `/give`. Use the placed block with an empty hand to lower the threshold by 100; crouch to raise it. The old ±10 adjustment is linked and tested but has no player-facing control yet. Crouch-use the held item on a block to copy its position, then place the sensor. Use the item in the air to clear that position. The preview reads either a native temperature capability or the biome at the sampled position; it does not force-load a remote chunk. These are inputs to the same redstone comparison, not a port of the Calclavia thermal grid. Add `--include-native cb_multipart` if the two pinned native control JARs are installed in the target.
 
 The [native comparison](https://github.com/mechwarriorpro/mcmodup/actions/runs/44448227242/job/135305506573) passed two source GameTests, stock dedicated boot, and one staged-JAR GameTest. Unchanged Multipart read `0 → 15 → 0` as the tracked fixture changed from no sample to 1,000 K, then to 999 K.
 
 **Preview only:** No reactor, turbine, distribution or heat simulation, circuits and survival recipe, saved item drops, legacy wrench/CC/OC interfaces, client visual parity, or old-save migration. The fresh-world sensor is not a dependency provider for an Atomic Science add-on. Keep the local output private unless you have rights to redistribute it.
+
+## Mimicry catalyst (recipe preview)
+
+Use the exact `Mimicry 1.6.4_965_1.3.9_final.zip` in `LegacyPack/mods/1.6.4/`. The [Forge 9.11.1.965 oracle](https://github.com/mechwarriorpro/mcmodup/actions/runs/44450228337/job/135312053326) exercised the original crafting manager with the default catalyst. One Mimichite plus iron ore, gold ore, sand, or an iron ingot produced two iron ingots, gold ingots, glass blocks, or iron ingots, respectively. One Mimichite plus lapis dye produced three lapis dye (now `minecraft:lapis_lazuli`). The iron ore worked in both orders, but not without Mimichite. Dirt produced no output.
+
+```sh
+python3 -m mcmodup prepare-mimicry-catalyst -o .mcmodup/MimicryRecipe
+python3 -m mcmodup update-pack LegacyPack --target NeoForgePack \
+  --mod 'mods/1.6.4/Mimicry 1.6.4_965_1.3.9_final.zip' \
+  --source-ports .mcmodup/MimicryRecipe/mimicry-catalyst.json \
+  --allow-preview-ports --output-pack .mcmodup/MimicryPreview
+```
+
+The recipe targets Minecraft **1.21.1** / NeoForge **21.1.267**. The build checks the exact ZIP hash, copies its Mimichite icon to a new namespace, and tests the five native shapeless recipes before staging. Use `/give @s mimicry_catalyst:mimichite` or the creative Ingredients tab. It is not obtainable in survival in this preview. No dynamic furnace or Ore Dictionary integration, other materials, ore generation, Upheaver, orb and block storage, or migration are implemented. No original classes are copied and the preview cannot satisfy a Mimicry add-on dependency.
 
 ## Thaumcraft 4 Reload (preview)
 
@@ -153,6 +167,7 @@ The third run assumes the exact CC: Tweaked release was staged. It checks the pe
 | Minechem 1.7.10 5.0.5.394 | [Linked updater preview](#both-exact-minechem-releases-linked-previews), separate from FINAL | Only an iron decomposer and catalog; no other machines or original integrations. |
 | ICBM 1.4.1.344 | [Glass pressure plate preview](#voltz-glass-pressure-plate-executable-preview) | Only one Core block; not the rest of Core, Explosion or Sentry. |
 | Atomic Science 1.2.0 | [Thermometer preview](#voltz-atomic-science-thermometer-executable-preview) | One redstone sensor. No thermal grid, reactor or turbine, survival recipe, or old dependency API. |
+| Mimicry 1.3.9 (1.6.4) | [Mimichite recipe preview](#mimicry-catalyst-recipe-preview) | Five crafts with a creative-only catalyst. No ores, storage, tools or dynamic integrations. |
 
 ## What the source-build test covers
 
