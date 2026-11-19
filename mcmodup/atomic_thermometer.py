@@ -1,4 +1,4 @@
-"""Prepare a local thermometer preview bound to Voltz Atomic Science 1.2.0."""
+"""Prepare local thermal machinery previews bound to Voltz Atomic Science 1.2.0."""
 
 import json
 from pathlib import Path
@@ -15,7 +15,7 @@ from .source_ports import digest
 
 LEGACY_SHA256 = "80cf5bd9d485377ecde3822154a5db47804fab3e8f78c388cfcf529239655938"
 MOD_ID = "atomic_thermometer"
-VERSION = "1.2.0-preview.1"
+VERSION = "1.2.0-preview.2"
 ARCHIVE = f"{MOD_ID}-{VERSION}.jar"
 PACKAGE = "mcmodup_kernel.atomic_thermometer"
 KERNEL = PACKAGE.replace(".", "/")
@@ -23,8 +23,8 @@ OWNER = "atomicscience/process/sensor/TileThermometer"
 PLAYER = "net/minecraft/entity/player/EntityPlayer"
 VECTOR = "universalelectricity/api/vector/Vector3"
 TEXTURES = {
-    f"assets/atomicscience/textures/{kind}s/thermometer.png": f"assets/{MOD_ID}/textures/{kind}/thermometer.png"
-    for kind in ("block", "item")
+    f"assets/atomicscience/textures/{kind}s/{name}.png": f"assets/{MOD_ID}/textures/{kind}/{name}.png"
+    for kind, name in (("block", "thermometer"), ("item", "thermometer"), ("block", "machine"), ("block", "steam"))
 }
 
 
@@ -58,11 +58,16 @@ def checks(namespace: str) -> str:
     return (TEMPLATES / "atomic_thermometer/ThermometerChecks.java").read_text(encoding="utf-8").replace("@TEST_NAMESPACE@", namespace)
 
 
+def turbine_checks(package: str, namespace: str) -> str:
+    return ((TEMPLATES / "atomic_thermometer/TurbineChecks.java").read_text(encoding="utf-8")
+            .replace("@PACKAGE@", package).replace("@NAMESPACE@", namespace))
+
+
 def _project(workspace: Path) -> None:
     templates = TEMPLATES / "atomic_thermometer"
-    name = "Atomic Science Thermometer (Preview)"
-    description = "One exact Voltz 1.2.0 sensor. Not an implementation of Atomic Science or the legacy ThermalGrid."
-    prefix = f"{MOD_ID}:block/thermometer"
+    name = "Atomic Science Thermal Machines (Preview)"
+    description = "Voltz 1.2.0 thermometer and standalone turbine with a limited, native heat grid. Not full Atomic Science."
+    prefix, rotor = f"{MOD_ID}:block/thermometer", f"{MOD_ID}:block/steam_turbine"
     java, resources = f"src/main/java/{KERNEL}", "src/main/resources"
     assets = f"{resources}/assets/{MOD_ID}"
     meta = _metadata(ModMetadata("", description=description), MOD_ID, name, VERSION, "Original Atomic Science license applies (local conversion)")
@@ -73,7 +78,7 @@ def _project(workspace: Path) -> None:
 tasks.named('compileJava') {{ classpath += files('src/main/resources') }}
 tasks.named('jar') {{
     archiveFileName = '{ARCHIVE}'
-    exclude '{KERNEL}/ThermometerChecks.class', 'data/{MOD_ID}/structure/empty.nbt'
+    exclude '{KERNEL}/ThermometerChecks*.class', '{KERNEL}/TurbineChecks*.class', 'data/{MOD_ID}/structure/*.nbt'
 }}
 neoForge.runs.create('gameTestServer') {{
     type = 'gameTestServer'
@@ -83,16 +88,30 @@ neoForge.runs.create('gameTestServer') {{
 }}
 """,
         f"{resources}/META-INF/neoforge.mods.toml": meta.replace(f"[{NEOFORGE_VERSION},21.2)", f"[{NEOFORGE_VERSION}]"),
-        f"{java}/Thermometer.java": (templates / "Thermometer.java").read_bytes(),
-        f"{java}/ThermometerMod.java": (templates / "ThermometerMod.java").read_bytes(),
+        **{f"{java}/{name}.java": (templates / f"{name}.java").read_bytes()
+           for name in ("Thermometer", "ThermometerMod", "HeatGrid", "Turbine", "TurbineClient")},
         f"{java}/ThermometerChecks.java": checks(MOD_ID),
+        f"{java}/TurbineChecks.java": turbine_checks(PACKAGE, MOD_ID),
         f"{resources}/data/{MOD_ID}/structure/empty.nbt": empty_test_structure(5),
+        f"{resources}/data/{MOD_ID}/structure/turbine_room.nbt": empty_test_structure(5),
+        f"{resources}/data/c/tags/fluid/steam.json": _json({"replace": False, "values": [f"{MOD_ID}:steam"]}),
+        f"{resources}/data/minecraft/tags/block/mineable/pickaxe.json": _json({"replace": False, "values": [f"{MOD_ID}:steam_turbine"]}),
+        f"{resources}/data/{MOD_ID}/loot_table/blocks/steam_turbine.json": _json({
+            "type": "minecraft:block", "pools": [{"rolls": 1, "conditions": [{"condition": "minecraft:survives_explosion"}],
+                "entries": [{"type": "minecraft:item", "name": f"{MOD_ID}:steam_turbine"}]}],
+        }),
         f"{assets}/lang/en_us.json": _json({f"block.{MOD_ID}.thermometer": "Thermometer", f"itemGroup.{MOD_ID}": name,
             f"info.{MOD_ID}.status": "Threshold: %s K · Reading: %s K", f"info.{MOD_ID}.tracked": "Tracking %s, %s, %s",
-            f"info.{MOD_ID}.untracked": "Not tracking a remote position"}),
+            f"info.{MOD_ID}.untracked": "Not tracking a remote position",
+            f"block.{MOD_ID}.steam_turbine": "Steam Turbine", f"fluid.{MOD_ID}.steam": "Steam",
+            f"info.{MOD_ID}.turbine": "Steam: %s mB · Stored: %s FE · Rotor: %s rad/s"}),
         f"{assets}/blockstates/thermometer.json": _json({"variants": {"": {"model": prefix}}}),
         f"{assets}/models/block/thermometer.json": _json({"parent": "minecraft:block/cube_all", "textures": {"all": prefix}}),
         f"{assets}/models/item/thermometer.json": _json({"parent": "minecraft:item/generated", "textures": {"layer0": f"{MOD_ID}:item/thermometer"}}),
+        f"{assets}/blockstates/steam_turbine.json": _json({"variants": {"": {"model": rotor}}}),
+        f"{assets}/models/block/steam_turbine.json": _json({"parent": "minecraft:block/cube_bottom_top", "textures": {
+            "side": f"{MOD_ID}:block/machine", "bottom": "minecraft:block/iron_block", "top": "minecraft:block/cut_copper"}}),
+        f"{assets}/models/item/steam_turbine.json": _json({"parent": rotor}),
     })
 
 
@@ -116,13 +135,15 @@ def prepare(output: Path) -> Path:
         recipe = {"legacy_sha256": LEGACY_SHA256, "source_zip": source.name, "source_sha256": digest(source),
                   "ids": {MOD_ID: VERSION}, "legacy_ids": {"atomicscience": MOD_ID},
                   "neoforge": f"[{NEOFORGE_VERSION}]", "artifact": f"build/libs/{ARCHIVE}", "tasks": ["jar", "runGameTestServer"],
-                  "game_report": "build/gametest.xml", "minimum_tests": 2, "features": {
+                  "game_report": "build/gametest.xml", "minimum_tests": 4, "features": {
                       "Original threshold adjustment and wrapping rules": "thresholdandsettings",
-                      "Ten-tick thermal samples, tracked coordinates and redstone": "trackedheatandsignal"},
+                      "Ten-tick thermal samples, tracked coordinates and redstone": "trackedheatandsignal",
+                      "Measured single-source heat transfer through stone and air": "measuredheatspread",
+                      "One-cell steam consumption, spin, stored FE and sided transfer": "standalonesteamturbine"},
                   "status": "preview", "limitations": [
-                      "One thermometer only. No CalclaviaCore heat simulation, reactors, turbines or other Atomic Science features.",
-                      "Uses native biome sampling and an optional NeoForge block capability for heat instead of the legacy grid.",
-                      "Uses an adapted cube and two original textures. Creative-only: no old circuits, wrench items or saved drops.",
+                      "Limited loaded-chunk server heat grid. No legacy thermal events, persistent heat or fluid phase changes.",
+                      "Standalone turbine only: no multiblock, steam producers, original geometry, animation or audio.",
+                      "Adapted blocks and creative items: no survival crafting, legacy circuits or wrench items.",
                       "No ComputerCraft/OpenComputers, Universal Electricity, old saves or legacy add-ons."],
                   "import_assets": {old: f"src/main/resources/{new}" for old, new in TEXTURES.items()},
                   "asset_map": {old: {"path": new} for old, new in TEXTURES.items()}, "method_imports": [method_group()]}

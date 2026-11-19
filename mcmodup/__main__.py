@@ -162,7 +162,7 @@ def _parser() -> argparse.ArgumentParser:
 
     plate = commands.add_parser("prepare-icbm-plate", help="prepare the local source recipe for the exact Voltz ICBM glass plate preview")
     plate.add_argument("--output", "-o", required=True, type=Path, help="new directory for a reviewable source ZIP and recipe")
-    thermometer = commands.add_parser("prepare-atomic-thermometer", help="prepare a local source recipe for the Voltz Atomic Science thermometer")
+    thermometer = commands.add_parser("prepare-atomic-thermometer", help="prepare a local source recipe for the Voltz Atomic Science thermometer and standalone turbine")
     thermometer.add_argument("--output", "-o", required=True, type=Path, help="new directory for a reviewable source ZIP and recipe")
     catalyst = commands.add_parser("prepare-mimicry-catalyst", help="prepare a local source recipe for five Mimicry 1.3.9 crafts")
     catalyst.add_argument("--output", "-o", required=True, type=Path, help="new directory for a reviewable source ZIP and recipe")

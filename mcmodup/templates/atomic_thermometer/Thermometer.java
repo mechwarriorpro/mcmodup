@@ -16,6 +16,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.component.CustomData;
 import net.minecraft.world.level.BlockGetter;
 import net.minecraft.world.level.Level;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.block.BaseEntityBlock;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.RenderShape;
@@ -112,10 +113,7 @@ public final class Thermometer extends BaseEntityBlock {
             var provider = level.getCapability(TEMPERATURE, samplePosition, null);
             float sample = provider == null ? Float.NaN : provider.sample();
             if (!Float.isFinite(sample)) {
-                // Legacy ambient curve, using the native biome at the sampled height.
-                var biome = level.getBiome(samplePosition).value();
-                int ambient = 273 + (int) ((biome.getBaseTemperature() - 0.4D) * 50.0D);
-                sample = (int) (ambient + ambient * (level.isDay() ? 0.05D : -0.05D));
+                sample = level instanceof ServerLevel server ? HeatGrid.sample(server, samplePosition) : HeatGrid.ambient(level, samplePosition);
             }
             sensor.temperature = sample;
             sensor.refreshSignal();

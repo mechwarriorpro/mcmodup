@@ -1,4 +1,4 @@
-"""Compare the original Voltz sensor and the staged native executable preview."""
+"""Compare the original Voltz sensor and test the staged native thermal preview."""
 
 import argparse
 import json
@@ -9,7 +9,7 @@ import sys
 import traceback
 from zipfile import ZipFile
 
-from mcmodup.atomic_thermometer import ARCHIVE, KERNEL, LEGACY_SHA256, MOD_ID, TEXTURES
+from mcmodup.atomic_thermometer import ARCHIVE, KERNEL, LEGACY_SHA256, MOD_ID, TEXTURES, turbine_checks
 from mcmodup.audit import ModMetadata
 from mcmodup.method_ports import PROVENANCE
 from mcmodup.native_pack import REPORT_NAME
@@ -61,12 +61,13 @@ def modern(root: Path) -> None:
     boot(out, report["instance_runtime"]["launch"]["unix"])
     staged_test(root / "atomic-integration", out)
     assert fingerprints(source, target) == before
-    note("Staged Atomic Science thermometer preview passed", "Two source and one staged-JAR GameTest passed. The stock server booted with "
-         "only the preview and unchanged native Multipart/CCL. Multipart read 0 → 15 → 0 from a tracked test heat source. Not full Atomic Science.")
+    note("Staged Atomic Science thermal preview passed", "Four source and three staged-JAR GameTests passed. The stock server booted with "
+         "only the preview and unchanged native Multipart/CCL. The turbine consumed steam and transferred FE; Multipart read heat grid "
+         "and tracked capability signals. Not full Atomic Science.")
 
 
 def check_artifact(artifact: Path, original: Path, evidence: dict) -> None:
-    assert evidence["status"] == "preview" and evidence["gametests"]["passed"] == 2, evidence
+    assert evidence["status"] == "preview" and evidence["gametests"]["passed"] == 4, evidence
     assert evidence["original_sha256"] == LEGACY_SHA256 and evidence["jar_sha256"] == file_digest(artifact), evidence
     assert evidence["legacy_ids"] == {"atomicscience": MOD_ID}, evidence
     with ZipFile(artifact) as jar, ZipFile(original) as old:
@@ -74,7 +75,8 @@ def check_artifact(artifact: Path, original: Path, evidence: dict) -> None:
         assert len(proof["imports"]) == 1 and len(proof["imports"][0]["methods"]) == 4
         assert proof["imports"] == evidence["method_imports"] and not proof["parity_verified"]
         assert all(jar.read(new) == old.read(src) for src, new in TEXTURES.items())
-        assert f"{KERNEL}/ThermometerChecks.class" not in jar.namelist()
+        assert all(f"{KERNEL}/{entry}.class" in jar.namelist() for entry in ("Thermometer", "HeatGrid", "Turbine"))
+        assert not any("ThermometerChecks" in path or "TurbineChecks" in path or path.endswith("turbine_room.nbt") for path in jar.namelist())
         assert not any(name.startswith(("atomicscience/", "calclavia/", "universalelectricity/")) or name.endswith(".jar") for name in jar.namelist())
 
 
@@ -87,7 +89,9 @@ def staged_test(project: Path, staged: Path) -> None:
         "gradle.properties": "org.gradle.jvmargs=-Xmx2G\n",
         "src/main/resources/META-INF/neoforge.mods.toml": _metadata(ModMetadata(""), namespace, namespace, "1.0.0", "Unlicense"),
         f"src/main/resources/data/{namespace}/structure/empty.nbt": empty_test_structure(5),
+        f"src/main/resources/data/{namespace}/structure/turbine_room.nbt": empty_test_structure(5),
         f"src/main/java/{package.replace('.', '/')}/{fixture.name}": fixture.read_bytes(),
+        f"src/main/java/{package.replace('.', '/')}/TurbineChecks.java": turbine_checks(package, namespace),
         "build.gradle": _build_gradle(namespace, package, "1.0.0") + f"""
 dependencies {{ compileOnly fileTree(dir: 'run/mods', include: ['*.jar']) }}
 neoForge.runs.create('gameTestServer') {{
@@ -99,7 +103,7 @@ neoForge.runs.create('gameTestServer') {{
     })
     shutil.copytree(staged / "mods", project / "run/mods")
     log = run_gradle(project, "runGameTestServer")
-    assert "All 1 required tests passed" in log, log[-2900:]
+    assert "All 3 required tests passed" in log, log[-2900:]
 
 
 if __name__ == "__main__":

@@ -110,7 +110,12 @@ neoForge.runs.create('gameTestServer') {{
         integrate_fixture("PlateChecks.java", checks(namespace), "mcmodup.icbmplate", namespace)
         integrate_fixture("PlateMultipartSmoke.java", (FIXTURES / "PlateMultipartSmoke.java").read_text(encoding="utf-8"),
                           "mcmodup.plateintegration", "mcmodup_plate_integration")
+    thermal_rooms = {}
     if atomic_thermometer:
+        from mcmodup.atomic_thermometer import turbine_checks
+
+        tests["src/main/java/mcmodup/test/TurbineChecks.java"] = turbine_checks("mcmodup.test", namespace)
+        thermal_rooms[f"src/main/resources/data/{namespace}/structure/turbine_room.nbt"] = empty_test_structure(5)
         integrate_fixture("ThermometerMultipartSmoke.java", (FIXTURES / "ThermometerMultipartSmoke.java").read_text(encoding="utf-8"),
                           "mcmodup.atomicintegration", "mcmodup_atomic_integration")
     if mimicry:
@@ -134,11 +139,12 @@ neoForge.runs.create('gameTestServer') {{
         **inputs,
         **controls,
         **geostrata_rooms,
+        **thermal_rooms,
     })
     run = subprocess.run(["./gradlew", "--no-daemon", "--console=plain", "runGameTestServer"],
                          cwd=project, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=420)
     count = (7 + include_aspects + (6 if minechem_394 else 0) + bool(controls)
-             + (3 if icbm_plate else 0) + bool(atomic_thermometer) + (2 if mimicry else 0) + (2 if geostrata else 0))
+             + (3 if icbm_plate else 0) + (3 if atomic_thermometer else 0) + (2 if mimicry else 0) + (2 if geostrata else 0))
     if run.returncode or f"All {count} required tests passed" not in run.stdout:
         raise AssertionError(run.stdout[-8000:])
     parsing_errors = [line for line in run.stdout.splitlines() if "Parsing error loading recipe" in line

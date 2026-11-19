@@ -33,14 +33,22 @@ public final class ThermometerMod {
         () -> new Thermometer(BlockBehaviour.Properties.of().strength(1F)));
     static final DeferredHolder<BlockEntityType<?>, BlockEntityType<Thermometer.Sensor>> SENSOR = ENTITIES.register("thermometer",
         () -> BlockEntityType.Builder.of(Thermometer.Sensor::new, BLOCK.get()).build(null));
+    private static final DeferredBlock<Turbine> TURBINE = BLOCKS.register("steam_turbine",
+        () -> new Turbine(BlockBehaviour.Properties.of().strength(3.5F).requiresCorrectToolForDrops()));
+    static final DeferredHolder<BlockEntityType<?>, BlockEntityType<Turbine.Rotor>> ROTOR = ENTITIES.register("steam_turbine",
+        () -> BlockEntityType.Builder.of(Turbine.Rotor::new, TURBINE.get()).build(null));
+    private static final DeferredItem<BlockItem> TURBINE_ITEM = ITEMS.registerSimpleBlockItem(TURBINE);
     static final DeferredItem<TrackingItem> ITEM = ITEMS.register("thermometer", TrackingItem::new);
 
     public ThermometerMod(IEventBus bus) {
         BLOCKS.register(bus);
         ITEMS.register(bus);
         ENTITIES.register(bus);
+        HeatGrid.register();
+        Turbine.register(bus);
         bus.addListener((BuildCreativeModeTabContentsEvent event) -> {
             if (event.getTabKey() == CreativeModeTabs.REDSTONE_BLOCKS) event.accept(ITEM);
+            if (event.getTabKey() == CreativeModeTabs.FUNCTIONAL_BLOCKS) event.accept(TURBINE_ITEM);
         });
     }
 

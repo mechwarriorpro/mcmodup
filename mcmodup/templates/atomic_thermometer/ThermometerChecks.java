@@ -96,6 +96,28 @@ public final class ThermometerChecks {
         test.succeed();
     }
 
+    @GameTest(template = "empty")
+    public static void measuredHeatSpread(GameTestHelper test) {
+        var level = test.getLevel();
+        var source = test.absolutePos(new BlockPos(2, 2, 2));
+        for (var side : Direction.values()) level.setBlockAndUpdate(source.relative(side), Blocks.AIR.defaultBlockState());
+        level.setBlockAndUpdate(source.east(), Blocks.STONE.defaultBlockState());
+        var grid = new HeatGrid();
+        float ambient = grid.temperature(level, source);
+        float solid = grid.temperature(level, source.east());
+        float air = grid.temperature(level, source.north());
+        test.assertTrue(grid.add(level, source, 140F) && grid.temperature(level, source) == ambient + 140F, "Heat source not stored");
+        grid.step(level);
+        close(test, grid.temperature(level, source) - ambient, 136.38922F, "source");
+        close(test, grid.temperature(level, source.east()) - solid, 0.9812317F, "stone");
+        close(test, grid.temperature(level, source.north()) - air, 0.49591064F, "air");
+        test.succeed();
+    }
+
+    private static void close(GameTestHelper test, float value, float expected, String description) {
+        test.assertTrue(Math.abs(value - expected) < 0.003F, "Expected " + expected + " K change at " + description + ", got " + value);
+    }
+
     private static Thermometer.Sensor place(GameTestHelper test) {
         test.setBlock(LOCAL, ThermometerMod.BLOCK.get());
         return (Thermometer.Sensor) test.getLevel().getBlockEntity(test.absolutePos(LOCAL));

@@ -1,6 +1,7 @@
 package mcmodup.atomicintegration;
 
 import codechicken.multipart.api.RedstoneInteractions;
+import mcmodup_kernel.atomic_thermometer.HeatGrid;
 import mcmodup_kernel.atomic_thermometer.Thermometer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -42,22 +43,8 @@ public final class ThermometerMultipartSmoke {
     public static void trackedSignalReachesMultipart(GameTestHelper test) {
         test.assertTrue(ModList.get().isLoaded("cb_multipart") && ModList.get().isLoaded("codechickenlib") &&
                         !ModList.get().isLoaded("legacyconnector"), "Expected native Multipart and CCL without Connector");
-        var world = test.getLevel();
-        var pos = test.absolutePos(SENSOR);
-        var temp = test.absolutePos(SOURCE);
-        var id = ResourceLocation.parse("atomic_thermometer:thermometer");
-        var item = BuiltInRegistries.ITEM.get(id);
-        var stack = new ItemStack(item);
-        var actor = test.makeMockPlayer(GameType.SURVIVAL);
-        actor.setItemInHand(InteractionHand.MAIN_HAND, stack);
-        actor.setShiftKeyDown(true);
         test.setBlock(SOURCE, Blocks.GOLD_BLOCK);
-        test.setBlock(SENSOR.below(), Blocks.STONE);
-        test.assertTrue(item.useOn(click(actor, temp)).consumesAction() && stack.getCount() == 1,
-                        "Crouching use should track a sample position without placing the sensor");
-        actor.setShiftKeyDown(false);
-        test.assertTrue(item.useOn(click(actor, pos.below())).consumesAction() && world.getBlockState(pos).is(BuiltInRegistries.BLOCK.get(id)),
-                        "Placement failed to install the staged thermometer");
+        var pos = placeTrackedThermometer(test);
         checkPower(test, pos, 0);
         test.runAfterDelay(12, () -> {
             checkPower(test, pos, 15);
@@ -68,6 +55,48 @@ public final class ThermometerMultipartSmoke {
                 test.succeed();
             });
         });
+    }
+
+    @GameTest(template = "empty", timeoutTicks = 45)
+    public static void gridHeatDrivesTrackedSignal(GameTestHelper test) {
+        var level = test.getLevel();
+        var source = test.absolutePos(SOURCE);
+        var outside = new BlockPos(source.getX(), level.getMaxBuildHeight(), source.getZ());
+        test.setBlock(SOURCE, Blocks.STONE);
+        test.setBlock(SOURCE.above(), Blocks.AIR);
+        var pos = placeTrackedThermometer(test);
+        float ambient = HeatGrid.sample(level, source);
+        float air = HeatGrid.sample(level, source.above());
+        test.assertTrue(!HeatGrid.addHeat(level, outside, 1200F) && Float.isNaN(HeatGrid.sample(level, outside)),
+                "Heat should stay inside the loaded build volume");
+        test.assertTrue(HeatGrid.addHeat(level, source, 1200F) && HeatGrid.sample(level, source) == ambient + 1200F,
+                "The preview server did not accept grid heat");
+        checkPower(test, pos, 0);
+        test.runAfterDelay(12, () -> {
+            checkPower(test, pos, 15);
+            test.assertTrue(HeatGrid.sample(level, source) < ambient + 1200F && HeatGrid.sample(level, source.above()) > air,
+                    "The deployed level did not advance the heat grid");
+            test.succeed();
+        });
+    }
+
+    private static BlockPos placeTrackedThermometer(GameTestHelper test) {
+        var world = test.getLevel();
+        var pos = test.absolutePos(SENSOR);
+        var temp = test.absolutePos(SOURCE);
+        var id = ResourceLocation.parse("atomic_thermometer:thermometer");
+        var item = BuiltInRegistries.ITEM.get(id);
+        var stack = new ItemStack(item);
+        var actor = test.makeMockPlayer(GameType.SURVIVAL);
+        actor.setItemInHand(InteractionHand.MAIN_HAND, stack);
+        actor.setShiftKeyDown(true);
+        test.setBlock(SENSOR.below(), Blocks.STONE);
+        test.assertTrue(item.useOn(click(actor, temp)).consumesAction() && stack.getCount() == 1,
+                        "Crouching use should track a sample position without placing the sensor");
+        actor.setShiftKeyDown(false);
+        test.assertTrue(item.useOn(click(actor, pos.below())).consumesAction() && world.getBlockState(pos).is(BuiltInRegistries.BLOCK.get(id)),
+                        "Placement failed to install the staged thermometer");
+        return pos;
     }
 
     private static UseOnContext click(net.minecraft.world.entity.player.Player player, BlockPos hit) {

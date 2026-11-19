@@ -143,13 +143,13 @@ def check(root: Path) -> None:
     code, report = run(*full)
     assert code == 1 and not report["ready"] and not delta.exists() and not report["native_builds"], report["problems"]
     assert not report["legacy_selection_conflicts"] and report["legacy_identity_splits"], report["legacy_selection_conflicts"]
-    note("Combined native previews booted", "Both Minechem previews, the ICBM plate, the Atomic Science thermometer, GeoStrata rocks "
-         "and the Mimicry catalyst reached dedicated server ready with unchanged Multipart and CCL. Sixteen source and 22 staged-JAR tests passed. "
+    note("Combined native previews booted", "Both Minechem previews, the ICBM plate, the Atomic Science thermal machines, GeoStrata rocks "
+         "and the Mimicry catalyst reached dedicated server ready with unchanged Multipart and CCL. Eighteen source and 24 staged-JAR tests passed. "
          "All eight still block without writing a pack.")
     summary(["## Combined native previews", "",
              "Six previews built in one updater invocation and staged with unchanged CB Multipart and CodeChickenLib: both Minechem releases, "
-             "ICBM plate, Atomic Science thermometer, GeoStrata rocks, and Mimicry catalyst. Sixteen source GameTests, stock dedicated boot, "
-             "and 22 staged-JAR GameTests passed. These are bounded previews, not full ports. The all-eight selection staged nothing.", ""])
+             "ICBM plate, Atomic Science thermal machines, GeoStrata rocks, and Mimicry catalyst. Eighteen source GameTests, stock dedicated boot, "
+             "and 24 staged-JAR GameTests passed. These are bounded previews, not full ports. The all-eight selection staged nothing.", ""])
 
 
 if __name__ == "__main__":

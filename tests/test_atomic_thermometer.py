@@ -1,6 +1,7 @@
 """Check source-only preparation and exact Atomic Science method imports."""
 
 from io import BytesIO
+import json
 import os
 from pathlib import Path
 import tempfile
@@ -29,7 +30,11 @@ class AtomicThermometerTests(unittest.TestCase):
             self.assertEqual(set(port.imports), set(TEXTURES))
             self.assertEqual(file_digest(port.archive), port.source_sha256)
             with ZipFile(port.archive) as source:
-                self.assertIn(f"src/main/java/{KERNEL}/Thermometer.java", source.namelist())
+                for name in ("Thermometer", "HeatGrid", "Turbine", "TurbineClient"):
+                    self.assertIn(f"src/main/java/{KERNEL}/{name}.java", source.namelist())
+                steam = json.loads(source.read("src/main/resources/data/c/tags/fluid/steam.json"))
+                self.assertEqual(steam, {"replace": False, "values": [f"{MOD_ID}:steam"]})
+                self.assertIn("TurbineChecks*.class", source.read("build.gradle").decode())
                 self.assertFalse(any(path.endswith(".class") or path in port.imports.values() for path in source.namelist()))
 
     @unittest.skipUnless(os.environ.get("MCMODUP_VOLTZ_ARCHIVE"), "exact Voltz archive not supplied")
