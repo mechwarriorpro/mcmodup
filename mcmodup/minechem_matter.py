@@ -11,6 +11,8 @@ from .minechem_materials import PRODUCT, TEMPLATES, chemical_id, observations
 JAVA = ("ChemistryFluids", "FluidPresentation", "ChemicalBucketRecipe", "ChemistryRadiation",
         "ShieldedStorage", "ShieldedStorageScreen", "FinalFluidCollector", "TubeWorldUse")
 RESOURCES = "src/main/resources"
+ANIMATED_PNGS = {"assets/minechem/textures/blocks/fluid_still.png": (16, 128),
+                 "assets/minechem/textures/blocks/fluid_flow.png": (32, 512)}
 LIVES = (0, 1_728_000, 864_000, 432_000, 216_000, 72_000)
 DAMAGE = (0, 1, 2, 6, 8, 16)
 

@@ -369,7 +369,8 @@ def convert_catalog(pack: ModPack, mod: PackMod, profile: Profile, output: Path,
             if mode == DecomposerMode.FINAL:
                 mapping.update(minechem_final_synthesis.asset_paths(profile.namespace))
             with open_input(mod.path) as source:
-                reference = minechem_final_synthesis.read_assets(source, mapping)
+                reference = minechem_final_synthesis.read_assets(source, mapping,
+                    animation_sizes=minechem_matter.ANIMATED_PNGS if mode == DecomposerMode.RELEASE_394 else None)
             files.update({f"src/main/resources/{new}": reference[old] for old, new in mapping.items()})
         write_workspace(workspace, files)
         built = _gradle(workspace, timeout)

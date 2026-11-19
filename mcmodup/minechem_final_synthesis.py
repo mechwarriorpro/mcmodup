@@ -4,6 +4,7 @@ from dataclasses import dataclass
 import json
 from pathlib import Path
 import re
+import struct
 
 from .assets import PNG_SIGNATURE
 from .catalogs import CatalogEntry
@@ -131,11 +132,15 @@ def asset_paths(namespace: str) -> dict[str, str]:
     )}
 
 
-def read_assets(source, paths: dict[str, str]) -> dict[str, bytes]:
+def read_assets(source, paths: dict[str, str], *, animation_sizes: dict[str, tuple[int, int]] | None = None) -> dict[str, bytes]:
     textures = {name: source.read(name, 1024 * 1024) for name in paths}
     for name, data in textures.items():
-        if not data.startswith(PNG_SIGNATURE) or f"{name}.mcmeta" in source.files:
+        animated = f"{name}.mcmeta" in source.files
+        expected = (animation_sizes or {}).get(name)
+        if not data.startswith(PNG_SIGNATURE) or (animated and expected is None):
             raise InputError(f"Expected a standalone Minechem PNG: {name!r}")
+        if expected is not None and (not animated or data[12:24] != b"IHDR" + struct.pack(">II", *expected)):
+            raise InputError(f"Unexpected animated Minechem PNG layout: {name!r}")
     return textures
 
 

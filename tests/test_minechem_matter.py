@@ -1,10 +1,13 @@
 import json
 import re
+import struct
 import unittest
 
+from mcmodup.assets import PNG_SIGNATURE
 from mcmodup.inputs import InputError
+from mcmodup.minechem_final_synthesis import read_assets
 from mcmodup.minechem_materials import observations, release
-from mcmodup.minechem_matter import asset_paths, checks, fluid_rows, project, radiation_rows, trace_name
+from mcmodup.minechem_matter import ANIMATED_PNGS, asset_paths, checks, fluid_rows, project, radiation_rows, trace_name
 
 
 class MatterTests(unittest.TestCase):
@@ -44,6 +47,24 @@ class MatterTests(unittest.TestCase):
         self.assertIn('return false ? Items.WATER_BUCKET', files['src/main/java/mcmodup/example/ChemistryFluids.java'])
         with self.assertRaisesRegex(InputError, 'does not match'):
             fluid_rows(True, {key: item for key, item in ids.items() if key != 'e26'})
+
+    def test_only_pinned_fluid_animation_layouts_are_accepted(self):
+        name = "assets/minechem/textures/blocks/fluid_still.png"
+
+        class Archive:
+            files = {name, f"{name}.mcmeta"}
+            dimensions = (16, 128)
+
+            def read(self, path, limit):
+                return PNG_SIGNATURE + b"\x00\x00\x00\x0dIHDR" + struct.pack(">II", *self.dimensions)
+
+        source = Archive()
+        with self.assertRaisesRegex(InputError, "standalone"):
+            read_assets(source, {name: "target"})
+        self.assertIn(name, read_assets(source, {name: "target"}, animation_sizes=ANIMATED_PNGS))
+        source.dimensions = (16, 256)
+        with self.assertRaisesRegex(InputError, "animated Minechem PNG layout"):
+            read_assets(source, {name: "target"}, animation_sizes=ANIMATED_PNGS)
 
     def test_final_fluid_collection_stays_non_placeable(self):
         ns, ids = self.ids(False)

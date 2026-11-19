@@ -166,7 +166,8 @@ def _recipe(original: Path, profile: Profile, checksum: str, output: Path) -> di
         for name, data in reactor_assets.items():
             if not data.startswith(PNG_SIGNATURE if name.endswith(".png") else b"OggS"):
                 raise InputError(f"Unexpected reactor asset format: {name!r}")
-        synthesis_assets = minechem_final_synthesis.read_assets(source, synthesis_icons)
+        synthesis_assets = minechem_final_synthesis.read_assets(source, synthesis_icons,
+            animation_sizes=minechem_matter.ANIMATED_PNGS if prepaid else None)
     deps = {"bundled_legacy_dependencies": False, "adapter": "native FE and isolated item slots"}
     files, _ = _project_files(profile, entries, textures, checksum, deps, locations,
                               linked_decomposer=True, project_version=version, paired_limitations=minechem_reactors.LIMITS)
