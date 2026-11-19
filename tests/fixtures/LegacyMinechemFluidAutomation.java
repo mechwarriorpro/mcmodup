@@ -320,22 +320,29 @@ final class LegacyMinechemFluidAutomation {
                 (info.getField("decayStarted").getLong(clock) == now - 3_000_000L) + "/" +
                 (info.getField("lastDecayUpdate").getLong(clock) == now));
             rows.put("flow_has_clock_" + key, String.valueOf(block.getMethod("hasTileEntity", int.class).invoke(fluid, 1)));
-            rows.put("contact_" + key, contact(fluid, x, y, z));
+            Method collision = block.getMethod("func_149724_b", w, int.class, int.class, int.class, entity);
+            rows.put("contact_handler_" + key, fluid.getClass().getSimpleName() + "/" +
+                fluid.getClass().getMethod(collision.getName(), collision.getParameterTypes()).getDeclaringClass().getSimpleName());
+            rows.put("contact_" + key, contact(fluid, x, y, z, false));
             boolean enabled = effects.getBoolean(null);
             try {
                 effects.setBoolean(null, false);
-                rows.put("contact_disabled_" + key, contact(fluid, x, y, z));
+                rows.put("contact_disabled_" + key, contact(fluid, x, y, z, false));
             } finally { effects.setBoolean(null, enabled); }
             put(x, y, z, vanilla("air"), 0);
             x += 4;
         }
+        rows.put("contact_potion_control", contact(fluidBlock(uranium), x, y, z, true));
     }
 
-    private String contact(Object fluid, int x, int y, int z) throws Exception {
+    private String contact(Object fluid, int x, int y, int z, boolean control) throws Exception {
         Object pig = mc("entity.passive.EntityPig").getConstructor(w).newInstance(world);
-        block.getMethod("func_149724_b", w, int.class, int.class, int.class, entity).invoke(fluid, world, x, y, z, pig);
-        List<String> changes = new ArrayList<String>();
         Class<?> effect = mc("potion.PotionEffect");
+        if (control) {
+            Object poison = effect.getConstructor(int.class, int.class, int.class).newInstance(19, 10, 1);
+            mc("entity.EntityLivingBase").getMethod("func_70690_d", effect).invoke(pig, poison);
+        } else block.getMethod("func_149724_b", w, int.class, int.class, int.class, entity).invoke(fluid, world, x, y, z, pig);
+        List<String> changes = new ArrayList<String>();
         for (Object value : (Iterable<?>)mc("entity.EntityLivingBase").getMethod("func_70651_bq").invoke(pig)) {
             changes.add(effect.getMethod("func_76456_a").invoke(value) + ":" + effect.getMethod("func_76458_c").invoke(value) + "/" +
                 effect.getMethod("func_76459_b").invoke(value));
