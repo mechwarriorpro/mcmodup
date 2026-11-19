@@ -191,7 +191,7 @@ public final class LegacyMinechemDecomposer {
             Throwable cause = failure.getCause() == null ? failure : failure.getCause();
             System.err.println("MCMODUP_MINECHEM_ORIGINAL_FAIL " + cause + " at " +
                     (cause.getStackTrace().length == 0 ? "unknown" : cause.getStackTrace()[0]) +
-                    " (probe: " + failure.getStackTrace()[0] + ")");
+                    " (probe: " + fixtureFrame(failure) + ")");
             failure.printStackTrace();
         }
     }
@@ -305,5 +305,11 @@ public final class LegacyMinechemDecomposer {
     private static String state(Object tile) throws Exception { return tile.getClass().getField("state").get(tile).toString(); }
     private static int coordinate(Object object, String field) throws Exception { return object.getClass().getField(field).getInt(object); }
     private static Class<?> type(String name) throws ClassNotFoundException { return Class.forName("net.minecraft." + name); }
+    private static String fixtureFrame(Throwable failure) {
+        for (StackTraceElement frame : failure.getStackTrace()) {
+            if (frame.getClassName().startsWith("mcmodup.minechemoracle.")) return frame.toString();
+        }
+        return failure.getStackTrace()[0].toString();
+    }
     private static void require(boolean ok, String failure) { if (!ok) throw new AssertionError(failure); }
 }

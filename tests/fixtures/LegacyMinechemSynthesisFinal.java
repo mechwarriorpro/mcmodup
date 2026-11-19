@@ -1,6 +1,9 @@
 package mcmodup.minechemoracle;
 
 import java.io.PrintWriter;
+import java.lang.invoke.MethodHandle;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.MethodType;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
@@ -42,11 +45,11 @@ final class LegacyMinechemSynthesisFinal {
         sided = tile.getMethod("func_94128_d", int.class);
     }
 
-    static String survey(Object world, int x, int y, int z) throws Exception {
+    static String survey(Object world, int x, int y, int z) throws Throwable {
         return new LegacyMinechemSynthesisFinal(world).run(x, y, z);
     }
 
-    private String run(int x, int y, int z) throws Exception {
+    private String run(int x, int y, int z) throws Throwable {
         Object block = Class.forName("minechem.MinechemBlocksGeneration").getField("synthesis").get(null);
         int blockId = mc("block.Block").getField("field_71990_ca").getInt(block);
         Class<?> w = mc("world.World");
@@ -65,12 +68,15 @@ final class LegacyMinechemSynthesisFinal {
         require(!recipes.isEmpty() && recipes.size() < 1000, "Unexpected FINAL recipe registry size: " + recipes.size());
         Method shape = recipe.getMethod("getShapedRecipe"), shaped = recipe.getMethod("isShaped");
         Method output = recipe.getMethod("getOutput"), cost = recipe.getMethod("energyCost");
-        Method stacks = Class.forName("minechem.utils.MinechemHelper").getMethod("convertChemicalArrayIntoItemStackArray", shape.getReturnType());
+        // Looking up every helper signature reflectively links a client-only FontRenderer on the server.
+        MethodHandle stacks = MethodHandles.publicLookup().findStatic(Class.forName("minechem.utils.MinechemHelper"),
+                "convertChemicalArrayIntoItemStackArray", MethodType.methodType(java.lang.reflect.Array.newInstance(stack, 0).getClass(),
+                shape.getReturnType()));
         int paid = 0, shadowed = 0, blocked = 0;
         try (PrintWriter out = new PrintWriter("minechem-final-synthesis.txt", "UTF-8")) {
             for (int i = 0; i < recipes.size(); i++) {
                 Object rule = recipes.get(i), product = output.invoke(rule);
-                Object[] ingredients = (Object[]) stacks.invoke(null, shape.invoke(rule));
+                Object[] ingredients = (Object[]) stacks.invoke(shape.invoke(rule));
                 int price = (Integer) cost.invoke(rule), quantity = count.getInt(product);
                 boolean fixed = (Boolean) shaped.invoke(rule);
                 String reference = key(product);
@@ -146,6 +152,10 @@ final class LegacyMinechemSynthesisFinal {
         checkSides(machine, false, target);
         charge(machine, 1);
         checkSides(machine, true, target);
+        Object[] simulation = (Object[]) tile.getMethod("extractOutput", boolean.class, int.class).invoke(machine, false, 1);
+        require(simulation.length == 1 && key(simulation[0]).equals("v265:0") && energy(machine) == 10_000 &&
+                count.getInt(get.invoke(machine, 10)) == 7 && count.getInt(get.invoke(machine, 18)) == 9,
+                "FINAL simulated output changed actual inventory or charge");
         Class<?> tagType = mc("nbt.NBTTagCompound");
         Object tag = tagType.newInstance();
         tile.getMethod("func_70310_b", tagType).invoke(machine, tag);
@@ -161,15 +171,28 @@ final class LegacyMinechemSynthesisFinal {
         Object removed = remove.invoke(restored, 19, 1);
         require(removed != null && item.invoke(removed) == journalItem && get.invoke(restored, 1) == null && get.invoke(restored, 19) == null,
                 "Removing FINAL's journal did not clear the ghost grid");
+        tile.getMethod("func_70296_d").invoke(restored);
+        require(get.invoke(restored, 0) == null, "Removing FINAL's journal did not clear output after a slot notification");
     }
 
     private void checkSides(Object machine, boolean ready, Object item) throws Exception {
         Method extract = tile.getMethod("func_102008_b", int.class, stack, int.class);
+        Field automation = Class.forName("minechem.Settings").getField("AllowAutomation");
+        require(!automation.getBoolean(null), "Expected automation disabled in the pinned defaults");
+        Method insert = tile.getMethod("func_102007_a", int.class, stack, int.class);
         for (int d = 0; d < 6; d++) {
             int[] visible = (int[]) sided.invoke(machine, d);
             boolean out = ready && d != 1;
             require(visible.length == (out ? 1 : 9) && visible[0] == (out ? 0 : 10), "Wrong FINAL face at " + d);
-            require(!(Boolean) extract.invoke(machine, visible[0], item, d), "Default FINAL automation went beyond simulation");
+            require((Boolean) insert.invoke(machine, visible[0], item, d), "Default FINAL refused a sided insert");
+            require(!(Boolean) extract.invoke(machine, visible[0], item, d), "Default FINAL allowed item extraction");
+            automation.setBoolean(null, true);
+            try {
+                require((Boolean) extract.invoke(machine, visible[0], item, d) == ready,
+                        "Configured FINAL extraction gate did not follow readiness on side " + d);
+            } finally {
+                automation.setBoolean(null, false);
+            }
         }
     }
 
