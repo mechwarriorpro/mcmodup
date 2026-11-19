@@ -354,7 +354,11 @@ final class ReactorMachines {
         void tick() {
             if (power.getEnergyStored() == 0) return;
             Core target = core();
-            if (target != null) power.spend(target.power.receiveEnergy(power.getEnergyStored(), false));
+            if (target != null) {
+                int forwarded = target.power.receiveEnergy(power.getEnergyStored(), false);
+                // The original proxy uses the same payment gate as machines. Free mode keeps its packet.
+                if (@WALL_SPENDS@) power.spend(forwarded);
+            }
         }
         @Override protected void saveAdditional(CompoundTag tag, HolderLookup.Provider provider) {
             super.saveAdditional(tag, provider);

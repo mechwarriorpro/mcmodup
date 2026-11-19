@@ -1,1 +1,19 @@
 # Registry observation: output@registration = count; shape or shapeless; ordered legacy ingredients
+# Forge run 44545509233, job 135634867937.
+citem.itemAtomicManipulator:0@1=1;3x3;v33:0,v33:0,v33:0,v33:0,v42:0,v33:0,v33:0,v33:0,v33:0
+citem.itemBlueprint.item.name.blueprintFission:1@1=1;shapeless;v339:0,v264:0
+citem.itemBlueprint.item.name.blueprintFusion:0@1=1;shapeless;v339:0,v57:0
+citem.itemChemistJournal:0@1=1;shapeless;v340:0,v20:0
+citem.opticalMicroscopeLens:0@1=1;3x3;v20:0,_,v20:0,v20:0,v20:0,v20:0,v20:0,_,v20:0
+citem.opticalMicroscopeLens:1@1=1;3x3;_,v20:0,_,v20:0,v20:0,v20:0,_,v20:0,_
+citem.opticalMicroscopeLens:2@1=1;1x3;citem.opticalMicroscopeLens:1,citem.opticalMicroscopeLens:0,citem.opticalMicroscopeLens:1
+citem.opticalMicroscopeLens:3@1=1;3x1;citem.opticalMicroscopeLens:0,citem.opticalMicroscopeLens:1,citem.opticalMicroscopeLens:0
+cminechem.FusionWall:0@1=16;3x3;v265:0,e82,v265:0,v265:0,e82,v265:0,v265:0,e82,v265:0
+cminechem.TungstenPlating:1@1=16;3x3;v265:0,e74,v265:0,v265:0,e4,v265:0,v265:0,e74,v265:0
+ctile.blueprintProjector:0@1=1;3x3;_,v265:0,_,v123:0,v102:0,citem.opticalMicroscopeLens:3,_,v265:0,_
+ctile.chemicalDecomposer:0@1=1;3x3;v265:0,v265:0,v265:0,v265:0,citem.itemAtomicManipulator:0,v265:0,v265:0,v331:0,v265:0
+ctile.chemicalSynthesizer:0@1=1;3x3;v265:0,v331:0,v265:0,v265:0,citem.itemAtomicManipulator:0,v265:0,v265:0,v264:0,v265:0
+ctile.leadChest:0@1=1;3x3;e82,e82,e82,e82,v54:0,e82,e82,e82,e82
+ctile.opticalMicroscope:0@1=1;3x3;_,citem.opticalMicroscopeLens:2,v265:0,_,v102:0,v265:0,v265:0,v265:0,v265:0
+ctile.opticalMicroscope:0@2=1;3x3;_,citem.opticalMicroscopeLens:2,v265:0,_,v102:0,v265:0,v265:0,v265:0,v265:0
+e0@1=1;3x3;_,_,_,v102:0,_,v102:0,_,v102:0,_

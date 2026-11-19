@@ -1,1 +1,19 @@
 # Registry observation: output@registration = count; shape or shapeless; ordered legacy ingredients
+# Forge run 44545509233, job 135634867577.
+citem.minechem.itemAtomicManipulator:0@1=1;3x3;v33:0,v33:0,v33:0,v33:0,v42:0,v33:0,v33:0,v33:0,v33:0
+citem.minechem.itemBlueprint.item.name.blueprintFission:1@1=1;shapeless;v339:0,v264:0
+citem.minechem.itemBlueprint.item.name.blueprintFusion:0@1=1;shapeless;v339:0,v57:0
+citem.minechem.itemChemistJournal:0@1=1;shapeless;v340:0,v20:0
+citem.minechem.itemLens:0@1=1;3x3;v20:0,_,v20:0,v20:0,v20:0,v20:0,v20:0,_,v20:0
+citem.minechem.itemLens:1@1=1;3x3;_,v20:0,_,v20:0,v20:0,v20:0,_,v20:0,_
+citem.minechem.itemLens:2@1=1;1x3;citem.minechem.itemLens:1,citem.minechem.itemLens:0,citem.minechem.itemLens:1
+citem.minechem.itemLens:3@1=1;3x1;citem.minechem.itemLens:0,citem.minechem.itemLens:1,citem.minechem.itemLens:0
+ctile.container.leadedchest:0@1=1;3x3;e81,e81,e81,e81,v54:0,e81,e81,e81,e81
+ctile.container.leadedchest:0@2=1;shapeless;v415:0
+v409:0@1=1;3x3;_,citem.minechem.itemLens:2,v265:0,_,v102:0,v265:0,v265:0,v265:0,v265:0
+v409:0@2=1;3x3;_,citem.minechem.itemLens:2,v265:0,_,v102:0,v265:0,v265:0,v265:0,v265:0
+v410:0@1=1;3x3;v265:0,v265:0,v265:0,v265:0,citem.minechem.itemAtomicManipulator:0,v265:0,v265:0,v331:0,v265:0
+v411:0@1=1;3x3;v265:0,v331:0,v265:0,v265:0,citem.minechem.itemAtomicManipulator:0,v265:0,v265:0,v264:0,v265:0
+v412:0@1=1;3x3;_,v265:0,_,v123:0,v102:0,citem.minechem.itemLens:3,_,v265:0,_
+v414:0@1=16;3x3;v265:0,e81,v265:0,v265:0,e81,v265:0,v265:0,e81,v265:0
+v414:1@1=16;3x3;v265:0,e73,v265:0,v265:0,e3,v265:0,v265:0,e73,v265:0

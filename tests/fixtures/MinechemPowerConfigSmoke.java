@@ -15,6 +15,9 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.EntityBlock;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.neoforged.neoforge.capabilities.Capabilities;
 import net.neoforged.neoforge.energy.IEnergyStorage;
@@ -152,6 +155,53 @@ public final class MinechemPowerConfigSmoke {
         });
     }
 
+    @GameTest(template = "reactor_room")
+    public static void configuredReactorWalls(GameTestHelper test) {
+        var orphan = test.absolutePos(new BlockPos(1, 1, 3));
+        place(test, orphan, "reactor_casing");
+        var fresh = power(test, orphan, "wall");
+        int packet = value("energyPacketSize");
+        int detachedIntake = fresh.receiveEnergy(packet, false);
+        tickWall(test, orphan);
+        var level = test.getLevel();
+        var saved = level.getBlockEntity(orphan).saveWithFullMetadata(level.registryAccess());
+        level.removeBlockEntity(orphan);
+        level.setBlockAndUpdate(orphan, Blocks.AIR.defaultBlockState());
+        place(test, orphan, "reactor_casing");
+        level.getBlockEntity(orphan).loadWithComponents(saved, level.registryAccess());
+        var reloaded = level.getCapability(Capabilities.EnergyStorage.BLOCK, orphan, Direction.SOUTH);
+        verify(test, PROFILE + "_wall_unlinked", detachedIntake + "/" + reloaded.getEnergyStored() + "/" + reloaded.receiveEnergy(packet, true));
+
+        var fission = FISSION.build(test, "fission_core");
+        var shell = FISSION.position(test, 0, 0, 0);
+        test.runAfterDelay(3, () -> {
+            var core = power(test, fission, "fission");
+            var wall = power(test, shell, "wall");
+            int intake = wall.receiveEnergy(packet, false);
+            tickWall(test, shell);
+            String first = wall.getEnergyStored() + "/" + core.getEnergyStored();
+            tickWall(test, shell);
+            verify(test, PROFILE + "_wall_forward", intake + "/" + first + "/" + wall.getEnergyStored() + "/" + core.getEnergyStored());
+            charge(test, core, core.getMaxEnergyStored() - 5 - core.getEnergyStored());
+            int secondIntake = wall.receiveEnergy(packet, false);
+            tickWall(test, shell);
+            String partly = wall.getEnergyStored() + "/" + core.getEnergyStored();
+            tickWall(test, shell);
+            verify(test, PROFILE + "_wall_partial", secondIntake + "/" + partly + "/" + wall.getEnergyStored() + "/" + core.getEnergyStored());
+            test.succeed();
+        });
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void tickWall(GameTestHelper test, BlockPos pos) {
+        var level = test.getLevel();
+        var state = level.getBlockState(pos);
+        var tile = level.getBlockEntity(pos);
+        var ticker = ((EntityBlock) state.getBlock()).getTicker(level, state, (BlockEntityType<BlockEntity>) tile.getType());
+        test.assertTrue(ticker != null, "Missing server ticker for configured reactor wall");
+        ticker.tick(level, pos, state, tile);
+    }
+
     private static PowerMenu stone(GameTestHelper test, BlockPos pos, int batches) {
         place(test, pos, "synthesizer");
         var machine = menu(test, pos);
@@ -176,13 +226,15 @@ public final class MinechemPowerConfigSmoke {
     }
 
     private record Grid(int width, int height, int depth, int cx, int cy, int cz, String contents) {
+        BlockPos position(GameTestHelper test, int x, int y, int z) {
+            return test.absolutePos(new BlockPos(2, 1, 8)).offset(width + 1 - x, y, z - depth / 2);
+        }
         BlockPos build(GameTestHelper test, String core) {
-            var origin = test.absolutePos(new BlockPos(2, 1, 8));
             for (int y = 0; y < height; ++y) for (int x = 0; x < width; ++x) for (int z = 0; z < depth; ++z) {
                 char c = contents.charAt((y * width + x) * depth + z);
-                if (c == 'A' || c == 'C') place(test, origin.offset(width + 1 - x, y, z - depth / 2), c == 'A' ? "reactor_casing" : "reactor_coil");
+                if (c == 'A' || c == 'C') place(test, position(test, x, y, z), c == 'A' ? "reactor_casing" : "reactor_coil");
             }
-            var at = origin.offset(width + 1 - cx, cy, cz - depth / 2);
+            var at = position(test, cx, cy, cz);
             place(test, at, core);
             return at;
         }

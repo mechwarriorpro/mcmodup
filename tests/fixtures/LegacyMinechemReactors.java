@@ -90,10 +90,10 @@ final class LegacyMinechemReactors {
         Object fusionResult = get(combiner, 2);
         if (fusionResult != null) expect(fusionResult, 2, 1, "Configured fusion of H + H");
         rows.put(profile + "_fusion_run", cost + "/" + zero + "/" + equal + "/" + (fusionResult != null) + "/" + energy(combiner));
-        surveyWalls(x, y, z, split, splitter, profile, rows);
+        surveyWalls(x, y, z, splitter, profile, rows);
     }
 
-    private void surveyWalls(int x, int y, int z, Integer[][][] split, Object core, String profile,
+    private void surveyWalls(int x, int y, int z, Object core, String profile,
             java.util.Map<String, String> rows) throws Exception {
         int packet = Class.forName("minechem.Settings").getField("energyPacketSize").getInt(null);
         setBlock(x - 9, y, z + 4, reactorBlock, 0);
@@ -105,7 +105,7 @@ final class LegacyMinechemReactors {
         rows.put(profile + "_wall_unlinked", accepted + "/" + energy(unlinked) + "/" + receive.invoke(unlinked, packet, true));
 
         Object wall = tile.invoke(world, x - 6, y, z + 2);
-        require(wall != null && wall.getClass().getField("manager").get(wall) == core, "Casing was not linked to the real .394 core");
+        require(wall != null && wall.getClass().getField("manager").get(wall) == core, "Shell coil was not linked to the real .394 core");
         Object wallIntake = receive.invoke(wall, packet, false);
         tick(wall);
         String first = energy(wall) + "/" + energy(core);
@@ -114,18 +114,12 @@ final class LegacyMinechemReactors {
 
         int capacity = (Integer) core.getClass().getMethod("getMaxEnergyStored").invoke(core);
         LegacyMinechemPower394.charge(core, capacity - 5 - energy(core));
-        Object coil = null;
-        for (int l = 0; l < split.length && coil == null; l++) for (int u = 0; u < split[l].length && coil == null; u++) {
-            for (int v = 0; v < split[l][u].length && coil == null; v++) {
-                if (split[l][u][v] == 2) coil = tile.invoke(world, x - 6 + u, y + l, z + 2 - v);
-            }
-        }
-        require(coil != null && coil.getClass().getField("manager").get(coil) == core, "Coil was not linked to the .394 core");
-        Object coilIntake = receive.invoke(coil, packet, false);
-        tick(coil);
-        String partly = energy(coil) + "/" + energy(core);
-        tick(coil);
-        rows.put(profile + "_wall_partial", coilIntake + "/" + partly + "/" + energy(coil) + "/" + energy(core));
+        // Reuse the same shell coil: in free mode it still holds the first packet.
+        Object coilIntake = receive.invoke(wall, packet, false);
+        tick(wall);
+        String partly = energy(wall) + "/" + energy(core);
+        tick(wall);
+        rows.put(profile + "_wall_partial", coilIntake + "/" + partly + "/" + energy(wall) + "/" + energy(core));
     }
 
     private String run(int x, int y, int z) throws Exception {

@@ -1,4 +1,5 @@
 # Observed on a checksum-pinned .394 Forge boot with power.enable=false and custom machine settings.
+# Reactor wall rows: Forge run 44545509233, job 135634867937.
 boot_enabled=false
 costDecomposition=375
 energyPacketSize=37
@@ -14,6 +15,10 @@ free_synthesis_shift_click=48/0
 free_synthesis_sided=true/16/0
 free_synthesizer_run=90/0/true/0/17
 free_synthesizer_storage=45678/37/0
+free_wall_forward=37/37/37/37/74
+free_wall_partial=0/37/5432/37/5432
+free_wall_storage=37/37/0
+free_wall_unlinked=37/37/0
 fusionMultiplier=43
 maxDecomposerStorage=4321
 maxFissionStorage=5432
@@ -27,4 +32,8 @@ paid_fusion_run=86/false/false/true/1
 paid_fusion_storage=6543/37/0
 paid_synthesizer_run=90/90/false/16/0
 paid_synthesizer_storage=45678/37/0
+paid_wall_forward=37/0/37/0/37
+paid_wall_partial=37/32/5432/32/5432
+paid_wall_storage=37/37/0
+paid_wall_unlinked=37/37/0
 synthesisMultiplier=3
