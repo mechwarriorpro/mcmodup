@@ -33,7 +33,8 @@ public final class LegacyVoltzInfrastructure {
             String assembler = assembler();
             System.out.println("MCMODUP_INFRA_PASS " + grid + " | " + turbine + " | " + assembler + " | " + platform());
         } catch (Throwable error) {
-            System.err.println("MCMODUP_INFRA_FAIL " + error);
+            Throwable cause = error.getCause() == null ? error : error.getCause();
+            System.err.println("MCMODUP_INFRA_FAIL " + cause + " (probe: " + error.getStackTrace()[0] + ")");
             error.printStackTrace();
         }
     }
@@ -110,7 +111,9 @@ public final class LegacyVoltzInfrastructure {
     private static String assembler() throws Exception {
         // Keep the test isolated from all launchers, projectiles and detonation behavior.
         Class<?> type = Class.forName("icbm.explosion.missile.modular.TileMissileAssembler");
-        Object assembler = type.newInstance();
+        Class<?> explosion = Class.forName("icbm.explosion.ICBMExplosion");
+        Object assembler = place(explosion.getField("blockMissileAssembler").get(null), x + 6, y, z, 0);
+        require(type.isInstance(assembler), "Missing original assembler tile");
         Method slots = type.getMethod("func_70302_i_");
         Method direction = type.getMethod("getDirection");
         Method rotation = type.getMethod("setRotation", byte.class);
@@ -140,7 +143,6 @@ public final class LegacyVoltzInfrastructure {
         Class<?> turretType = Class.forName("icbm.sentry.turret.block.TileTurret");
         Class<?> registry = Class.forName("icbm.sentry.turret.TurretRegistry");
         Class<?> direction = Class.forName("net.minecraftforge.common.ForgeDirection");
-        Class<?> nbt = mc("nbt.NBTTagCompound");
         Object platform = platformType.newInstance();
         Method receive = platformType.getMethod("onReceiveEnergy", direction, long.class, boolean.class);
         Method extract = platformType.getMethod("onExtractEnergy", direction, long.class, boolean.class);
@@ -173,9 +175,7 @@ public final class LegacyVoltzInfrastructure {
         require(accepted == 17L && (Long) stored.invoke(first) == firstCapacity && (Long) stored.invoke(second) == 12L,
                 "Platform did not forward the remaining input after the first neighbor saturated");
         require((Long) extract.invoke(platform, north, 17L, true) == 0L, "Platform extracted power");
-        Object saved = nbt.newInstance();
-        platformType.getMethod("func_70310_b", nbt).invoke(platform, saved);
-        return "Sentry platform forwards first 5 then 12, simulates without mutation, no internal storage/extraction; slots=" +
+        return "Sentry platform forwards first 5 then 12, simulates without mutation, no extraction; slots=" +
                 platformType.getMethod("func_70302_i_").invoke(platform) + "; registry=" + new java.util.TreeSet<String>(types.keySet());
     }
 

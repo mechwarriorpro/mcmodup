@@ -27,7 +27,8 @@ def compile_probe(root: Path, server: Path, forge: Path, javac: str) -> None:
     probe.mkdir()
     fixtures = Path(__file__).with_name("fixtures")
     subprocess.run([javac, "-proc:none", "-encoding", "UTF-8", "-classpath", str(forge), "-d", str(probe),
-                    str(fixtures / "LegacyMinechemDecomposer.java"), str(fixtures / "LegacyMinechemMaterials.java")], check=True, timeout=60)
+                    *(str(fixtures / name) for name in ("LegacyMinechemDecomposer.java", "LegacyMinechemMaterials.java",
+                                                        "LegacyMinechemSynthesis394.java"))], check=True, timeout=60)
     with ZipFile(server / "mods/mcmodup-minechemoracle.jar", "x") as jar:
         for compiled in probe.rglob("*.class"):
             jar.write(compiled, compiled.relative_to(probe).as_posix())
@@ -84,6 +85,9 @@ def original(root: Path, version: str) -> None:
         unexpected = sorted(set(observations) - set(expected))
         assert observations == expected, f".394 material trace changed: missing {missing[:8]}; unexpected {unexpected[:8]}"
         note("Pinned .394 material trace re-observed", f"{len(observations)} ordered outputs matched the pinned Forge trace.")
+        synthesis = (server / "minechem-synthesis.txt").read_text(encoding="utf-8").splitlines()
+        for offset in range(0, len(synthesis), 12):
+            note(f"Minechem .394 synthesis trace {offset // 12 + 1}", "\n".join(synthesis[offset:offset + 12]))
 
 
 if __name__ == "__main__":

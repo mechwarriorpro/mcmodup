@@ -10,6 +10,7 @@ on:
       - 'tests/minechem_original_smoke.py'
       - 'tests/fixtures/LegacyMinechemDecomposer.java'
       - 'tests/fixtures/LegacyMinechemMaterials.java'
+      - 'tests/fixtures/LegacyMinechemSynthesis394.java'
       - 'tests/legacy_recipe_fixture.py'
 
 permissions:
