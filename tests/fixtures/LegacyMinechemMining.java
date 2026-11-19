@@ -37,7 +37,7 @@ final class LegacyMinechemMining {
         this.world = world;
         this.old = old;
         actor = new LegacyMinechemPlayerDecay.Actor(world, old);
-        Class<?> manager = actor.interaction.getClass(), gameType = mc("world.WorldSettings$GameType");
+        Class<?> manager = actor.interaction.getClass(), gameType = mc(old ? "world.EnumGameType" : "world.WorldSettings$GameType");
         manager.getMethod("func_73076_a", gameType).invoke(actor.interaction, Enum.valueOf((Class) gameType, "SURVIVAL"));
         harvest = manager.getMethod("func_73084_b", int.class, int.class, int.class);
         setInventory = actor.inventory.getClass().getMethod("func_70299_a", int.class, stack);
@@ -115,21 +115,23 @@ final class LegacyMinechemMining {
 
     private void hunger(int x, int y, int z) throws Exception {
         Object held = boosted(9, 1), food = actor.player.getClass().getMethod("func_71024_bL").invoke(actor.player);
-        Method set = food.getClass().getMethod("func_75114_a", int.class), saturation = food.getClass().getMethod("func_75119_b", float.class);
-        Method get = food.getClass().getMethod("func_75116_a"), sat = food.getClass().getMethod("func_75115_e");
+        // The old public setters only exist in the client JARs.
+        Field level = food.getClass().getDeclaredField("field_75127_a"), saturation = food.getClass().getDeclaredField("field_75125_b");
+        level.setAccessible(true);
+        saturation.setAccessible(true);
         for (int roll = 0; roll <= 1; roll++) {
-            set.invoke(food, 10);
-            saturation.invoke(food, 0F);
+            level.setInt(food, 10);
+            saturation.setFloat(food, 0F);
             long seed = 0;
             while (new Random(seed).nextInt(10) != roll) seed++;
             worldRandom.setSeed(seed);
             callback(held, 1, x, y, z);
-            rows.put("fluorine_rank1_roll" + roll, String.format(Locale.ROOT, "%d/%.2f", get.invoke(food), sat.invoke(food)));
+            rows.put("fluorine_rank1_roll" + roll, String.format(Locale.ROOT, "%d/%.2f", level.getInt(food), saturation.getFloat(food)));
         }
-        set.invoke(food, 19);
-        saturation.invoke(food, 19F);
+        level.setInt(food, 19);
+        saturation.setFloat(food, 19F);
         callback(boosted(9, 10), 1, x, y, z);
-        rows.put("fluorine_cap", String.format(Locale.ROOT, "%d/%.2f", get.invoke(food), sat.invoke(food)));
+        rows.put("fluorine_cap", String.format(Locale.ROOT, "%d/%.2f", level.getInt(food), saturation.getFloat(food)));
     }
 
     private void torch(int x, int y, int z) throws Exception {
@@ -254,6 +256,12 @@ final class LegacyMinechemMining {
         return blocks.get(id);
     }
 
-    private static Class<?> mc(String name) throws Exception { return Class.forName("net.minecraft." + name); }
+    private static Class<?> mc(String name) throws ClassNotFoundException {
+        try {
+            return Class.forName("net.minecraft." + name);
+        } catch (ClassNotFoundException missing) {
+            throw new AssertionError("Missing legacy class " + name, missing);
+        }
+    }
     private static void require(boolean ok, String why) { if (!ok) throw new AssertionError(why); }
 }
