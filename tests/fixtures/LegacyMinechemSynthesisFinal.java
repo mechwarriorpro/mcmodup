@@ -135,7 +135,7 @@ final class LegacyMinechemSynthesisFinal {
 
     private void verifyContainer(Object stone, int x, int y, int z) throws Exception {
         Class<?> playerType = mc("entity.player.EntityPlayer"), invType = mc("entity.player.InventoryPlayer");
-        Object player = Class.forName("net.minecraftforge.common.FakePlayer").getConstructor(mc("world.WorldServer"), String.class)
+        Object player = Class.forName("net.minecraftforge.common.FakePlayer").getConstructor(mc("world.World"), String.class)
                 .newInstance(world, "[MCModUp]");
         Object inv = playerType.getField("field_71071_by").get(player);
         Class<?> container = Class.forName("minechem.tileentity.synthesis.SynthesisContainer");
