@@ -60,7 +60,7 @@ final class LegacyMinechemCombat {
     }
 
     static void survey(Object world, boolean old, int x, int y, int z) throws Exception {
-        LegacyMinechemCombat test = new LegacyMinechemCombat(world, old, x, y, z);
+        LegacyMinechemCombat test = new LegacyMinechemCombat(world, old, x, y, z == 0 ? z + 16 : z);
         test.measure();
     }
 
@@ -81,6 +81,7 @@ final class LegacyMinechemCombat {
         platinum();
         deathLoot();
         carried();
+        worldEffects();
         combatEffects();
         try (PrintWriter out = new PrintWriter("minechem-polytool-combat.txt", "UTF-8")) {
             for (Map.Entry<String, String> row : rows.entrySet()) out.println(row.getKey() + "=" + row.getValue());
@@ -96,6 +97,7 @@ final class LegacyMinechemCombat {
 
     private void krypton() throws Exception {
         Field reduction = mc("item.ItemArmor").getField("field_77879_b");
+        reduction.setAccessible(true);
         Object chest = getItem.invoke(vanilla(311, 1, 0));
         int original = reduction.getInt(chest);
         try {
@@ -213,6 +215,113 @@ final class LegacyMinechemCombat {
         Object area = bounds.invoke(null, x - 2., y - 2., z - 2., x + 3., y + 3., z + 3.);
         rows.put("kill_zombie", itemCounts((List<?>)entities.invoke(world, itemEntity, area), true));
         discard.invoke(victim);
+        equip(22, 1);
+        victim = target("monster.EntityZombie", .5, .5, false);
+        Method equipment = living.getMethod("func_70062_b", int.class, stack);
+        equipment.invoke(victim, 0, vanilla(267, 1, 0));
+        equipment.invoke(victim, 4, vanilla(306, 1, 0));
+        Method dropChance = mc("entity.EntityLiving").getMethod("func_96120_a", int.class, float.class);
+        dropChance.invoke(victim, 0, 0F);
+        dropChance.invoke(victim, 4, 0F);
+        living.getMethod("func_70606_j", float.class).invoke(victim, 1F);
+        hit(victim);
+        String loot = dropsNear(x, y, z);
+        rows.put("titanium_first_hit_kill", loot.contains("v267:") + "/" + loot.contains("v306:"));
+    }
+
+    private void worldEffects() throws Exception {
+        Field wet = entity.getDeclaredField("field_70171_ac");
+        wet.setAccessible(true);
+        Method rain = w.getMethod("func_72894_k", float.class);
+        Field rainStrength = w.getDeclaredField("field_73004_o");
+        rainStrength.setAccessible(true);
+        Field priorRain = w.getDeclaredField("field_73003_n");
+        priorRain.setAccessible(true);
+        float before = rainStrength.getFloat(world), previous = priorRain.getFloat(world);
+        try {
+            rain.invoke(world, 0F);
+            blastHit("hydrogen_dry", 1, false, false, wet);
+            blastHit("hydrogen_burning", 1, true, false, wet);
+            blastHit("rubidium_dry", 37, false, false, wet);
+            blastHit("rubidium_wet", 37, false, true, wet);
+            blastHit("francium_clear", 87, false, false, wet);
+            rain.invoke(world, 1F);
+            blastHit("francium_raining", 87, false, false, wet);
+            blastMine("francium_mining", 87, 1);
+            rain.invoke(world, 0F);
+            blastMine("caesium_stone", 55, 1);
+            blastMine("caesium_dirt", 55, 3);
+            wet.setBoolean(actor, true);
+            blastMine("rubidium_mining_wet", 37, 1);
+            wet.setBoolean(actor, false);
+            blastMine("rubidium_mining_dry", 37, 1);
+        } finally {
+            rainStrength.setFloat(world, before);
+            priorRain.setFloat(world, previous);
+            wet.setBoolean(actor, false);
+        }
+        Object held = equip(15, 1);
+        int bx = x + 12;
+        put(bx, y, z, 5);
+        mine(held, 5, bx, y, z);
+        int fires = 0;
+        for (int dx = -1; dx <= 1; dx++) for (int dy = -1; dy <= 1; dy++) for (int dz = -1; dz <= 1; dz++) {
+            if (blockAt(bx + dx, y + dy, z + dz) == 51) fires++;
+            put(bx + dx, y + dy, z + dz, 0);
+        }
+        rows.put("phosphorus_planks", Integer.toString(fires));
+        put(bx, y, z, 1);
+        mine(held, 1, bx, y, z);
+        rows.put("phosphorus_stone", Integer.toString(blockAt(bx - 1, y, z)));
+        put(bx, y, z, 0);
+        // A synthetic high rank makes the rare dirt callback deterministic without changing the RNG or claiming future rank support.
+        held = equip(30, 8191);
+        mine(held, 1, bx, y, z);
+        rows.put("zinc_stone", dropsNear(bx, y, z));
+        mine(held, 3, bx, y, z);
+        rows.put("zinc_dirt_guaranteed", dropsNear(bx, y, z));
+    }
+
+    private void blastHit(String label, int atomic, boolean fire, boolean water, Field wet) throws Exception {
+        // Leave a sentinel block at the target's feet in an isolated air pocket.
+        int bx = x + 8;
+        equip(atomic, 3);
+        Object victim = target("passive.EntityPig", 8.5, .5, false);
+        if (fire) entity.getMethod("func_70015_d", int.class).invoke(victim, 5);
+        wet.setBoolean(victim, water);
+        put(bx, y, z, 3);
+        hit(victim);
+        rows.put(label, Integer.toString(blockAt(bx, y, z)));
+        put(bx, y, z, 0);
+    }
+
+    private void blastMine(String label, int atomic, int block) throws Exception {
+        int bx = x + 12;
+        at.invoke(actor, bx + .5, (double)y, z + .5);
+        put(bx, y, z, 3);
+        // .394 Francium's callback uses world Z=0.5, not the mined block's Z.
+        put(bx, y, 0, 3);
+        mine(equip(atomic, 3), block, bx, y, z);
+        rows.put(label, blockAt(bx, y, z) + "/" + blockAt(bx, y, 0));
+        put(bx, y, z, 0);
+        put(bx, y, 0, 0);
+        at.invoke(actor, x + .5, (double)y, z - .5);
+    }
+
+    private void mine(Object held, int id, int x, int y, int z) throws Exception {
+        Class<?> block = mc("block.Block");
+        tool.getClass().getMethod("func_77660_a", stack, w, old ? int.class : block, int.class, int.class, int.class, living)
+            .invoke(tool, held, world, old ? id : block.getMethod("func_149729_e", int.class).invoke(null, id), x, y, z, actor);
+    }
+
+    private int blockAt(int x, int y, int z) throws Exception {
+        Object state = w.getMethod(old ? "func_72798_a" : "func_147439_a", int.class, int.class, int.class).invoke(world, x, y, z);
+        return old ? (Integer) state : (Integer) mc("block.Block").getMethod("func_149682_b", mc("block.Block")).invoke(null, state);
+    }
+
+    private String dropsNear(int x, int y, int z) throws Exception {
+        Object area = bounds.invoke(null, x - 1., y - 1., z - 1., x + 2., y + 2., z + 2.);
+        return itemCounts((List<?>)entities.invoke(world, itemEntity, area), true);
     }
 
     private void drops(String key, String kind, int module, int rank, int token, int amount, boolean melee) throws Exception {
