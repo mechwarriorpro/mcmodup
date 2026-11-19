@@ -56,6 +56,8 @@ final class LegacyMinechemFluidAutomation {
         probe.dispensers(x, y, z);
         probe.reactions(x, y + 12, z);
         probe.propagation(x, y + 24, z);
+        probe.displacement(x + 64, y + 12, z + 40);
+        probe.radioactiveSources(x + 64, y + 24, z + 64);
         try (PrintWriter out = new PrintWriter("minechem-fluid-automation.txt", "UTF-8")) {
             for (Map.Entry<String, String> row : probe.rows.entrySet()) out.println(row.getKey() + "=" + row.getValue());
             if (out.checkError()) throw new AssertionError("Could not save the original fluid automation trace");
@@ -243,6 +245,103 @@ final class LegacyMinechemFluidAutomation {
         put(x, y, z, air, 0);
         updateFluid(gas, x + 1, y, z);
         rows.put("propagate_unsupported_gas", column(x + 1, y, z));
+    }
+
+    private void displacement(int x, int y, int z) throws Exception {
+        Object ethanol = fluidBlock(mol.getField("ethanol").get(null));
+        Object helium = fluidBlock(ec.getField("He").get(null)), hydrogen = fluidBlock(ec.getField("H").get(null));
+        Object[] below = {vanilla("air"), vanilla("stone"), vanilla("water"), vanilla("lava"), vanilla("red_flower"),
+            vanilla("standing_sign"), vanilla("reeds"), vanilla("snow_layer"), vanilla("web"), helium, fluidBlock(iron), ethanol};
+        String[] names = {"air", "stone", "water", "lava", "flower", "sign", "reeds", "snow", "web", "gas", "solid", "same_source"};
+        for (int i = 0; i < below.length; i++) {
+            int sx = x + i * 4;
+            put(sx, y - 2, z, vanilla("grass"), 0);
+            // Configure a snapshot first: unsupported test blocks must not be removed by a neighbor tick.
+            setBlock.invoke(world, sx, y - 1, z, below[i], 0, 2);
+            requireBlock(sx, y - 1, z, below[i]);
+            setBlock.invoke(world, sx, y, z, ethanol, 0, 2);
+            List<Object> items = new ArrayList<Object>(entities());
+            updateFluid(ethanol, sx, y, z);
+            boolean flowed = getBlock.invoke(world, sx, y - 1, z) == ethanol && (Integer)meta.invoke(world, sx, y - 1, z) == 1;
+            rows.put("displace_down_" + names[i], flowed + "/" + dropsSince(items, sx, y - 1, z));
+        }
+        Object[] above = {vanilla("water"), helium, ethanol};
+        for (int i = 0; i < above.length; i++) {
+            int sx = x + i * 4;
+            int sz = z + 8;
+            setBlock.invoke(world, sx, y + 1, sz, above[i], 0, 2);
+            setBlock.invoke(world, sx, y, sz, hydrogen, 0, 2);
+            updateFluid(hydrogen, sx, y, sz);
+            rows.put("displace_up_" + new String[]{"water", "gas", "liquid"}[i], position(sx, y + 1, sz));
+        }
+        for (boolean outlet : new boolean[]{false, true}) {
+            int sx = x + (outlet ? 8 : 0), sz = z + 16;
+            put(sx, y - 1, sz, vanilla("stone"), 0);
+            put(sx, y, sz - 1, vanilla("stone"), 0);
+            put(sx, y, sz + 1, vanilla("stone"), 0);
+            if (!outlet) put(sx - 1, y, sz, vanilla("stone"), 0);
+            setBlock.invoke(world, sx + 1, y, sz, vanilla("water"), 0, 2);
+            setBlock.invoke(world, sx, y, sz, ethanol, 0, 2);
+            updateFluid(ethanol, sx, y, sz);
+            rows.put("displace_lateral_water_" + (outlet ? "outlet" : "closed"), position(sx + 1, y, sz));
+        }
+    }
+
+    private void requireBlock(int x, int y, int z, Object expected) throws Exception {
+        if (getBlock.invoke(world, x, y, z) != expected) throw new AssertionError("Original displacement setup changed before the fluid tick");
+    }
+
+    private void radioactiveSources(int x, int y, int z) throws Exception {
+        Object uranium = ec.getField("U").get(null), radchlor = mol.getField("radchlor").get(null);
+        Class<?> info = Class.forName("minechem.radiation.RadiationInfo");
+        Class<?> tier = Class.forName("minechem.radiation.RadiationEnum"), te = mc("tileentity.TileEntity"), tag = mc("nbt.NBTTagCompound");
+        Field effects = Class.forName("minechem.Settings").getField("fluidEffects");
+        rows.put("fluid_effects_enabled", String.valueOf(effects.getBoolean(null)));
+        long now = (Long) w.getMethod("func_82737_E").invoke(world);
+        for (Object chemical : new Object[]{uranium, radchlor}) {
+            String key = chemical(chemical);
+            Object fluid = fluidBlock(chemical), active = chemical.getClass().getMethod("radioactivity").invoke(chemical);
+            Object start = info.getConstructor(stack, long.class, long.class, int.class, tier)
+                .newInstance(tube(chemical, 8), now - 3_000_000L, now, 0, active);
+            put(x, y, z, fluid, 0);
+            Method at = w.getMethod("func_147438_o", int.class, int.class, int.class);
+            Object tile = at.invoke(world, x, y, z);
+            Field contents = tile.getClass().getField("info");
+            contents.set(tile, start);
+            for (int i = 0; i < 24; i++) {
+                te.getMethod("func_145845_h").invoke(tile);
+                updateFluid(fluid, x, y, z);
+            }
+            Object stored = tag.newInstance(), restored = tile.getClass().newInstance();
+            te.getMethod("func_145841_b", tag).invoke(tile, stored);
+            te.getMethod("func_145839_a", tag).invoke(restored, stored);
+            Object clock = contents.get(restored);
+            rows.put("overdue_source_" + key, position(x, y, z) + "/" +
+                (info.getField("decayStarted").getLong(clock) == now - 3_000_000L) + "/" +
+                (info.getField("lastDecayUpdate").getLong(clock) == now));
+            rows.put("flow_has_clock_" + key, String.valueOf(block.getMethod("hasTileEntity", int.class).invoke(fluid, 1)));
+            rows.put("contact_" + key, contact(fluid, x, y, z));
+            boolean enabled = effects.getBoolean(null);
+            try {
+                effects.setBoolean(null, false);
+                rows.put("contact_disabled_" + key, contact(fluid, x, y, z));
+            } finally { effects.setBoolean(null, enabled); }
+            put(x, y, z, vanilla("air"), 0);
+            x += 4;
+        }
+    }
+
+    private String contact(Object fluid, int x, int y, int z) throws Exception {
+        Object pig = mc("entity.passive.EntityPig").getConstructor(w).newInstance(world);
+        block.getMethod("func_149724_b", w, int.class, int.class, int.class, entity).invoke(fluid, world, x, y, z, pig);
+        List<String> changes = new ArrayList<String>();
+        Class<?> effect = mc("potion.PotionEffect");
+        for (Object value : (Iterable<?>)mc("entity.EntityLivingBase").getMethod("func_70651_bq").invoke(pig)) {
+            changes.add(effect.getMethod("func_76456_a").invoke(value) + ":" + effect.getMethod("func_76458_c").invoke(value) + "/" +
+                effect.getMethod("func_76459_b").invoke(value));
+        }
+        Collections.sort(changes);
+        return changes.toString();
     }
 
     private void updateFluid(Object value, int x, int y, int z) throws Exception {
