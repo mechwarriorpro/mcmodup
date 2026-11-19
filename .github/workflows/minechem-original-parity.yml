@@ -31,6 +31,7 @@ on:
       - 'tests/fixtures/LegacyMinechemPlayerDecay.java'
       - 'tests/fixtures/LegacyMinechemOre.java'
       - 'tests/fixtures/LegacyMinechemOreInterop.java'
+      - 'tests/fixtures/LegacyMinechemPower394.java'
       - 'tests/fixtures/LegacyMinechemFluidAutomation.java'
       - 'tests/fixtures/LegacyMinechemSynthesis394.java'
       - 'tests/fixtures/LegacyMinechemSynthesisFinal.java'
@@ -126,3 +127,11 @@ jobs:
           mkdir "$root/ore-disabled"
           cp -r "$root/original" "$root/voltz.zip" "$root/ore-disabled/"
           python -m minechem_original_smoke "$root/ore-disabled" 1.6.4 --ore-disable
+      - name: Replay .394 with a custom power configuration
+        if: matrix.minecraft == '1.7.10'
+        shell: bash
+        run: |
+          root="$RUNNER_TEMP/minechem"
+          mkdir "$root/power-config"
+          cp -r "$root/original" "$root/CoFHLib-[1.7.10]1.0.1-151.jar" "$root/power-config/"
+          python -m minechem_original_smoke "$root/power-config" 1.7.10 --power-config

@@ -44,6 +44,36 @@ final class LegacyMinechemSynthesis394 {
         return new LegacyMinechemSynthesis394(world).run();
     }
 
+    static void surveyPower(Object world, boolean paid, String profile, Map<String, String> rows) throws Exception {
+        new LegacyMinechemSynthesis394(world).tunedStone(paid, profile, rows);
+    }
+
+    private void tunedStone(boolean paid, String profile, Map<String, String> rows) throws Exception {
+        Class<?> handler = Class.forName("minechem.tileentity.synthesis.SynthesisRecipeHandler");
+        Object lookup = handler.getField("instance").get(null);
+        Object stone = Class.forName("cpw.mods.fml.common.registry.GameRegistry").getMethod("findItem", String.class, String.class)
+            .invoke(null, "minecraft", "stone");
+        Object sample = makeStack.newInstance(stone, 1, 0);
+        Object rule = handler.getMethod("getRecipeFromOutput", stack).invoke(lookup, sample);
+        int cost = (Integer) recipe.getMethod("energyCost").invoke(rule);
+        Object machine = fresh();
+        rows.put(profile + "_synthesizer_storage", LegacyMinechemPower394.storage(machine));
+        choose.invoke(machine, rule);
+        for (int i = 1, at = 10; i <= 9; ++i) {
+            Object ingredient = get.invoke(machine, i);
+            if (ingredient != null) set.invoke(machine, at++, stack.getMethod("func_77946_l").invoke(ingredient));
+        }
+        tick.invoke(machine);
+        int needed = (Integer) tile.getMethod("getEnergyNeeded").invoke(machine);
+        charge(machine, paid ? cost - 1 : 17);
+        boolean below = (Boolean) canTake.invoke(machine, false);
+        if (paid) charge(machine, 1);
+        Object result = extract.invoke(machine, true, 64);
+        Object output = result == null ? null : Array.get(result, 0);
+        rows.put(profile + "_synthesizer_run", cost + "/" + needed + "/" + below + "/" +
+            (same(sample, output) ? quantity(output) : 0) + "/" + stored.invoke(machine));
+    }
+
     private String run() throws Exception {
         Class<?> registry = Class.forName("cpw.mods.fml.common.registry.GameRegistry");
         Method find = registry.getMethod("findItem", String.class, String.class);

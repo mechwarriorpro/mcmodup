@@ -42,7 +42,7 @@ def compile_probe(root: Path, server: Path, forge: Path, javac: str, *, final: b
                                                                  "LegacyMinechemMatter.java", "LegacyMinechemPlayerDecay.java", "LegacyMinechemMining.java",
                                                                  "LegacyMinechemCombat.java",
                                                                  "LegacyMinechemFluidAutomation.java", "LegacyMinechemOre.java",
-                                                                 "LegacyMinechemOreInterop.java"))],
+                                                                 "LegacyMinechemOreInterop.java", "LegacyMinechemPower394.java"))],
                             capture_output=True, text=True, timeout=60)
     assert result.returncode == 0, result.stderr
     # Only the receiver needs a typed Item. javac sees shells for the obfuscated Minecraft
@@ -63,13 +63,32 @@ def compile_probe(root: Path, server: Path, forge: Path, javac: str, *, final: b
             jar.write(compiled, compiled.relative_to(probe).as_posix())
 
 
-def original(root: Path, version: str, matter_only: bool = False, ore_disable: bool = False) -> None:
+POWER_TRACE = "release394-power-config.txt"
+POWER_CONFIG = """power {
+    B:enable=false
+    I:costDecomposition=375
+    I:costSythesisMultiplier=3
+    I:costFissionMultiplier=41
+    I:costFusionMultiplier=43
+    I:energyPacketSize=37
+    I:maxDecomposerStorage=4321
+    I:maxSynthesizerStorage=45678
+    I:maxFissionStorage=5432
+    I:maxFusionStorage=6543
+}
+"""
+
+
+def original(root: Path, version: str, matter_only: bool = False, ore_disable: bool = False, power_config: bool = False) -> None:
     source, server = root / "original", root / "server"
     matter = matter_only or version == "1.6.4"
     options = [f"-Dmcmodup.minechem.version={version}", f"-Dmcmodup.minechem.matter={str(matter).lower()}"]
     if ore_disable:
         assert version == "1.6.4" and not matter_only
         options.append("-Dmcmodup.minechem.ore_disable=true")
+    if power_config:
+        assert version == "1.7.10" and not matter_only and not ore_disable
+        options.append("-Dmcmodup.minechem.power_config=true")
     jdk = Path(os.environ["JAVA_HOME"]) / "bin"
     if version == "1.6.4":
         name, checksum = FINAL, FINAL_HASH
@@ -99,13 +118,17 @@ def original(root: Path, version: str, matter_only: bool = False, ore_disable: b
         assert file_digest(root / COFH, "sha1") == "20617e7822e0217cd091867db681d940f682235b"
         forge = prepare(server, source, "1.7.10")
         shutil.copyfile(root / COFH, server / "mods" / COFH)
+        if power_config:
+            config = server / "config"
+            config.mkdir(exist_ok=True)
+            (config / "minechem.cfg").write_text(POWER_CONFIG, encoding="utf-8")
         # .394's molecule decay links to sun.misc.Hashing, removed in Java 8.
         # Retain Java 8 for the existing integration trace: its Forge recipe order differs from Java 7.
         compile_probe(root, server, forge, str(jdk / "javac") if matter else java8("javac"), final=False)
         command = legacy_command("1.7.10", options)
         if matter:
             command[0] = str(jdk / "java")
-    if not ore_disable and not matter_only:
+    if not ore_disable and not matter_only and not power_config:
         geometry = layout(jdk / "javap", server / "mods" / name)
         assert geometry == observations(layout_trace_name(version == "1.7.10")), geometry
         note(f"Pinned Minechem {version} Polytool client layout", str(geometry))
@@ -121,6 +144,15 @@ def original(root: Path, version: str, matter_only: bool = False, ore_disable: b
         raise
     assert file_digest(server / "mods" / name) == checksum
     note(f"Original Minechem decomposer on Forge {version}", evidence)
+    if power_config:
+        text = (server / "minechem-power-config.txt").read_text(encoding="utf-8")
+        actual = dict(line.split("=", 1) for line in text.splitlines())
+        expected = observations(POWER_TRACE)
+        if actual != expected or os.environ.get("MCMODUP_CAPTURE_CHEMISTRY") == "1":
+            note("Original .394 custom power config", text)
+        assert actual == expected, f".394 power config differed from the pin: {sorted(actual.items() - expected.items())}"
+        note("Pinned .394 custom power config", f"{len(expected)} configured machine rows re-observed")
+        return
     trace = "final-ore-disabled" if ore_disable else ("release394-ore-interop" if version == "1.7.10" else "final-ore-interop")
     path = server / "minechem-ore-interop.txt"
     text = path.read_text(encoding="utf-8")
@@ -275,9 +307,10 @@ if __name__ == "__main__":
     parser.add_argument("version", choices=("1.6.4", "1.7.10"))
     parser.add_argument("--matter-only", action="store_true")
     parser.add_argument("--ore-disable", action="store_true", help="Boot FINAL with the uranium crafting config off")
+    parser.add_argument("--power-config", action="store_true", help="Boot .394 with non-default capacities, costs, and power disabled")
     args = parser.parse_args()
     try:
-        original(args.root.resolve(), args.version, args.matter_only, args.ore_disable)
+        original(args.root.resolve(), args.version, args.matter_only, args.ore_disable, args.power_config)
     except Exception:
         if os.environ.get("GITHUB_ACTIONS") == "true":
             note(f"Original Minechem {args.version} check failed", traceback.format_exc()[-5500:], level="error")

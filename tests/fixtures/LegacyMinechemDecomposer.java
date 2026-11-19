@@ -24,6 +24,10 @@ public final class LegacyMinechemDecomposer {
             }
             Object spawn = worldType.getMethod("func_72861_E").invoke(world);
             int x = coordinate(spawn, "field_71574_a"), y = coordinate(spawn, "field_71572_b") + 4, z = coordinate(spawn, "field_71573_c");
+            if (!FINAL_164 && Boolean.getBoolean("mcmodup.minechem.power_config")) {
+                System.out.println("MCMODUP_MINECHEM_ORIGINAL_PASS " + LegacyMinechemPower394.survey(world, x, y + 32, z));
+                return;
+            }
             Object block = Class.forName("minechem.MinechemBlocksGeneration").getField("decomposer").get(null);
             Object machine;
             if (FINAL_164) {

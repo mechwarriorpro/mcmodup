@@ -42,6 +42,56 @@ final class LegacyMinechemReactors {
         return new LegacyMinechemReactors(world, old).run(x, y, z);
     }
 
+    static void surveyPower(Object world, int x, int y, int z, boolean paid, String profile, java.util.Map<String, String> rows) throws Exception {
+        new LegacyMinechemReactors(world, false).runPower(x, y, z, paid, profile, rows);
+    }
+
+    private void runPower(int x, int y, int z, boolean paid, String profile, java.util.Map<String, String> rows) throws Exception {
+        Integer[][][] split = layout(blueprints.getField("fission").get(null));
+        Integer[][][] join = layout(blueprints.getField("fusion").get(null));
+        // Build the actual shells and use the same facing as the default Forge replay.
+        setBlock(x, y, z, projectorBlock, 1);
+        Object projector = tile.invoke(world, x, y, z);
+        for (int l = 0; l < 5; l++) for (int u = 0; u < 5; u++) for (int v = 0; v < 5; v++) {
+            if (split[l][u][v] > 0) setBlock(x - 6 + u, y + l, z + 2 - v, reactorBlock, split[l][u][v] - 1);
+        }
+        set(projector, 0, itemStack.newInstance(blueprintItem, 1, 1));
+        tick(projector);
+        Object splitter = tile.invoke(world, x - 4, y + 2, z);
+        require(splitter != null && splitter.getClass().getSimpleName().equals("FissionTileEntity"), "Configured fission core missing");
+        rows.put(profile + "_fission_storage", LegacyMinechemPower394.storage(splitter));
+        set(splitter, 0, chemical(9, 1));
+        int cost = (Integer) splitter.getClass().getMethod("getEnergyNeeded").invoke(splitter);
+        LegacyMinechemPower394.charge(splitter, paid ? cost - 1 : 0);
+        tick(splitter);
+        boolean splitBelow = get(splitter, 2) != null;
+        if (paid) { LegacyMinechemPower394.charge(splitter, 1); tick(splitter); }
+        Object splitResult = get(splitter, 2);
+        if (splitResult != null) expect(splitResult, 4, 2, "Configured fission of F");
+        rows.put(profile + "_fission_run", cost + "/" + splitBelow + "/" + (splitResult != null) + "/" + energy(splitter));
+
+        for (int l = 0; l < join.length; l++) for (int u = 0; u < join[l].length; u++) for (int v = 0; v < join[l][u].length; v++) {
+            if (join[l][u][v] > 0) setBlock(x + 4 + u, y + l, z - 6 + v, reactorBlock, join[l][u][v] - 1);
+        }
+        setBlock(x + 10, y + 1, z, reactorBlock, 2);
+        Object combiner = tile.invoke(world, x + 10, y + 1, z);
+        require(combiner != null && combiner.getClass().getSimpleName().equals("FusionTileEntity"), "Configured fusion core missing");
+        rows.put(profile + "_fusion_storage", LegacyMinechemPower394.storage(combiner));
+        set(combiner, 0, chemical(1, 1));
+        set(combiner, 1, chemical(1, 1));
+        cost = (Integer) combiner.getClass().getMethod("getEnergyNeeded").invoke(combiner);
+        tick(combiner);
+        boolean zero = get(combiner, 2) != null;
+        LegacyMinechemPower394.charge(combiner, cost);
+        tick(combiner);
+        boolean equal = get(combiner, 2) != null;
+        LegacyMinechemPower394.charge(combiner, 1);
+        tick(combiner);
+        Object fusionResult = get(combiner, 2);
+        if (fusionResult != null) expect(fusionResult, 2, 1, "Configured fusion of H + H");
+        rows.put(profile + "_fusion_run", cost + "/" + zero + "/" + equal + "/" + (fusionResult != null) + "/" + energy(combiner));
+    }
+
     private String run(int x, int y, int z) throws Exception {
         Object fission = blueprints.getField("fission").get(null), fusion = blueprints.getField("fusion").get(null);
         Integer[][][] split = layout(fission), join = layout(fusion);
