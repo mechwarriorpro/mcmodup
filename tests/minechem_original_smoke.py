@@ -10,7 +10,7 @@ from zipfile import ZipFile
 
 from legacy_recipe_fixture import java8, legacy_command, prepare, run_server
 from mixed_legacy_pack_smoke import note
-from mcmodup.machines import release394_synthesis_trace, release394_trace
+from mcmodup.machines import SYNTHESIS_394_COLLISION, release394_synthesis_trace, release394_trace
 from mcmodup.runtime import file_digest
 
 
@@ -86,12 +86,18 @@ def original(root: Path, version: str) -> None:
         assert observations == expected, f".394 material trace changed: missing {missing[:8]}; unexpected {unexpected[:8]}"
         note("Pinned .394 material trace re-observed", f"{len(observations)} ordered outputs matched the pinned Forge trace.")
         synthesis = (server / "minechem-synthesis.txt").read_text(encoding="utf-8").splitlines()
-        expected_synthesis = [key + "=" + f"{cost};{count};{'shaped' if shaped else 'shapeless'};" +
+        expected_synthesis = {key: f"{cost};{count};{'shaped' if shaped else 'shapeless'};" +
                               ",".join(f"{part[0]}x{part[1]}" if part else "_" for part in pattern)
-                              for key, (cost, count, shaped, pattern) in release394_synthesis_trace().items()]
-        assert synthesis == expected_synthesis, (".394 synthesis trace changed: missing " + str(sorted(set(expected_synthesis) - set(synthesis))[:5]) +
-                                                 "; unexpected " + str(sorted(set(synthesis) - set(expected_synthesis))[:5]))
-        note("Pinned .394 synthesis trace re-observed", f"All {len(synthesis)} ghost-and-extraction rows matched the original capture.")
+                              for key, (cost, count, shaped, pattern) in release394_synthesis_trace().items()}
+        first, alternate = SYNTHESIS_394_COLLISION
+        collision = expected_synthesis.pop(first)
+        alternatives = [[f"{key}={value}" for key, value in sorted((expected_synthesis | {output: collision}).items())]
+                        for output in SYNTHESIS_394_COLLISION]
+        assert synthesis in alternatives, (".394 synthesis trace changed: missing " + str(sorted(set(alternatives[0]) - set(synthesis))[:5]) +
+                                            "; unexpected " + str(sorted(set(synthesis) - set(alternatives[0]))[:5]))
+        selected = first if synthesis == alternatives[0] else alternate
+        note("Pinned .394 synthesis trace re-observed", f"{len(expected_synthesis)} stable ghost-and-extraction rows matched; "
+             f"the ambiguous pattern selected {selected}. Both observed outcomes ({first}/{alternate}) are excluded from the port.")
 
 
 if __name__ == "__main__":

@@ -14,6 +14,8 @@ TEMPLATES = Path(__file__).with_name("templates") / "minechem"
 FINAL_LEGACY_SHA256 = "2443c7f91351f0e6c2323636be28a6fe8697704f20edf378dfe1a9d7a3070bea"
 JAVA_CLASSES = ("ChemistryMachines", "ChemistryMenu", "ChemistryScreen", "ChemistryRecipes",
                 "ChemistryResearch", "ResearchMenus", "ResearchScreens")
+# The exact original can choose either output for the same ghost pattern across fresh boots.
+SYNTHESIS_394_COLLISION = ("m140", "m143")
 SYNTHESIS_394_CLASSES = ("Synthesizer394", "Synthesis394Menu", "Synthesis394Screen", "Synthesis394Rules")
 
 
@@ -143,6 +145,8 @@ def _release394_recipes(namespace: str, entries: list[CatalogEntry]) -> list[Mac
                                      sum(count for _, count in products), "5.0.5.394 Forge 10.13.2.1291 tick trace",
                                      (item, 1000) if fluid else None))
     for key, (cost, result, shaped, pattern) in release394_synthesis_trace().items():
+        if key in SYNTHESIS_394_COLLISION:
+            continue
         out = result_id(key)
         ghosts = tuple((resolve(part[0]), part[1]) if part else None for part in pattern)
         recipes.append(MachineRecipe("synthesizer", out, tuple(part for part in ghosts if part), ((out, result),),
@@ -324,6 +328,10 @@ def machine_project(namespace: str, package: str, entries: list[CatalogEntry], r
             "type": "minecraft:block", "pools": [{"rolls": 1, "conditions": [{"condition": "minecraft:survives_explosion"}],
                                                   "entries": [{"type": "minecraft:item", "name": identifier}]}],
         })
+        # Separate the two native recipes when both releases are loaded. These
+        # are preview recipes, not imports of the original progression.
+        if prepaid:
+            keys = {**keys, "I": "copper_ingot"}
         # Keep the blocks craftable without the currently unported prerequisites.
         files[f"{data}/{namespace}/recipe/{block}.json"] = document({
             "type": "minecraft:crafting_shaped", "category": "misc", "pattern": pattern,

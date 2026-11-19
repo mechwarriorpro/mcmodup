@@ -208,7 +208,7 @@ class ConvertTests(unittest.TestCase):
                                 ("element_" if key[0] == "e" else "molecule_") + key[1:]),
                                 key, "test.png", (), {"legacy_metadata": int(key[1:])}) for key in symbols]
         files, count = _project_files(profile, entries, {"test.png": PNG}, RELEASE_394_SHA256, {}, [])
-        self.assertEqual(count, 382)
+        self.assertEqual(count, 381)
         self.assertEqual(len([key for key in trace if re.fullmatch(r"m\d+", key)]), 173)
         with self.assertRaisesRegex(InputError, "catalog does not match"):
             _project_files(profile, [row for row in entries if row.path != "molecule_water"], {"test.png": PNG}, RELEASE_394_SHA256, {}, [])
@@ -227,7 +227,12 @@ class ConvertTests(unittest.TestCase):
         rows = {row["id"]: row for row in catalog["machine_recipes"] if row["machine"] == "decomposer"}
         self.assertEqual({row["energy_fe"] for row in rows.values()}, {1_000})
         synth = {row["id"]: row for row in catalog["machine_recipes"] if row["machine"] == "synthesizer"}
-        self.assertEqual(len(synth), 183)
+        self.assertEqual(len(synth), 182)
+        self.assertNotIn("minechem_chemistry_394:molecule_140", synth)
+        self.assertNotIn("minechem_chemistry_394:molecule_143", synth)
+        for block in ("decomposer", "synthesizer"):
+            recipe = json.loads(files[f"{resources}/recipe/{block}.json"])
+            self.assertEqual(recipe["key"]["I"], {"item": "minecraft:copper_ingot"})
         self.assertEqual(synth["minecraft:iron_ingot"]["energy_fe"], 3_000)
         self.assertEqual(synth["minecraft:iron_ingot"]["consumption"], "on_extraction")
         self.assertTrue(synth["minecraft:glass"]["shaped"])

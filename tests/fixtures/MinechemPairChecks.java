@@ -1,13 +1,15 @@
 package mcmodup.test;
 
+import java.util.List;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
-import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
-import net.minecraft.resources.ResourceLocation;
 import net.minecraft.tags.BlockTags;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.crafting.CraftingInput;
+
+import java.util.List;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Blocks;
 import net.neoforged.neoforge.capabilities.Capabilities;
@@ -37,8 +39,14 @@ public final class MinechemPairChecks {
             var handler = test.getLevel().getCapability(Capabilities.ItemHandler.BLOCK, right.entity().getBlockPos(), side);
             test.assertTrue(handler == (side == Direction.UP ? right.input() : right.output()), "Wrong .394 sided inventory at " + side);
         }
-        test.assertTrue(!BuiltInRegistries.BLOCK.containsKey(ResourceLocation.fromNamespaceAndPath(RELEASE_394, "synthesizer")),
-                "The .394 preview must not register FINAL's synthesizer");
+        var copper = new ItemStack(Items.COPPER_INGOT);
+        var redstone = new ItemStack(Items.REDSTONE);
+        var piston = new ItemStack(Items.PISTON);
+        var diamond = new ItemStack(Items.DIAMOND);
+        check(test, CraftingInput.of(3, 3, List.of(copper, copper, copper, copper, piston, copper, copper, redstone, copper)),
+                RELEASE_394, "decomposer");
+        check(test, CraftingInput.of(3, 3, List.of(copper, redstone, copper, copper, piston, copper, copper, diamond, copper)),
+                RELEASE_394, "synthesizer");
         test.assertTrue(right.power().getMaxEnergyStored() == 10_000 && right.power().receiveEnergy(1000, true) == 100 &&
                 right.power().getEnergyStored() == 0, "Wrong .394 capacity or simulated receive limit");
         var finalWater = stack(test, MINECHEM, "molecule_water");

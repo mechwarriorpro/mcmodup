@@ -1,5 +1,7 @@
 # Exact 5.0.5.394 extraction observations: Forge 10.13.2.1291, default configuration.
 # CI 44454873551 / 135327345118 (LegacyMinechemSynthesis394).
+# A second original boot (44455398356 / 135329444401) produced m143 instead of
+# m140 with identical cost, slot pattern and count. Neither output is ported.
 # Result metadata or item name = RF; batch size; shape mode; nine ghost slots.
 # eNN / mNN are original catalog metadata. An underscore marks an empty slot.
 cobblestone=300;16;shaped;e14x2,e8x4,_,_,_,_,_,_,_
