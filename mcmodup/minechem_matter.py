@@ -303,7 +303,7 @@ def features(prepaid: bool) -> dict[str, str]:
                {"FINAL does not inherit .394 furnace fuels": "finalfurnaceisolation"})}
 
 
-def checks(package: str, test_namespace: str, namespace: str, ids: dict[str, str], prepaid: bool) -> str:
+def checks(package: str, test_namespace: str, namespace: str, ids: dict[str, str], prepaid: bool, *, reactors: bool = True) -> str:
     lifetime = observations(trace_name(prepaid, "radiation"))["tier1"].split("/")[0]
     flows = ",\n".join(f"        {json.dumps(row.fluid.split(':', 1)[1])}" for row in fluid_rows(prepaid, ids))
     return ((TEMPLATES / "MatterChecks.java").read_text(encoding="utf-8")
@@ -311,12 +311,12 @@ def checks(package: str, test_namespace: str, namespace: str, ids: dict[str, str
             .replace("@CLASS@", "MatterChecks394" if prepaid else "MatterChecksFinal")
             .replace("@PREFIX@", "release394" if prepaid else "final").replace("@RELEASE_394@", str(prepaid).lower())
             .replace("@LIFETIME@", lifetime).replace("@FLUIDS@", flows)
-            .replace("@PLAYER_DECAY_CHECKS@", player_decay_checks(ids, prepaid))
+            .replace("@PLAYER_DECAY_CHECKS@", player_decay_checks(ids, prepaid, reactors))
             .replace("@BUCKET_CHECKS@", (TEMPLATES / "Matter394Checks.java").read_text(encoding="utf-8") if prepaid else "")
             .replace("@AUTOMATION_CHECKS@", automation_checks(ids) if prepaid else FINAL_FUEL_CHECK))
 
 
-def player_decay_checks(ids: dict[str, str], prepaid: bool) -> str:
+def player_decay_checks(ids: dict[str, str], prepaid: bool, reactors: bool) -> str:
     observations_ = observations(trace_name(prepaid, "player-decay"))
 
     def part(encoded: str) -> tuple[str, int]:
@@ -329,7 +329,7 @@ def player_decay_checks(ids: dict[str, str], prepaid: bool) -> str:
 
     cases, buckets = [], []
     for label, row in observations_.items():
-        if "|" not in row or label.endswith("_alternate"):
+        if "|" not in row or label.endswith("_alternate") or not reactors and label.startswith(("fusion_", "fission_")):
             continue
         result, damage, warning = row.split("|", 2)
         path, count = part(result)
@@ -362,7 +362,10 @@ def player_decay_checks(ids: dict[str, str], prepaid: bool) -> str:
             buckets.append(f"        decayBucket({args}, true);")
     source = (TEMPLATES / "PlayerDecayChecks.java").read_text(encoding="utf-8")
     bucket_source = (TEMPLATES / "BucketDecayChecks.java").read_text(encoding="utf-8") if prepaid else ""
+    reactor_cases = """            decayMachine(test, "fission", "fission_core", new BlockPos(3, 1, 1), 0, 9, 10);
+            decayMachine(test, "fusion", "fusion_core", new BlockPos(1, 1, 2), NEWER ? 0 : 1, 9, 10);""" if reactors else ""
     return (source.replace("@PREFIX@", "release394" if prepaid else "final").replace("@PLAYER_CASES@", ",\n".join(cases))
+            .replace("@REACTOR_DECAY_CASES@", reactor_cases)
             .replace("@BUCKET_DECAY_CHECKS@", bucket_source.replace("@BUCKET_CASES@", "\n".join(buckets))))
 
 

@@ -134,6 +134,10 @@ class MatterTests(unittest.TestCase):
             self.assertEqual(warning.count("%s"), 3 if prepaid else 2)
             code = checks("test.port", "checker", ns, ids, prepaid)
             self.assertNotRegex(code, r"@[A-Z_]+@")
+            self.assertIn('"fusion_core"', code)
+            standalone = checks("test.port", "checker", ns, ids, prepaid, reactors=False)
+            self.assertNotIn('"fusion_core"', standalone)
+            self.assertNotIn('"fusion_storage"', standalone)
             self.assertEqual("release394DecayBuckets" in code, prepaid)
             if prepaid:
                 self.assertEqual(rows["m109_bucket_alternate_byproducts"], "[e17x16]")

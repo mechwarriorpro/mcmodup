@@ -90,6 +90,7 @@ neoForge.runs.create('gameTestServer') {{
 """
     with zipfile.ZipFile(outputs[0]) as minechem:
         catalog = json.loads(minechem.read("data/minechem_chemistry/mcmodup/catalog.json"))
+        paired_final = PROVENANCE in minechem.namelist()  # Standalone converts do not register reactors.
     synth = [recipe["id"] for recipe in catalog["machine_recipes"] if recipe["machine"] == "synthesizer"]
     water_index = synth.index("minechem_chemistry:molecule_water")  # Orders menu selections exactly like the generated class.
     fixture = (FIXTURES / "CatalogSmoke.java").read_text(encoding="utf-8")
@@ -108,7 +109,8 @@ neoForge.runs.create('gameTestServer') {{
         tests["src/main/java/mcmodup/test/PolytoolChecksFinal.java"] = minechem_polytool.checks(
             "mcmodup.test", namespace, FINAL.namespace, minechem_final_synthesis.entries_from_catalog(catalog), False)
         tests["src/main/java/mcmodup/test/MatterChecksFinal.java"] = minechem_matter.checks("mcmodup.test", namespace, FINAL.namespace,
-            minechem_final_synthesis.chemical_ids(FINAL.namespace, minechem_final_synthesis.entries_from_catalog(catalog)), False)
+            minechem_final_synthesis.chemical_ids(FINAL.namespace, minechem_final_synthesis.entries_from_catalog(catalog)), False,
+            reactors=paired_final)
         research_rooms[f"src/main/resources/data/{namespace}/structure/synthesis_room.nbt"] = empty_test_structure(5)
     if minechem_394:
         assert buffered, "The paired tests require the actual FINAL-based build"
@@ -121,8 +123,10 @@ neoForge.runs.create('gameTestServer') {{
             "mcmodup.test", namespace, RELEASE_394.namespace, "JournalCloneChecks394")
         tests["src/main/java/mcmodup/test/PolytoolChecks394.java"] = minechem_polytool.checks(
             "mcmodup.test", namespace, RELEASE_394.namespace, entries, True)
+        with zipfile.ZipFile(minechem_394) as jar:
+            paired_394 = PROVENANCE in jar.namelist()
         tests["src/main/java/mcmodup/test/MatterChecks394.java"] = minechem_matter.checks("mcmodup.test", namespace, RELEASE_394.namespace,
-            minechem_final_synthesis.chemical_ids(RELEASE_394.namespace, entries), True)
+            minechem_final_synthesis.chemical_ids(RELEASE_394.namespace, entries), True, reactors=paired_394)
         research_rooms[f"src/main/resources/data/{namespace}/structure/journal_room.nbt"] = empty_test_structure(5)
         research_rooms[f"src/main/resources/data/{namespace}/structure/fluid_room.nbt"] = empty_test_structure(15)
     def integrate_fixture(filename, code, package, own_namespace):

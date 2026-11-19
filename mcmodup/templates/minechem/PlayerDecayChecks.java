@@ -65,8 +65,7 @@
         onDecayTick(test, () -> {
             decayMachine(test, "leaded", "leaded_chest", new BlockPos(1, 1, 1), 0, 26, 27);
             decayMachine(test, "synthesis", "synthesizer", new BlockPos(2, 1, 1), 10, 15, 16);
-            decayMachine(test, "fission", "fission_core", new BlockPos(3, 1, 1), 0, 9, 10);
-            decayMachine(test, "fusion", "fusion_core", new BlockPos(1, 1, 2), NEWER ? 0 : 1, 9, 10);
+@REACTOR_DECAY_CASES@
             if (NEWER) {
                 var option = decayMachineOption();
                 boolean before = option.get();
