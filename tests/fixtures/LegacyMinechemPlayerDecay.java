@@ -187,7 +187,7 @@ final class LegacyMinechemPlayerDecay {
                     .newInstance(game, network, player));
             }
             // Use a real survival player, not Forge FakePlayer (which discards chat and may be invulnerable).
-            Field immunity = mp.getDeclaredField("field_71145_cl");
+            Field immunity = mp.getDeclaredField(old ? "field_71145_cl" : "field_147101_bU");
             immunity.setAccessible(true);
             immunity.setInt(player, 0);
             inventory = LegacyMinechemPlayerDecay.this.player.getField("field_71071_by").get(player);
