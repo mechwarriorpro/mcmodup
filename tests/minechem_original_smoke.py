@@ -34,7 +34,7 @@ def compile_probe(root: Path, server: Path, forge: Path, javac: str) -> None:
                     *(str(fixtures / name) for name in ("LegacyMinechemDecomposer.java", "LegacyMinechemMaterials.java",
                                                         "LegacyMinechemSynthesis394.java", "LegacyMinechemJournal394.java",
                                                         "LegacyMinechemReactors.java", "LegacyMinechemSynthesisFinal.java",
-                                                        "LegacyMinechemChemistry.java"))], check=True, timeout=60)
+                                                        "LegacyMinechemChemistry.java", "LegacyMinechemPolytool.java"))], check=True, timeout=60)
     with ZipFile(server / "mods/mcmodup-minechemoracle.jar", "x") as jar:
         for compiled in probe.rglob("*.class"):
             jar.write(compiled, compiled.relative_to(probe).as_posix())
@@ -84,6 +84,7 @@ def original(root: Path, version: str) -> None:
     assert file_digest(server / "mods" / name) == checksum
     note(f"Original Minechem decomposer on Forge {version}", evidence)
     verify_chemistry(server, version)
+    note(f"Minechem {version} Polytool", (server / "minechem-polytool.txt").read_text(encoding="utf-8"))
     shape = (server / "minechem-blueprints.txt").read_text(encoding="utf-8")
     expected_shape = Path(__file__).resolve().parents[1] / "mcmodup/templates/minechem/reactor-blueprints.txt"
     assert shape.splitlines() == expected_shape.read_text(encoding="utf-8").splitlines(), "Blueprint geometry in the original binary changed"

@@ -262,9 +262,13 @@ final class LegacyMinechemChemistry {
     }
 
     private Object player() throws Exception {
+        return fakePlayer(world, old, "[Chemistry]");
+    }
+
+    static Object fakePlayer(Object world, boolean old, String name) throws Exception {
         if (old) {
             Object fake = Class.forName("net.minecraftforge.common.FakePlayer").getConstructor(mc("world.World"), String.class)
-                    .newInstance(world, "[Chemistry]");
+                    .newInstance(world, name);
             Class<?> server = mc("server.MinecraftServer"), manager = mc("network.INetworkManager"), mp = mc("entity.player.EntityPlayerMP");
             Object sink = java.lang.reflect.Proxy.newProxyInstance(manager.getClassLoader(), new Class<?>[]{manager},
                     new java.lang.reflect.InvocationHandler() {
@@ -281,7 +285,7 @@ final class LegacyMinechemChemistry {
         }
         Object fake = Class.forName("net.minecraftforge.common.util.FakePlayer").getConstructor(mc("world.WorldServer"), Class.forName("com.mojang.authlib.GameProfile"))
                 .newInstance(world, Class.forName("com.mojang.authlib.GameProfile").getConstructor(java.util.UUID.class, String.class)
-                        .newInstance(java.util.UUID.randomUUID(), "[Chemistry]"));
+                        .newInstance(java.util.UUID.randomUUID(), name));
         Class<?> server = mc("server.MinecraftServer"), manager = mc("network.NetworkManager");
         Class<?> mp = mc("entity.player.EntityPlayerMP");
         Object network = manager.getConstructor(boolean.class).newInstance(true);
