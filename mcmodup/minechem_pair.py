@@ -7,7 +7,7 @@ import shutil
 import tempfile
 from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
 
-from . import NEOFORGE_VERSION, minechem_reactors
+from . import NEOFORGE_VERSION, minechem_final_synthesis, minechem_reactors
 from .api import ClassLocation
 from .catalogs import PROFILES, RELEASE_394_PROFILE, RELEASE_394_SHA256, CatalogEntry, Profile
 from .classfiles import CLASS_LIMIT
@@ -25,7 +25,7 @@ STACK = "net/minecraft/item/ItemStack"
 RESOURCE = "src/main/resources/"
 FINAL = PROFILES["minechem-chemistry"]
 RELEASE_394 = PROFILES[RELEASE_394_PROFILE]
-VERSIONS = {FINAL.namespace: "1.3.4-partial", RELEASE_394.namespace: "1.4.3-partial"}
+VERSIONS = {FINAL.namespace: "1.3.5-partial", RELEASE_394.namespace: "1.4.3-partial"}
 FEATURES = minechem_reactors.FEATURES | {"Buffered iron decomposition and saved remaining output": "savedbufferdrains",
             "Original decomposer output-slot method": "linkedslotrule",
             "Journal cloning preserves discovery and selection components": "journalcloningpreservescomponents"}
@@ -37,7 +37,7 @@ FEATURES_394 = FEATURES | {"All 198 measured item and molecule decomposition rul
                            "Sided journal automation and on-extraction payment": "sidedjournalandpaidextraction"}
 
 
-FEATURES_FINAL = FEATURES | {"FINAL fluid boundary, volatile remainder and saved converted water": "finalwaterintakeandsave"}
+FEATURES_FINAL = FEATURES | {"FINAL fluid boundary, volatile remainder and saved converted water": "finalwaterintakeandsave"} | minechem_final_synthesis.FEATURES
 
 
 def final_water_checks(package: str, test_namespace: str) -> str:
@@ -130,6 +130,7 @@ def _recipe(original: Path, profile: Profile, checksum: str, output: Path) -> di
     locations = [ClassLocation(original, owner + ".class", owner) for owner in profile.owners]
     entries = _catalog_entries(profile, locations)
     reactor_icons = minechem_reactors.asset_paths(namespace, prepaid)
+    synthesis_icons = {} if prepaid else minechem_final_synthesis.asset_paths(namespace)
     with open_input(original) as source:
         if source.warnings:
             raise InputError("Cannot verify a Minechem original with duplicate or unsafe members")
@@ -143,6 +144,7 @@ def _recipe(original: Path, profile: Profile, checksum: str, output: Path) -> di
         for name, data in reactor_assets.items():
             if not data.startswith(PNG_SIGNATURE if name.endswith(".png") else b"OggS"):
                 raise InputError(f"Unexpected reactor asset format: {name!r}")
+        synthesis_assets = minechem_final_synthesis.read_assets(source, synthesis_icons)
     deps = {"bundled_legacy_dependencies": False, "adapter": "native FE and isolated item slots"}
     files, _ = _project_files(profile, entries, textures, checksum, deps, locations,
                               linked_decomposer=True, project_version=version, paired_limitations=minechem_reactors.LIMITS)
@@ -166,6 +168,8 @@ def _recipe(original: Path, profile: Profile, checksum: str, output: Path) -> di
         files[f"src/main/java/{java_root}/Sided394Checks.java"] = sided394_checks(package, namespace)
     else:
         files[f"src/main/java/{java_root}/FinalWaterChecks.java"] = final_water_checks(package, namespace)
+        files[f"src/main/java/{java_root}/SynthesisFinalChecks.java"] = minechem_final_synthesis.checks(package, namespace, entries)
+        files[RESOURCE + f"data/{namespace}/structure/synthesis_room.nbt"] = empty_test_structure(5)
         files[RESOURCE + f"data/{namespace}/structure/water_room.nbt"] = empty_test_structure(5)
     files[f"src/main/java/mcmodup_kernel/{namespace}/DecomposerAccess.java"] = _adapter(namespace, prepaid)
     structure = f"data/{namespace}/structure/test_room.nbt"
@@ -179,7 +183,7 @@ def _recipe(original: Path, profile: Profile, checksum: str, output: Path) -> di
 tasks.named('compileJava') {{ classpath += files('src/main/resources') }}
 tasks.named('jar') {{
     archiveFileName = '{artifact}'
-    exclude '{tests}.class', '{java_root}/Release394Checks*.class', '{java_root}/Synthesis394Checks*.class', '{java_root}/Sided394Checks*.class', '{java_root}/JournalCloneChecks*.class', '{java_root}/FinalWaterChecks*.class', '{java_root}/ReactorChecks*.class', 'data/{namespace}/structure/*.nbt'
+    exclude '{tests}.class', '{java_root}/Release394Checks*.class', '{java_root}/Synthesis394Checks*.class', '{java_root}/Sided394Checks*.class', '{java_root}/JournalCloneChecks*.class', '{java_root}/FinalWaterChecks*.class', '{java_root}/SynthesisFinalChecks*.class', '{java_root}/ReactorChecks*.class', 'data/{namespace}/structure/*.nbt'
 }}
 neoForge.runs.create('gameTestServer') {{
     type = 'gameTestServer'
@@ -201,17 +205,21 @@ neoForge.runs.create('gameTestServer') {{
                     zipped.writestr(member, path.read_bytes(), compress_type=ZIP_DEFLATED)
     if digest(original) != checksum:
         raise InputError("Minechem original changed during recipe preparation")
+    imported_paths = icons | reactor_icons | synthesis_icons
+    imported_bytes = textures | reactor_assets | synthesis_assets
     return {"legacy_sha256": checksum, "source_zip": archive.name, "source_sha256": digest(archive),
             "ids": aliases, "legacy_ids": {"minechem": namespace}, "neoforge": f"[{NEOFORGE_VERSION}]",
             "artifact": f"build/libs/{artifact}", "tasks": ["jar", "runGameTestServer"], "game_report": "build/gametest.xml",
             "minimum_tests": len(FEATURES_394 if prepaid else FEATURES_FINAL), "features": FEATURES_394 if prepaid else FEATURES_FINAL,
             "status": "preview", "limitations": [*minechem_reactors.LIMITS, "Fresh worlds only; no legacy ID/save migration or add-on API.",
                 "Native FE, menus and item components replace legacy power, GUI and stack APIs; no original client comparison.",
+                *(() if prepaid else ("FINAL synthesis preserves registered rule order and payment paths. The Polytool result is not yet ported; "
+                                       "native bulk insertion refuses to spend batches that will not fit. Earlier preview synthesizer saves are not migrated.",)),
                 "Journal cloning is ordered within the trimmed crafting grid; unlike the originals it does not consume extra ingredients."],
             "method_imports": [methods],
-            "import_assets": {old: RESOURCE + new for old, new in (icons | reactor_icons).items()},
-            "asset_map": {old: {"path": new, "sha256": hashlib.sha256((textures | reactor_assets)[old]).hexdigest()}
-                          for old, new in (icons | reactor_icons).items()}}
+            "import_assets": {old: RESOURCE + new for old, new in imported_paths.items()},
+            "asset_map": {old: {"path": new, "sha256": hashlib.sha256(imported_bytes[old]).hexdigest()}
+                          for old, new in imported_paths.items()}}
 
 
 def prepare(final: Path, release394: Path, output: Path) -> Path:

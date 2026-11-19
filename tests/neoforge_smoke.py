@@ -7,6 +7,7 @@ import subprocess
 import zipfile
 
 from mcmodup.audit import ModMetadata
+from mcmodup import minechem_final_synthesis
 from mcmodup.catalogs import RELEASE_394_SHA256, CatalogEntry
 from mcmodup.machines import FINAL_LEGACY_SHA256, DecomposerMode, machine_recipes
 from mcmodup.minechem_pair import FINAL, RELEASE_394, journal_clone_checks, release394_checks, synthesis394_checks
@@ -37,6 +38,7 @@ def check_minechem_artifacts(final: Path, release394: Path) -> list[CatalogEntry
         assert catalog["machine_recipes"] == [rule.describe() for rule in rules]
         assert not (resources(left) & resources(right)), "Minechem releases share bytecode or named assets"
         assert not any(name.endswith(".jar") for archive in (left, right) for name in archive.namelist())
+        assert not any("SynthesisFinalChecks" in name for name in left.namelist()), "Production FINAL JAR contains test code"
         assert not any("Release394Checks" in name or "Synthesis394Checks" in name for name in right.namelist()), "Production .394 JAR contains test code"
         for jar, profile in ((left, FINAL), (right, RELEASE_394)):
             assert not any("JournalCloneChecks" in name for name in jar.namelist())
@@ -83,6 +85,9 @@ neoForge.runs.create('gameTestServer') {{
     research_rooms = {}
     if buffered:
         tests["src/main/java/mcmodup/test/JournalCloneChecks.java"] = journal_clone_checks("mcmodup.test", namespace, FINAL.namespace)
+        tests["src/main/java/mcmodup/test/SynthesisFinalChecks.java"] = minechem_final_synthesis.checks(
+            "mcmodup.test", namespace, minechem_final_synthesis.entries_from_catalog(catalog))
+        research_rooms[f"src/main/resources/data/{namespace}/structure/synthesis_room.nbt"] = empty_test_structure(5)
     if minechem_394:
         assert buffered, "The paired tests require the actual FINAL-based build"
         entries = check_minechem_artifacts(outputs[0], minechem_394)
@@ -167,7 +172,7 @@ neoForge.runs.create('gameTestServer') {{
     })
     run = subprocess.run(["./gradlew", "--no-daemon", "--console=plain", "runGameTestServer"],
                          cwd=project, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=420)
-    count = (7 + buffered + include_aspects + (8 if minechem_394 else 0) + bool(controls)
+    count = (7 + (1 + len(minechem_final_synthesis.FEATURES) if buffered else 0) + include_aspects + (8 if minechem_394 else 0) + bool(controls)
              + (6 if icbm_plate else 0) + (5 if atomic_thermometer else 0) + cross_voltz
              + (2 if mimicry else 0) + (4 if geostrata else 0))
     if run.returncode or f"All {count} required tests passed" not in run.stdout:

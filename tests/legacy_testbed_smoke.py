@@ -21,8 +21,10 @@ CHECK = "mcmodup_testbed_check"
 
 
 def staged(root: Path, jar: Path) -> str:
-    from mcmodup import atomic_thermometer, geostrata_rocks, icbm_plate, minechem_pair, minechem_reactors
+    from mcmodup import atomic_thermometer, geostrata_rocks, icbm_plate, minechem_final_synthesis, minechem_pair, minechem_reactors
 
+    with ZipFile(jar) as archive:
+        entries = minechem_final_synthesis.entries_from_catalog(json.loads(archive.read("data/minechem_chemistry/mcmodup/catalog.json")))
     package = "mcmodup.testbedcheck"
     source = f"src/main/java/{package.replace('.', '/')}"
     resources = "src/main/resources"
@@ -49,16 +51,17 @@ neoForge.runs.create('gameTestServer') {{
         f"{source}/ReactorChecks394.java": minechem_reactors.checks(package, CHECK, minechem_pair.RELEASE_394.namespace, True, "ReactorChecks394"),
         f"{source}/Sided394Checks.java": minechem_pair.sided394_checks(package, CHECK),
         f"{source}/FinalWaterChecks.java": minechem_pair.final_water_checks(package, CHECK),
+        f"{source}/SynthesisFinalChecks.java": minechem_final_synthesis.checks(package, CHECK, entries),
         f"{source}/JournalCloneChecks.java": minechem_pair.journal_clone_checks(package, CHECK, minechem_pair.FINAL.namespace),
         f"{source}/JournalCloneChecks394.java": minechem_pair.journal_clone_checks(package, CHECK, minechem_pair.RELEASE_394.namespace, "JournalCloneChecks394"),
     }
-    for room, size in {"rock_room": 3, "vein_room": 19, "crystal_room": 9, "water_room": 5, "journal_room": 5, "empty": 5, "test_room": 5, "turbine_room": 5, "platform_room": 5, "accel_room": 15, "launch_room": 17, "reactor_room": 29}.items():
+    for room, size in {"rock_room": 3, "vein_room": 19, "crystal_room": 9, "water_room": 5, "synthesis_room": 5, "journal_room": 5, "empty": 5, "test_room": 5, "turbine_room": 5, "platform_room": 5, "accel_room": 15, "launch_room": 17, "reactor_room": 29}.items():
         files[f"{resources}/data/{CHECK}/structure/{room}.nbt"] = empty_test_structure(size)
     write_workspace(root, files)
     result = run_gradle(root, "runGameTestServer")
     marker = next((line.split("required tests passed", 1)[0].rsplit("All ", 1)[-1].strip()
                    for line in result.splitlines() if "All " in line and "required tests passed" in line), None)
-    assert marker == "22", result[-5400:]
+    assert marker == str(22 + len(minechem_final_synthesis.FEATURES)), result[-5400:]
     assert digest(root / "run/mods" / JAR_NAME) == digest(jar), "Staged test mutated the JAR"
     return marker
 

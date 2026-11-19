@@ -6,6 +6,8 @@ on:
     paths:
       - '.github/workflows/minechem-original-parity.yml'
       - 'mcmodup/machines.py'
+      - 'mcmodup/minechem_final_synthesis.py'
+      - 'mcmodup/templates/minechem/final-synthesis.txt'
       - 'mcmodup/templates/minechem/release394-*.txt'
       - 'tests/minechem_original_smoke.py'
       - 'tests/fixtures/LegacyMinechemDecomposer.java'

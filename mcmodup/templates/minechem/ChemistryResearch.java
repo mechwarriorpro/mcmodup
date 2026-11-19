@@ -78,7 +78,10 @@ final class ChemistryResearch {
 
     static boolean isJournal(ItemStack stack) { return journal != null && stack.is(journal.get()); }
 
-    static String key(ItemStack stack) { return BuiltInRegistries.ITEM.getKey(stack.getItem()).toString(); }
+    static String key(ItemStack stack) {
+        String id = BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
+        return @RESEARCH_KEY@;
+    }
 
     private static CompoundTag read(ItemStack stack) {
         return stack.getOrDefault(DataComponents.CUSTOM_DATA, CustomData.EMPTY).copyTag().getCompound(JOURNAL_DATA);

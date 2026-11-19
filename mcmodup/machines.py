@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 import re
 
+from . import minechem_final_synthesis
 from .catalogs import CatalogEntry
 from .inputs import InputError
 
@@ -16,6 +17,7 @@ JAVA_CLASSES = ("ChemistryMachines", "ChemistryMenu", "ChemistryScreen", "Chemis
                 "ChemistryResearch", "ResearchMenus", "ResearchScreens")
 # The exact original can choose either output for the same ghost pattern across fresh boots.
 SYNTHESIS_394_COLLISION = ("m140", "m143")
+SYNTHESIS_FINAL_CLASSES = ("SynthesizerFinal", "SynthesisFinalMenu", "SynthesisFinalScreen", "SynthesisFinalRules")
 SYNTHESIS_394_CLASSES = ("Synthesizer394", "Synthesis394Menu", "Synthesis394Screen", "Synthesis394Rules")
 
 
@@ -27,7 +29,7 @@ class DecomposerMode(StrEnum):
 
 def machine_classes(mode: DecomposerMode) -> tuple[str, ...]:
     research = () if mode == DecomposerMode.BATCH else ("JournalClone",)
-    synthesis = SYNTHESIS_394_CLASSES if mode == DecomposerMode.RELEASE_394 else ()
+    synthesis = {DecomposerMode.FINAL: SYNTHESIS_FINAL_CLASSES, DecomposerMode.RELEASE_394: SYNTHESIS_394_CLASSES}.get(mode, ())
     return JAVA_CLASSES + research + synthesis
 
 
@@ -43,6 +45,8 @@ class MachineRecipe:
     fluid_input: tuple[str, int] | None = None
     ghost_pattern: tuple[tuple[str, int] | None, ...] = ()
     shaped: bool = False
+    canonical: str | None = None
+    native_output: bool = True
 
     def describe(self) -> dict:
         description = {"machine": self.machine, "id": self.id, "energy_fe": self.energy, "ticks": self.ticks,
@@ -55,6 +59,8 @@ class MachineRecipe:
         if self.ghost_pattern:
             description.update({"shaped": self.shaped, "consumption": "on_extraction", "ghost_pattern": [
                 {"id": part[0], "count": part[1]} if part else None for part in self.ghost_pattern]})
+        if self.canonical is not None:
+            description.update(legacy_canonical=self.canonical, native_output_available=self.native_output)
         return description
 
 
@@ -168,10 +174,9 @@ def machine_recipes(namespace: str, entries: list[CatalogEntry], *,
         parts = tuple((f"{namespace}:{item}", count) for item, count in entry.components)
         if sum((count + 63) // 64 for _, count in parts) > 18:
             raise InputError(f"Recipe for {compound} does not fit the machine's 18 inventory slots.")
-        recipes.extend((
-            MachineRecipe("synthesizer", compound, parts, ((compound, 1),), 500, 20, "MoleculeEnum"),
-            _decomposition(compound, parts, "MoleculeEnum"),
-        ))
+        if mode == DecomposerMode.BATCH:
+            recipes.append(MachineRecipe("synthesizer", compound, parts, ((compound, 1),), 500, 20, "MoleculeEnum"))
+        recipes.append(_decomposition(compound, parts, "MoleculeEnum"))
     # Reviewed deterministic 5.0.5 FINAL rules from registerVanillaChemicalRecipes. This is
     # not a generic evaluator for the old registry method or the pack's config/ore recipes.
     catalog = {entry.path for entry in entries}
@@ -180,17 +185,27 @@ def machine_recipes(namespace: str, entries: list[CatalogEntry], *,
         if path in catalog:
             original, chemical = f"minecraft:{vanilla}", f"{namespace}:{path}"
             recipes.append(_decomposition(original, ((chemical, amount),), "MinechemRecipes (reviewed starter mapping)"))
-            if vanilla != "water_bucket":
+            if mode == DecomposerMode.BATCH and vanilla != "water_bucket":
                 recipes.append(MachineRecipe("synthesizer", original, ((chemical, amount),), ((original, 1),),
                                              10_000, 20, "MinechemRecipes (reviewed starter mapping)"))
     if mode == DecomposerMode.FINAL and {"element_h", "element_o"} <= catalog:
         recipes.append(MachineRecipe("decomposer", "minecraft:water", (),
                        ((f"{namespace}:element_h", 2), (f"{namespace}:element_o", 1)), 1, 3,
                        "5.0.5 FINAL observed water intake (strict boundaries at 144 and 10000)", ("minecraft:water", 144)))
+    if mode == DecomposerMode.FINAL:
+        ids = minechem_final_synthesis.chemical_ids(namespace, entries)
+        for row in minechem_final_synthesis.observations():
+            out, native_output = minechem_final_synthesis.resolve(row.key, namespace, ids)
+            ghosts = tuple((minechem_final_synthesis.resolve(part[0], namespace, ids)[0], part[1]) if part else None
+                           for part in row.pattern)
+            recipes.append(MachineRecipe("synthesizer", out, tuple(part for part in ghosts if part), ((out, row.count),),
+                                         row.energy, 0, "5.0.5 FINAL ordered Forge registration/extraction trace",
+                                         ghost_pattern=ghosts, shaped=row.shaped, canonical=row.canonical,
+                                         native_output=native_output))
     return recipes
 
 
-def _java_recipes(package: str, namespace: str, entries: list[CatalogEntry], recipes: list[MachineRecipe]) -> str:
+def _java_recipes(package: str, namespace: str, entries: list[CatalogEntry], recipes: list[MachineRecipe], mode: DecomposerMode) -> str:
     def parts(values: tuple[tuple[str, int], ...]) -> str:
         return "List.of(" + ", ".join(f'new Part("{item}", {count})' for item, count in values) + ")"
 
@@ -199,11 +214,14 @@ def _java_recipes(package: str, namespace: str, entries: list[CatalogEntry], rec
                            f'{parts(r.inputs)}, {parts(r.outputs)})' for r in recipes
                            if r.machine == machine and not r.ghost_pattern and bool(r.fluid_input) == fluid)
 
-    if any(recipe.ghost_pattern for recipe in recipes):
-        # The .394 inspector reads the same verified rule table as the ghost-grid machine.
+    if mode == DecomposerMode.RELEASE_394:
         synthesis = """Synthesis394Rules.ALL.stream().map(row -> new Recipe(row.result().id(), row.cost(), 0, 0,
         row.pattern().stream().filter(part -> part.count() > 0).map(part -> new Part(part.id(), part.count())).toList(),
         List.of(new Part(row.result().id(), row.result().count())))).toList()"""
+    elif mode == DecomposerMode.FINAL:
+        synthesis = """SynthesisFinalRules.ALL.stream().filter(SynthesisFinalRules.Rule::nativeOutput)
+        .map(row -> new Recipe(row.result().id(), row.cost(), 0, 0,
+            row.pattern().stream().filter(part -> part.count() > 0).toList(), List.of(row.result()))).toList()"""
     else:
         synthesis = f"List.of(\n{rows('synthesizer')}\n    )"
     chemical_ids = ",\n".join(f'        "{namespace}:{entry.path}"' for entry in entries)
@@ -259,6 +277,7 @@ def machine_project(namespace: str, package: str, entries: list[CatalogEntry], r
     assets = f"{source}/assets/{namespace}"
     data = f"{source}/data"
     prepaid = mode == DecomposerMode.RELEASE_394
+    final = mode == DecomposerMode.FINAL
     clone_journal = mode != DecomposerMode.BATCH
     if linked_decomposer and mode == DecomposerMode.BATCH:
         raise InputError("Linked decomposer methods require an exact Minechem release")
@@ -272,23 +291,26 @@ def machine_project(namespace: str, package: str, entries: list[CatalogEntry], r
              .replace("@JOURNAL_LIMIT@", "64" if clone_journal else "1")
              .replace("@PREPAID_DECOMPOSER@", str(prepaid).lower())
              .replace("@REGISTER_MACHINES@", ("List.of(decomposer, Synthesizer394.register(bus, items))" if prepaid else
+                                               "SynthesizerFinal.register(bus, items, decomposer)" if final else
                                                "List.of(items.registerSimpleBlockItem(SYNTHESIZER), decomposer)"))
+             .replace("@RESEARCH_KEY@", "id.equals(\"minecraft:potion\") && !SynthesisFinalRules.isWaterBottle(stack) ? \"\" : id" if final else "id")
              .replace("@FINAL_CAN_UNJAM@", jam_test).replace("@COMPACT_PREPAID@", compact)
-             for name in machine_classes(mode) if name not in ("ChemistryRecipes", *SYNTHESIS_394_CLASSES)}
-    files[f"{java}/ChemistryRecipes.java"] = _java_recipes(package, namespace, entries, recipes)
+             for name in machine_classes(mode) if name not in ("ChemistryRecipes", *SYNTHESIS_394_CLASSES, *SYNTHESIS_FINAL_CLASSES)}
+    files[f"{java}/ChemistryRecipes.java"] = _java_recipes(package, namespace, entries, recipes, mode)
     if clone_journal:
         files[f"{data}/{namespace}/recipe/journal_clone.json"] = document({"type": f"{namespace}:journal_clone", "category": "misc"})
-    if prepaid:
-        for name in SYNTHESIS_394_CLASSES:
+    if mode != DecomposerMode.BATCH:
+        for name in SYNTHESIS_394_CLASSES if prepaid else SYNTHESIS_FINAL_CLASSES:
             code = (TEMPLATES / f"{name}.java").read_text(encoding="utf-8")
-            if name == "Synthesis394Rules":
+            if name in ("Synthesis394Rules", "SynthesisFinalRules"):
                 cases = []
                 for row in recipes:
                     if not row.ghost_pattern:
                         continue
                     parts = ", ".join(f'new Part("{part[0]}", {part[1]})' if part else "EMPTY" for part in row.ghost_pattern)
+                    extra = f", {str(row.native_output).lower()}" if final else ""
                     cases.append(f'        new Rule(new Part("{row.id}", {row.outputs[0][1]}), {row.energy}, '
-                                 f'{str(row.shaped).lower()}, List.of({parts}))')
+                                 f'{str(row.shaped).lower()}, List.of({parts}){extra})')
                 code = code.replace("@RULES@", ",\n".join(cases))
             files[f"{java}/{name}.java"] = code.replace("@PACKAGE@", package).replace("@NAMESPACE@", namespace)
     locales = {f"gui.{namespace}.{key}": label for key, label in {
@@ -309,6 +331,10 @@ def machine_project(namespace: str, package: str, entries: list[CatalogEntry], r
         "journal_empty": "Discover recipes in a Microscope", "journal_choose": "Choose a discovered recipe",
         "journal_previous": "Select previous discovery", "journal_next": "Select next discovery",
         "load_journal": "Insert a journal to load its active synthesis recipe",
+        **({"final_template_help": "Copy chemicals into the ghost grid; load real chemicals below. Left-click adds a stack, right-click adds one, empty hand clears.",
+            "final_ready": "Ready", "final_unready": "Not ready", "final_unsupported": "Legacy result not yet available",
+            "final_charge": "%s / %s FE", "final_take_help": "Click pays per item; shift-click makes full batches.",
+            "final_template_count": "Template: %s"} if final else {}),
     }.items()}
     locales[f"item.{namespace}.chemist_journal"] = "Chemist's Journal"
     files[f"{assets}/models/item/chemist_journal.json"] = document({
@@ -352,6 +378,23 @@ def machine_project(namespace: str, package: str, entries: list[CatalogEntry], r
             "key": {symbol: {"item": f"minecraft:{item}"} for symbol, item in keys.items()},
             "result": {"id": identifier, "count": 1},
         })
+    if final:
+        files[f"{assets}/models/block/synthesizer.json"] = document({
+            "parent": "minecraft:block/cube_all", "textures": {"all": f"{namespace}:block/synthesizer"},
+        })
+        locales[f"item.{namespace}.atomic_manipulator"] = "Atomic Manipulator"
+        files[f"{assets}/models/item/atomic_manipulator.json"] = document({
+            "parent": "minecraft:item/generated", "textures": {"layer0": f"{namespace}:item/atomic_manipulator"},
+        })
+        files[f"{data}/{namespace}/recipe/atomic_manipulator.json"] = document({
+            "type": "minecraft:crafting_shaped", "category": "misc", "pattern": ["PPP", "PIP", "PPP"],
+            "key": {"P": {"item": "minecraft:piston"}, "I": {"item": "minecraft:iron_block"}},
+            "result": {"id": f"{namespace}:atomic_manipulator", "count": 1},
+        })
+        path = f"{data}/{namespace}/recipe/synthesizer.json"
+        recipe = json.loads(files[path])
+        recipe["key"]["P"] = {"item": f"{namespace}:atomic_manipulator"}
+        files[path] = document(recipe)
     files[f"{data}/minecraft/tags/block/mineable/pickaxe.json"] = document(
         {"replace": False, "values": [f"{namespace}:{block}" for block in blocks]})
     return files, locales

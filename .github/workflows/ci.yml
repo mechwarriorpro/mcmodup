@@ -127,7 +127,9 @@ jobs:
               assert any(item["new_id"] == "minechem_chemistry:molecule_water" and item["recipe_status"] == "powered_synthesis"
                          for item in catalog["entries"])
               recipes = len(catalog["machine_recipes"])
-              assert recipes == 300
+              assert recipes == 452
+              assert sum(rule["machine"] == "synthesizer" and rule["consumption"] == "on_extraction"
+                         for rule in catalog["machine_recipes"]) == 301
               water = [rule for rule in catalog["machine_recipes"] if "fluid_input" in rule]
               assert len(water) == 1 and water[0]["fluid_input"] == {"id": "minecraft:water", "millibuckets": 144}
               assert water[0]["outputs"] == [{"id": "minechem_chemistry:element_h", "count": 2},

@@ -1,17 +1,16 @@
 """Exercise the checksum-pinned originals in separate Forge worlds."""
 
 import argparse
-import base64
 import os
 from pathlib import Path
 import shutil
 import subprocess
 import traceback
 from zipfile import ZipFile
-import zlib
 
 from legacy_recipe_fixture import java8, legacy_command, prepare, run_server
 from mixed_legacy_pack_smoke import note
+from mcmodup.minechem_final_synthesis import TRACE
 from mcmodup.machines import SYNTHESIS_394_COLLISION, release394_synthesis_trace, release394_trace
 from mcmodup.runtime import file_digest
 
@@ -84,11 +83,11 @@ def original(root: Path, version: str) -> None:
     expected_shape = Path(__file__).resolve().parents[1] / "mcmodup/templates/minechem/reactor-blueprints.txt"
     assert shape.splitlines() == expected_shape.read_text(encoding="utf-8").splitlines(), "Blueprint geometry in the original binary changed"
     if version == "1.6.4":
-        trace = (server / "minechem-final-synthesis.txt").read_bytes()
-        encoded = base64.b64encode(zlib.compress(trace, level=9)).decode("ascii")
-        # Bootstrap the small behavioral transcript without publishing any JAR or assets.
-        for offset in range(0, len(encoded), 1700):
-            note(f"FINAL synthesis trace {offset // 1700}", f"FINAL_SYNTHESIS_TRACE:{offset // 1700}:{encoded[offset:offset + 1700]}")
+        pinned = [row for row in TRACE.read_text(encoding="utf-8").splitlines() if row and not row.startswith("#")]
+        observed = (server / "minechem-final-synthesis.txt").read_text(encoding="utf-8").splitlines()
+        assert len(observed) == len(pinned), f"Wrong number of FINAL synthesis rules: {len(observed)}"
+        for index, (actual, expected) in enumerate(zip(observed, pinned)):
+            assert actual == expected, f"FINAL synthesis row {index}: {actual!r} != {expected!r}"
     if version == "1.7.10":
         observations = (server / "minechem-materials.txt").read_text(encoding="utf-8").splitlines()
         expected = [f"{key}=" + ",".join(f"{part}x{amount}" for part, amount in products)

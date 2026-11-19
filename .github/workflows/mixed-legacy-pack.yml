@@ -18,6 +18,7 @@ on:
       - 'mcmodup/machines.py'
       - 'mcmodup/method_ports.py'
       - 'mcmodup/minechem_pair.py'
+      - 'mcmodup/minechem_final_synthesis.py'
       - 'mcmodup/minechem_reactors.py'
       - 'mcmodup/icbm_plate.py'
       - 'mcmodup/atomic_thermometer.py'

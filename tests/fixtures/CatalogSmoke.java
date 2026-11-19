@@ -93,7 +93,13 @@ public final class CatalogSmoke {
         var output = level.getCapability(Capabilities.ItemHandler.BLOCK, pos, Direction.DOWN);
         var power = level.getCapability(Capabilities.EnergyStorage.BLOCK, pos, Direction.NORTH);
         helper.assertTrue(menu != null && input != null && output != null && power != null, "Missing machine capabilities");
-        if (waterRecipe) {
+        if (waterRecipe && FINAL_BUFFER && namespace.equals(MINECHEM)) {
+            menu.setCarried(stack(helper, MINECHEM, "element_h").copyWithCount(2));
+            menu.clicked(1, 0, ClickType.PICKUP, user);
+            menu.setCarried(stack(helper, MINECHEM, "element_o"));
+            menu.clicked(2, 0, ClickType.PICKUP, user);
+            menu.setCarried(ItemStack.EMPTY);
+        } else if (waterRecipe) {
             for (int i = 0; i < WATER_INDEX / 10; i++) helper.assertTrue(menu.clickMenuButton(user, 4), "Cannot scroll recipes");
             for (int i = 0; i < WATER_INDEX % 10; i++) helper.assertTrue(menu.clickMenuButton(user, 2), "Cannot select recipe");
         }
@@ -119,6 +125,20 @@ public final class CatalogSmoke {
 
     @GameTest(template = "empty")
     public static void poweredSynthesis(GameTestHelper helper) {
+        if (FINAL_BUFFER) {
+            var machine = placeMachine(helper, "synthesizer", true);
+            var menu = machine.menu;
+            loadIngredients(helper, machine);
+            helper.assertTrue(menu.getSlot(0).getItem().is(stack(helper, MINECHEM, "molecule_water").getItem()), "Wrong FINAL preview");
+            menu.clicked(0, 0, ClickType.PICKUP, machine.user);
+            helper.assertTrue(menu.getCarried().isEmpty(), "Unpowered FINAL synthesis withdrew the preview");
+            charge(helper, machine.power, 500);
+            menu.clicked(0, 0, ClickType.PICKUP, machine.user);
+            helper.assertTrue(menu.getCarried().is(stack(helper, MINECHEM, "molecule_water").getItem()) && machine.power.getEnergyStored() == 0,
+                "FINAL water synthesis did not pay on extraction");
+            helper.succeed();
+            return;
+        }
         var machine = placeMachine(helper, "synthesizer", true);
         loadIngredients(helper, machine);
         helper.assertTrue(machine.menu.clickMenuButton(machine.user, 0), "Run button wasn't accepted");
@@ -239,7 +259,7 @@ public final class CatalogSmoke {
         var machine = placeMachine(helper, "synthesizer", true);
         loadIngredients(helper, machine);
         charge(helper, machine.power, 600);
-        helper.assertTrue(machine.menu.clickMenuButton(machine.user, 0), "Could not start process to save");
+        if (!FINAL_BUFFER) helper.assertTrue(machine.menu.clickMenuButton(machine.user, 0), "Could not start process to save");
         var level = helper.getLevel();
         var snapshot = machine.entity.saveWithFullMetadata(level.registryAccess());
         var pos = machine.entity.getBlockPos();
@@ -250,6 +270,20 @@ public final class CatalogSmoke {
         reloaded.entity.loadWithComponents(snapshot, level.registryAccess());
         helper.assertTrue(reloaded.power.getEnergyStored() == 600 && reloaded.input.getStackInSlot(0).getCount() == 2,
             "NBT did not restore inventory and energy");
+        if (FINAL_BUFFER) {
+            var water = stack(helper, MINECHEM, "molecule_water");
+            var menu = reloaded.menu;
+            helper.assertTrue(!machine.menu.stillValid(machine.user) && menu.getSlot(0).getItem().is(water.getItem()),
+                "FINAL replacement did not restore the saved ghost result or invalidate the old menu");
+            for (int i = 0; i < 36; i++) reloaded.user.getInventory().setItem(i, new ItemStack(Items.STONE, 64));
+            helper.assertTrue(menu.quickMoveStack(reloaded.user, 0).isEmpty() && reloaded.power.getEnergyStored() == 600,
+                "Full player inventory spent charge on shift-click");
+            reloaded.user.getInventory().setItem(8, ItemStack.EMPTY);
+            helper.assertTrue(menu.quickMoveStack(reloaded.user, 0).is(water.getItem()) &&
+                reloaded.power.getEnergyStored() == 100 && reloaded.input.getStackInSlot(0).isEmpty(), "Reloaded FINAL could not finish one batch");
+            helper.succeed();
+            return;
+        }
         helper.runAfterDelay(22, () -> {
             var water = stack(helper, MINECHEM, "molecule_water");
             helper.assertTrue(ItemStack.isSameItem(reloaded.output.extractItem(0, 64, false), water)
@@ -408,12 +442,24 @@ public final class CatalogSmoke {
         });
         var reloaded = ItemStack.parse(level.registryAccess(), book.save(level.registryAccess())).orElseThrow();
         machine.user.getInventory().setItem(0, reloaded);
-        var slot = machine.menu.getSlot(37);
+        int journalSlot = FINAL_BUFFER ? 19 : 37;
+        var slot = machine.menu.getSlot(journalSlot);
         test.assertTrue(slot.isActive() && slot.mayPlace(reloaded) && !slot.mayPlace(water), "Synthesizer has a dedicated journal slot");
         test.assertTrue(WATER_INDEX > 0, "The journal must change the synthesizer's default selection in this fixture");
-        machine.menu.quickMoveStack(machine.user, 38 + 27);
+        machine.menu.quickMoveStack(machine.user, journalSlot + 1 + 27);
         test.assertTrue(ItemStack.matches(slot.getItem(), book) && machine.user.getInventory().getItem(0).isEmpty(),
                 "The journal and its data move to the synthesizer slot");
+        if (FINAL_BUFFER) {
+            test.assertTrue(machine.input.getSlots() == 9 && machine.menu.getSlot(0).getItem().is(water.getItem()),
+                "FINAL journal did not set the ghost pattern or hide from automation");
+            loadIngredients(test, machine);
+            charge(test, machine.power, 500);
+            machine.menu.clicked(0, 0, ClickType.PICKUP, machine.user);
+            test.assertTrue(machine.menu.getCarried().is(water.getItem()) && machine.power.getEnergyStored() == 0 &&
+                journalTag(slot.getItem()).getString("Active").equals(MINECHEM + ":molecule_water"), "FINAL journal synthesis did not pay and keep its journal");
+            test.succeed();
+            return;
+        }
         test.assertTrue(machine.input.getSlots() == 19 && machine.output.getSlots() == 18, "The journal does not enter the automated input/output inventory");
         loadIngredients(test, machine);
         charge(test, machine.power, 500);
@@ -455,7 +501,8 @@ public final class CatalogSmoke {
         var dust = new ItemStack(Items.REDSTONE);
         var diamond = new ItemStack(Items.DIAMOND);
         check(helper, CraftingInput.of(3, 3, List.of(iron, iron, iron, iron, piston, iron, iron, dust, iron)), MINECHEM, "decomposer");
-        check(helper, CraftingInput.of(3, 3, List.of(iron, dust, iron, iron, piston, iron, iron, diamond, iron)), MINECHEM, "synthesizer");
+        var manipulator = FINAL_BUFFER ? stack(helper, MINECHEM, "atomic_manipulator") : piston;
+        check(helper, CraftingInput.of(3, 3, List.of(iron, dust, iron, iron, manipulator, iron, iron, diamond, iron)), MINECHEM, "synthesizer");
         var lensId = ResourceLocation.fromNamespaceAndPath(MINECHEM, "microscope_lens");
         var microscopeLens = new ItemStack(BuiltInRegistries.ITEM.containsKey(lensId) ? BuiltInRegistries.ITEM.get(lensId) : Items.SPYGLASS);
         check(helper, CraftingInput.of(3, 3, List.of(ItemStack.EMPTY, microscopeLens, iron,

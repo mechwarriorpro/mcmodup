@@ -52,7 +52,7 @@ public final class ChemistryMachines {
     private static final DeferredRegister.Blocks BLOCKS = DeferredRegister.createBlocks(CatalogPort.MOD_ID);
     private static final DeferredRegister<BlockEntityType<?>> ENTITIES = DeferredRegister.create(Registries.BLOCK_ENTITY_TYPE, CatalogPort.MOD_ID);
     private static final DeferredRegister<MenuType<?>> MENUS = DeferredRegister.create(Registries.MENU, CatalogPort.MOD_ID);
-    static final DeferredBlock<MachineBlock> SYNTHESIZER = Machine.PREPAID_DECOMPOSER ? null :
+    static final DeferredBlock<MachineBlock> SYNTHESIZER = Machine.ORIGINAL_DECOMPOSER ? null :
         BLOCKS.register("synthesizer", () -> new MachineBlock(BlockBehaviour.Properties.of().strength(3.5F).requiresCorrectToolForDrops()));
     static final DeferredBlock<MachineBlock> DECOMPOSER =
         BLOCKS.register("decomposer", () -> new MachineBlock(BlockBehaviour.Properties.of().strength(3.5F).requiresCorrectToolForDrops()));

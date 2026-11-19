@@ -14,6 +14,7 @@ import zipfile
 
 from . import JAVA_VERSION, MINECRAFT_VERSION, NEOFORGE_VERSION
 from .api import ClassLocation
+from . import minechem_final_synthesis
 from .assets import PNG_SIGNATURE
 from .audit import ModMetadata
 from .catalogs import RELEASE_394_PROFILE, CatalogEntry, Profile, recover_catalog
@@ -71,17 +72,22 @@ def _textures(entries: list[CatalogEntry], mod: PackMod, locations: list[ClassLo
 
 def _java(package: str, namespace: str, entries: list[CatalogEntry], mode: DecomposerMode | None, *, reactors: bool = False) -> str:
     definitions = []
+    final = mode == DecomposerMode.FINAL
     for entry in entries:
         keys = [f"item.{namespace}.{entry.path}.detail_{i}" for i in range(len(entry.details))]
         lore = ", ".join(f'Component.translatable("{key}")' for key in keys)
         definitions.append(f'        entries.add(items.registerSimpleItem("{entry.path}", new Item.Properties()'
                            f'.component(DataComponents.LORE, new ItemLore(List.of({lore})))));')
     if mode is not None:
+        if final:
+            definitions.append("        SynthesizerFinal.registerConfig(mod);")
         definitions.append("        entries.addAll(ChemistryMachines.register(bus, items));")
         definitions.append("        entries.addAll(ChemistryResearch.register(bus, items));")
     if reactors:
         definitions.append("        entries.addAll(ReactorMachines.register(bus, items));")
     body = "\n".join(definitions)
+    config_import = "import net.neoforged.fml.ModContainer;\n" if final else ""
+    config_argument = ", ModContainer mod" if final else ""
     return f'''package {package};
 
 import java.util.ArrayList;
@@ -93,7 +99,7 @@ import net.minecraft.world.item.CreativeModeTab;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.component.ItemLore;
 import net.neoforged.bus.api.IEventBus;
-import net.neoforged.fml.common.Mod;
+{config_import}import net.neoforged.fml.common.Mod;
 import net.neoforged.neoforge.registries.DeferredItem;
 import net.neoforged.neoforge.registries.DeferredRegister;
 
@@ -102,7 +108,7 @@ import net.neoforged.neoforge.registries.DeferredRegister;
 public final class CatalogPort {{
     public static final String MOD_ID = "{namespace}";
 
-    public CatalogPort(IEventBus bus) {{
+    public CatalogPort(IEventBus bus{config_argument}) {{
         var items = DeferredRegister.createItems(MOD_ID);
         var tabs = DeferredRegister.create(Registries.CREATIVE_MODE_TAB, MOD_ID);
         var entries = new ArrayList<DeferredItem<?>>();
@@ -171,7 +177,7 @@ def _project_files(profile: Profile, entries: list[CatalogEntry], textures: dict
     namespace = profile.namespace
     package = f"mcmodup.generated.{namespace}"
     mode = _decomposer_mode(profile, digest)
-    version = project_version or {DecomposerMode.FINAL: "1.3.1-partial", DecomposerMode.BATCH: "1.2.0-partial",
+    version = project_version or {DecomposerMode.FINAL: "1.3.2-partial", DecomposerMode.BATCH: "1.2.0-partial",
                                   DecomposerMode.RELEASE_394: "1.3.1-partial"}.get(mode, "1.0.0-partial")
     machine_rules = machine_recipes(namespace, entries, mode=mode) if mode else []
     if mode:
@@ -189,6 +195,13 @@ def _project_files(profile: Profile, entries: list[CatalogEntry], textures: dict
                         f"and {count - decomposition} measured synthesis rules with ghost templates and payment on extraction. "
                         "The microscope records supported discoveries in a journal, which can load an active synthesis pattern. "
                         "CoFH RF linkage is not provided.")
+        elif mode == DecomposerMode.FINAL:
+            synthesis = {rule.id: rule for rule in machine_rules if rule.machine == "synthesizer"}
+            recipe_status = {entry.path: ("synthesis_shadowed_canonical" if synthesis[f"{namespace}:{entry.path}"].canonical.startswith("shadow:")
+                                          else "powered_synthesis") for entry in entries if f"{namespace}:{entry.path}" in synthesis}
+            features = ("Recovered 5.0.5 FINAL items, an ordered synthesis grid with native FE and on-extraction payment, "
+                        "sided storage gates, microscope and journal discovery, and a partial buffered decomposer. "
+                        "The Polytool synthesis result is not implemented.")
         else:
             recipe_status = {entry.path: "powered_synthesis" for entry in entries if entry.components}
             features = ("Recovered items, powered synthesis/decomposition, and microscope and journal discovery for the recovered recipes. "
@@ -331,6 +344,11 @@ def convert_catalog(pack: ModPack, mod: PackMod, profile: Profile, output: Path,
     with tempfile.TemporaryDirectory(prefix="mcmodup-convert-") as scratch:
         workspace = Path(scratch) / "project"
         files, recipe_count = _project_files(profile, entries, textures, digest, observed, locations)
+        if digest == FINAL_LEGACY_SHA256:
+            mapping = minechem_final_synthesis.asset_paths(profile.namespace)
+            with open_input(mod.path) as source:
+                reference = minechem_final_synthesis.read_assets(source, mapping)
+            files.update({f"src/main/resources/{new}": reference[old] for old, new in mapping.items()})
         write_workspace(workspace, files)
         built = _gradle(workspace, timeout)
         _check_artifact(built, profile, digest)

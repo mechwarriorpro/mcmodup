@@ -38,7 +38,7 @@ import net.neoforged.neoforge.registries.DeferredHolder;
 import net.neoforged.neoforge.registries.DeferredItem;
 import net.neoforged.neoforge.registries.DeferredRegister;
 
-/** .394 has a template grid and is paid on extraction; it does not run FINAL's timed jobs. */
+/** .394 has a template grid and is paid on extraction; it does not use the generic timed jobs. */
 final class Synthesizer394 extends BaseEntityBlock {
     private static final MapCodec<Synthesizer394> CODEC = simpleCodec(Synthesizer394::new);
     private static final DeferredRegister.Blocks BLOCKS = DeferredRegister.createBlocks(CatalogPort.MOD_ID);
