@@ -10,7 +10,7 @@ The private-use testbed puts both Minechem releases, the ICBM launchers and Sent
 python -m mcmodup build-legacy-testbed --fetch-originals --allow-preview-ports -o ports/legacy-testbed
 ```
 
-See the [install instructions, gameplay checklist and missing features](docs/legacy-testbed.md). The build uses checksum-pinned inputs and does not redistribute the private-use JAR.
+See the [install and gameplay guide](docs/legacy-testbed.md) and the [full-parity acceptance criteria and remaining gaps](docs/legacy-parity.md). The build uses checksum-pinned inputs and does not redistribute the private-use JAR.
 
 ## Choose updates with checkboxes
 

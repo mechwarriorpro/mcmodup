@@ -51,9 +51,9 @@ These are separate builds of the same in-game machines, not cross-compatible inv
 
 ## Verified build
 
-[Run 44484066723](https://github.com/mechwarriorpro/mcmodup/actions/runs/44484066723/job/135423057286) passed **33 component tests and 16 staged GameTests** on NeoForge 21.1.267. The produced JAR booted on a clean dedicated server without other mods. A separate staged client check entered a fresh world, checked the connected-wall rendering and selected models from all five components, and reloaded resources. These are gameplay and loading checks, not original-client visual parity.
+[Run 44487688782](https://github.com/mechwarriorpro/mcmodup/actions/runs/44487688782/job/135435146739) passed **39 component tests and 22 staged GameTests** on NeoForge 21.1.267, including all six reactor and survival-crafting cases. The produced JAR booted on a clean dedicated server without other mods. A staged client loaded a fresh world, checked models from all five components, reloaded resources, and opened the .394 projector screen with its blueprint synchronized from the integrated server. These are gameplay and loading checks, not original-client visual parity.
 
-The SHA-256 of the JAR tested in that run was `932d1234f66d60a421dd3e53c0bf5ef306dd8cba2b65d5b8320c639cb7a40da5`. This identifies that runner's artifact; use the report next to your local output for its own hash.
+The SHA-256 of the JAR tested in that run was `4f517a2bab8dab46e5d3caad850e2ff6996ba42611edae23ac94d104de3e796b`. This identifies that runner's artifact; use the report next to your local output for its own hash.
 
 ## What is still missing
 
@@ -65,4 +65,4 @@ The SHA-256 of the JAR tested in that run was `932d1234f66d60a421dd3e53c0bf5ef30
 | GeoStrata | Sixteen colors of cave crystals, shards, lamps and potion crystals, plus the rock preview. Recreated models and cave placement, partial Nether effects; no brewery, blooms, pendants, crystal clusters or guardian. |
 | Old AutoBuilder | Based on the scanned CalclaviaCore Creative Builder; two rotatable accelerator-ring blueprints. No original blueprint picker, arbitrary sizes, other Voltz schematics or automatic replacement of an occupied site. |
 
-The class inventory under `META-INF/mcmodup/` records the originals used for reference; it does not mean every scanned class was ported. `parity_verified` remains false. See [the one-JAR verification runs](https://github.com/mechwarriorpro/mcmodup/actions/workflows/legacy-testbed.yml) for the reports that refer to a tested production JAR by its SHA-256.
+The class inventory under `META-INF/mcmodup/` records the originals used for reference; it does not mean every scanned class was ported. `parity_verified` remains false. See the [full-parity acceptance checklist](legacy-parity.md) and [the one-JAR verification runs](https://github.com/mechwarriorpro/mcmodup/actions/workflows/legacy-testbed.yml) for the reports that refer to a tested production JAR by its SHA-256.
