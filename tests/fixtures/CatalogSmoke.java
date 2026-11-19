@@ -390,12 +390,12 @@ public final class CatalogSmoke {
         test.assertTrue(recorded.is(journalItem) && actor.getInventory().getItem(1).isEmpty()
                 && discoveries(recorded).equals(List.of(MINECHEM + ":molecule_water")),
                 "Inserting the journal after a supported sample discovers that recipe: " + discoveries(recorded));
-        menu.getSlot(0).set(new ItemStack(Items.DIRT)); // Not among the recovered recipes.
+        menu.getSlot(0).set(new ItemStack(Items.BEDROCK)); // Unsupported by both generic and exact FINAL.
         test.assertTrue(discoveries(recorded).size() == 1, "Unsupported samples must not create discoveries");
         menu.getSlot(0).set(new ItemStack(Items.WATER_BUCKET));
         menu.getSlot(0).set(new ItemStack(Items.WATER_BUCKET));
         test.assertTrue(discoveries(recorded).equals(List.of(MINECHEM + ":molecule_water", "minecraft:water_bucket")),
-                "A decomposition-only sample is recorded exactly once when inserted after the journal");
+                "The water bucket sample is recorded exactly once when inserted after the journal");
         var snapshot = microscope.saveWithFullMetadata(level.registryAccess());
         var savedBook = recorded.copy();
         level.removeBlockEntity(pos);
