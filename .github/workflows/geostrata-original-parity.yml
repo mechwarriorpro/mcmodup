@@ -6,6 +6,7 @@ on:
     paths:
       - '.github/workflows/geostrata-original-parity.yml'
       - 'mcmodup/geostrata_rocks.py'
+      - 'mcmodup/geo_crystals.py'
       - 'mcmodup/templates/geostrata_rocks/**'
       - 'mcmodup/port.py'
       - 'mcmodup/source_ports.py'

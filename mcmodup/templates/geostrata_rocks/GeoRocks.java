@@ -21,6 +21,7 @@ public final class GeoRocks {
 
     public GeoRocks(IEventBus bus) {
 @REGISTRATIONS@
+        GeoCrystals.register(bus, BLOCKS, ITEMS, ROCKS);
         TABS.register("rocks", () -> CreativeModeTab.builder()
             .title(Component.translatable("itemGroup." + ID + ".rocks"))
             .icon(() -> ROCKS.getFirst().get().getDefaultInstance())

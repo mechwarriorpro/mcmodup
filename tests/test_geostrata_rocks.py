@@ -27,7 +27,7 @@ class GeoStrataRockTests(unittest.TestCase):
                 self.assertFalse(any(name.endswith((".png", ".class")) for name in zipped.namelist()))
                 data = RESOURCE + f"data/{MOD_ID}/"
                 recipes = [name for name in zipped.namelist() if name.startswith(data + "recipe/")]
-                self.assertEqual(len(recipes), 136)
+                self.assertEqual(len(recipes), 136 + 16 * 3)
                 granite = json.loads(zipped.read(data + "recipe/granite_from_smelting.json"))
                 self.assertEqual(granite["ingredient"], {"item": f"{MOD_ID}:granite_cobblestone"})
                 self.assertEqual(granite["result"], {"id": f"{MOD_ID}:granite"})
@@ -67,7 +67,7 @@ class GeoStrataRockTests(unittest.TestCase):
             with ZipFile(port.archive) as zipped:
                 read = lambda path: json.loads(zipped.read(data + path))
                 self.assertEqual(sum(vein.attempts for vein in VEINS.values()), 58)
-                self.assertEqual(sum("/configured_feature/" in name for name in zipped.namelist()), 17)
+                self.assertEqual(sum("/configured_feature/" in name for name in zipped.namelist()), 18)
                 for name, vein in VEINS.items():
                     feature = read(f"worldgen/configured_feature/{name}_vein.json")
                     self.assertEqual(feature["config"]["size"], 32)

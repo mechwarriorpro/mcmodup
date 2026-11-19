@@ -11,6 +11,7 @@ on:
       - 'mcmodup/icbm_plate.py'
       - 'mcmodup/atomic_thermometer.py'
       - 'mcmodup/geostrata_rocks.py'
+      - 'mcmodup/geo_crystals.py'
       - 'mcmodup/templates/minechem/**'
       - 'mcmodup/templates/icbm_plate/**'
       - 'mcmodup/templates/atomic_thermometer/**'

@@ -9,6 +9,7 @@ from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
 
 from . import NEOFORGE_VERSION
 from .audit import ModMetadata
+from .geo_crystals import resources as crystal_resources
 from .inputs import InputError
 from .port import TEMPLATES, _build_gradle, _metadata, empty_test_structure, write_workspace
 from .runtime import file_digest
@@ -16,7 +17,7 @@ from .runtime import file_digest
 
 LEGACY_SHA256 = "afd68aa6ca1222a0f53ee25323c18bd3c2473c346a15345b216c9ef1042a0414"
 MOD_ID = "geostrata_rocks"
-VERSION = "23b-preview.3"
+VERSION = "23b-preview.4"
 ARCHIVE = f"{MOD_ID}-{VERSION}.jar"
 PACKAGE = "mcmodup.geostratarocks"
 RESOURCE = "src/main/resources/"
@@ -25,6 +26,7 @@ FEATURES = {
     "Seven measured recipe families, with engraved mirrors": "measuredrockrecipes",
     "Connected wall adjacency masks on all six faces": "measuredconnectedfaces",
     "Registered stone-only veins and biome filters from observed defaults": "orepreservingveins",
+    "16 cave crystal colors, drops, lamp recipes and timed auras": "crystalfamiliesandauras",
 }
 
 
@@ -103,6 +105,11 @@ def checks(package: str, namespace: str) -> str:
             .replace("@PACKAGE@", package).replace("@NAMESPACE@", namespace).replace("@ROCKS@", cases))
 
 
+def crystal_checks(package: str, namespace: str) -> str:
+    return ((TEMPLATES / "geostrata_rocks/GeoCrystalChecks.java").read_text(encoding="utf-8")
+            .replace("@PACKAGE@", package).replace("@NAMESPACE@", namespace))
+
+
 def _vein_resources(data: str) -> dict[str, str]:
     files: dict[str, str] = {}
     overworld = "#minecraft:is_overworld"
@@ -170,7 +177,7 @@ def _project(workspace: Path) -> None:
     java_package = PACKAGE.replace(".", "/")
     java = f"src/main/java/{java_package}"
     meta = _metadata(ModMetadata("", authors="Reika Kalseki (original GeoStrata)",
-                                 description="17 GeoStrata v23b rock families, connected walls and native stone-only veins; no DragonAPI implementation."),
+                                 description="17 GeoStrata rock families, cave and potion crystals, colorful lamps and native generation; no DragonAPI implementation."),
                      MOD_ID, "GeoStrata Rocks (Preview)", VERSION, "GeoStrata original assets: private use only without permission")
     files = {
         "settings.gradle": f"rootProject.name = '{MOD_ID}'\n",
@@ -178,7 +185,7 @@ def _project(workspace: Path) -> None:
         "build.gradle": _build_gradle(MOD_ID, PACKAGE, VERSION) + f"""
 tasks.named('jar') {{
     archiveFileName = '{ARCHIVE}'
-    exclude '{java_package}/GeoRockChecks*.class', 'data/{MOD_ID}/structure/rock_room.nbt', 'data/{MOD_ID}/structure/vein_room.nbt'
+    exclude '{java_package}/*Checks*.class', 'data/{MOD_ID}/structure/*.nbt'
 }}
 neoForge.runs.create('gameTestServer') {{
     type = 'gameTestServer'
@@ -195,13 +202,17 @@ neoForge.runs.create('gameTestServer') {{
             "No original Java code is bundled. Tested against the default v23b Forge rock survey.\n"),
         f"{data}/structure/rock_room.nbt": empty_test_structure(3),
         f"{data}/structure/vein_room.nbt": empty_test_structure(19),
+        f"{data}/structure/crystal_room.nbt": empty_test_structure(9),
+        f"{java}/GeoCrystalChecks.java": crystal_checks(PACKAGE, MOD_ID),
         **_vein_resources(data),
         **_connected_resources(assets),
         f"{java}/GeoRockChecks.java": checks(PACKAGE, MOD_ID),
         **{f"{java}/{name}.java": (TEMPLATES / f"geostrata_rocks/{name}.java").read_text(encoding="utf-8")
-           for name in ("ConnectedRock", "GeoConnectedClient")},
+           for name in ("ConnectedRock", "GeoConnectedClient", "GeoCrystals", "GeoCrystal")},
     }
-    locales = {f"itemGroup.{MOD_ID}.rocks": "GeoStrata Rocks (Preview)"}
+    crystals, locales = crystal_resources(assets, data, MOD_ID)
+    files.update(crystals)
+    locales[f"itemGroup.{MOD_ID}.rocks"] = "GeoStrata Rocks & Crystals (Preview)"
     mining, stone, iron, registrations = [], [], [], []
     for rock in ROCKS:
         raw = f"{MOD_ID}:{rock.name}"
@@ -275,7 +286,8 @@ def prepare(output: Path) -> Path:
                   "artifact": f"build/libs/{ARCHIVE}", "tasks": ["jar", "runGameTestServer"], "game_report": "build/gametest.xml",
                   "minimum_tests": len(FEATURES), "features": FEATURES, "status": "preview", "standalone_preview": True,
                   "limitations": ["Native ore placement in Overworld biomes, not the old RNG or exact chunk output. No retro-generation or custom dimension and density settings.",
-                                  "Only plain stone is replaced. Original mining timing, opal tint, crystals, DragonAPI integrations and old saves are missing. Connected wall masks are measured; lighting and pixel parity are not certified."],
+                                  "Native crystal families use new models, timed effects and adapted cave generation. Nether effects are partial; no crystal brewing, pendants, blooms, clusters or guardian mechanics.",
+                                  "Only plain stone is replaced. Original mining timing, opal tint, DragonAPI integrations and old saves are missing. Connected wall masks are measured; lighting and pixel parity are not certified."],
                   "import_assets": {old: RESOURCE + new for old, new in imports.items()},
                   "asset_map": {old: {"path": new} for old, new in imports.items()}}
         manifest = output / "geostrata-rocks.json"
