@@ -4,6 +4,9 @@ import cpw.mods.fml.common.Loader;
 import cpw.mods.fml.common.Mod;
 import cpw.mods.fml.common.event.FMLServerStartedEvent;
 
+import java.lang.invoke.MethodHandle;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.MethodType;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
@@ -92,14 +95,16 @@ public final class LegacyGeoRockSurvey {
 
     /** Exhaust each of the 256 possible in-plane neighbor patterns on all six faces of a real v23b wall. */
     private static int checkConnected(Object world, Method place, Method getItem, Object[] blocks,
-                                      Object[] rocks, Object[] shapes, int x, int y, int z) throws Exception {
+                                      Object[] rocks, Object[] shapes, int x, int y, int z) throws Throwable {
         Object granite = constant(rocks, "GRANITE"), marble = constant(rocks, "MARBLE");
         Object connected = constant(shapes, "CONNECTED"), smooth = constant(shapes, "SMOOTH"), brick = constant(shapes, "BRICK");
         Object center = getItem.invoke(granite, connected), stone = getItem.invoke(granite, smooth);
         Object edge = getItem.invoke(granite, brick), unlike = getItem.invoke(marble, connected);
         Class<?> faces = Class.forName("net.minecraftforge.common.ForgeDirection");
-        Method masks = blocks[itemId(center)].getClass().getMethod("getEdgesForFace", mc("world.IBlockAccess"),
-                int.class, int.class, int.class, faces, ((Enum<?>) granite).getDeclaringClass());
+        // Resolve only this method; enumerating the block methods also resolves absent client classes.
+        MethodHandle masks = MethodHandles.publicLookup().findVirtual(blocks[itemId(center)].getClass(), "getEdgesForFace",
+            MethodType.methodType(java.util.ArrayList.class, mc("world.IBlockAccess"), int.class, int.class, int.class, faces,
+                ((Enum<?>) granite).getDeclaringClass()));
         final String[] sides = {"DOWN", "UP", "NORTH", "SOUTH", "WEST", "EAST"};
         // Each row is [side mapped to mask 2, side mapped to mask 4]; the corner masks are 1/3/7/9.
         final int[][] advances = {{0, 0, 1, 1, 0, 0}, {0, 0, 1, 1, 0, 0}, {1, 0, 0, 0, 1, 0},

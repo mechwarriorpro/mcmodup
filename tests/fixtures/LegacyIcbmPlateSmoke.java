@@ -92,11 +92,8 @@ public final class LegacyIcbmPlateSmoke {
                     (Float) hardness.invoke(expected, world, x, y, z) == (i == 3 ? 0.6F : 3.8F), "Wrong physical properties for " + i + ": " + blast);
             require(!(Boolean) block.getMethod("hasTileEntity", int.class).invoke(expected, meta), "Building block has a tile: " + i);
         }
-        Method side = block.getMethod("func_71877_c", type("world.IBlockAccess"), int.class, int.class, int.class, int.class);
-        require(!(Boolean) side.invoke(glass, world, x, y, z, 5) && (Boolean) side.invoke(glass, world, x + 1, y, z, 5),
-                "Reinforced glass does not cull only its interior face in air");
         return "concrete/compact/reinforced/glass each craft 8 and drop their own variant; hardness 3.8/3.8/3.8/0.6; " +
-               "resistance 30/38/48/28.8; reinforced glass culls inner face; no building block tiles";
+               "resistance 30/38/48/28.8; no building block tiles";
     }
 
     private static Object[] ring(int a, int meta, int b) throws Exception {

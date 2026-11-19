@@ -6,6 +6,7 @@ from pathlib import Path
 import traceback
 from zipfile import ZipFile
 
+from mcmodup.classfiles import read_class
 from mcmodup.geostrata_rocks import VEINS, VEIN_SIZE
 from mixed_legacy_pack_smoke import ORIGINALS, note
 from voltz_legacy import probe
@@ -36,6 +37,11 @@ def check_terrain(properties: str, generated: str, terrain: str) -> None:
 
 def run(root: Path) -> None:
     original = root / GEOSTRATA.filename
+    with ZipFile(original) as archive:
+        names = [path for path in archive.namelist() if path.endswith("/BlockConnectedRock.class")]
+        assert len(names) == 1, names
+        methods = read_class(archive.read(names[0])).members
+        note("Original connected rock method descriptors", "; ".join(f"{name}{descriptor}" for name, descriptor in methods if "Edge" in name))
     evidence = probe(root, "LegacyGeoRockSurvey", {}, (), "MCMODUP_GEO", providers=(), supplied={
         f"mods/{GEOSTRATA.filename}": (original, GEOSTRATA.sha256),
         f"mods/{DRAGONAPI}": (root / DRAGONAPI, DRAGONAPI_SHA256),
