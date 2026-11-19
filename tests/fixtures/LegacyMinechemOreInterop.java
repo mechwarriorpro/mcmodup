@@ -37,7 +37,10 @@ final class LegacyMinechemOreInterop {
     static String survey(Object world, boolean old) throws Exception {
         LegacyMinechemOreInterop test = new LegacyMinechemOreInterop(world, old);
         test.crafting();
-        if (!old) test.decomposition();
+        if (!old) {
+            test.decomposition();
+            test.oreMatrix();
+        }
         try (PrintWriter out = new PrintWriter("minechem-ore-interop.txt", "UTF-8")) {
             for (Map.Entry<String, String> row : test.rows.entrySet()) out.println(row.getKey() + "=" + row.getValue());
             if (out.checkError()) throw new AssertionError("Could not save ore interoperability measurements");
@@ -96,6 +99,63 @@ final class LegacyMinechemOreInterop {
         register.invoke(null, "oreUranium", iron);
         add.invoke(registry, "oreUranium");
         rows.put("explicit_iron_after", products(iron));
+    }
+
+    private void oreMatrix() throws Exception {
+        Class<?> recipes = Class.forName("minechem.MinechemRecipes");
+        Object registry = recipes.getMethod("getInstance").invoke(null);
+        Method add = recipes.getMethod("registerOre", String.class);
+        int meta = 0x400;
+        Map<String, String> values = new TreeMap<String, String>();
+        // Two distinct providers and both dust sizes reveal the real precedence and shaped-slot shifts.
+        Object first = tagged(registry, add, "ingotThorium", meta++);
+        Object second = tagged(registry, add, "ingotThorium", meta++);
+        values.put("synth_ingot_first", LegacyMinechemChemistry.synthesisRule(world, first));
+        values.put("synth_ingot_second", LegacyMinechemChemistry.synthesisRule(world, second));
+        Object dust = tagged(registry, add, "dustThorium", meta++);
+        values.put("synth_ingot_after_dust", LegacyMinechemChemistry.synthesisRule(world, first));
+        values.put("synth_dust", LegacyMinechemChemistry.synthesisRule(world, dust));
+        Object small = tagged(registry, add, "dustSmallThorium", meta++);
+        values.put("synth_small_dust", LegacyMinechemChemistry.synthesisRule(world, small));
+        Object late = tagged(registry, add, "ingotThorium", meta++);
+        values.put("synth_ingot_late", LegacyMinechemChemistry.synthesisRule(world, late));
+        values.put("synth_dust_after_small", LegacyMinechemChemistry.synthesisRule(world, dust));
+        // The reverse order must be observed too; the enum includes several non-metals with fractional outputs.
+        tagged(registry, add, "dustSmallOsmium", meta++);
+        values.put("synth_ingot_small_first", LegacyMinechemChemistry.synthesisRule(world, tagged(registry, add, "ingotOsmium", meta++)));
+        values.put("synth_gem", LegacyMinechemChemistry.synthesisRule(world, tagged(registry, add, "gemAmethyst", meta++)));
+        Class<?> declarations = Class.forName("minechem.oredictionary.OreDictionaryBaseOreEnum");
+        Method name = declarations.getMethod("getName");
+        for (Object material : declarations.getEnumConstants()) {
+            String suffix = (String) name.invoke(material);
+            for (String form : new String[]{"oreNether", "ore", "ingot", "nugget", "dustDirty", "dustSmall", "dust", "plate", "gem", "crystal", "block"}) {
+                String tag = form + suffix;
+                values.put(tag, orderedProducts(tagged(registry, add, tag, meta++)));
+            }
+        }
+        for (String special : new String[]{"oreSaphire", "crystalSaphire", "oreNetherNetherQuartz", "oreChromium", "gemApatite", "plateSilicon",
+                "xychoriumBlue", "xychoriumRed", "xychoriumGreen", "xychoriumDark", "xychoriumLight", "cropMaloberry", "cropDuskberry", "cropSkyberry",
+                "cropBlightberry", "cropBlueberry", "cropRaspberry", "cropBlackberry"})
+            values.put(special, orderedProducts(tagged(registry, add, special, meta++)));
+        try (PrintWriter out = new PrintWriter("minechem-ore-forms.txt", "UTF-8")) {
+            for (Map.Entry<String, String> row : values.entrySet()) out.println(row.getKey() + "=" + row.getValue());
+            if (out.checkError()) throw new AssertionError("Could not save .394 ore forms");
+        }
+    }
+
+    private Object tagged(Object recipes, Method add, String name, int meta) throws Exception {
+        Object input = vanilla(7, 1, meta);
+        register.invoke(null, name, input);
+        add.invoke(recipes, name);
+        return input;
+    }
+
+    private String orderedProducts(Object input) throws Exception {
+        String value = products(input);
+        if (value.equals("-") || value.equals("[]")) return value;
+        String[] parts = value.substring(1, value.length() - 1).split(", ");
+        Arrays.sort(parts);
+        return Arrays.toString(parts);
     }
 
     private String products(Object input) throws Exception {

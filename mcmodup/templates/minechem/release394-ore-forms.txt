@@ -1,0 +1,1 @@
+# Exact Forge .394 default-handler ore forms and synthesis registration controls.

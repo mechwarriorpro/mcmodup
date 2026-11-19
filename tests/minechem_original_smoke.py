@@ -164,6 +164,15 @@ def original(root: Path, version: str, matter_only: bool = False, ore_disable: b
     note(f"Pinned Minechem {version} {trace}", f"{len(expected)} original ore interop rows re-observed")
     if ore_disable:
         return
+    if version == "1.7.10" and not matter_only:
+        path = server / "minechem-ore-forms.txt"
+        actual = dict(line.split("=", 1) for line in path.read_text(encoding="utf-8").splitlines())
+        expected = observations("release394-ore-forms.txt")
+        if actual != expected or os.environ.get("MCMODUP_CAPTURE_CHEMISTRY") == "1":
+            capture(path, ".394 registered ore forms")
+        differences = [key for key in sorted(actual.keys() | expected.keys()) if actual.get(key) != expected.get(key)]
+        assert not differences, f".394 ore form observations changed ({len(differences)}): {differences[:8]}"
+        note("Pinned .394 ore forms", f"{len(expected)} decomposition and synthesis registry rows re-observed")
     for kind in (("fluids", "radiation", "player-decay", "uranium-worldgen") if matter else ()):
         path = server / f"minechem-{kind}.txt"
         actual = dict(line.split("=", 1) for line in path.read_text(encoding="utf-8").splitlines())

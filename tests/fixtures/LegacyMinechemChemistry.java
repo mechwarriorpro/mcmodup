@@ -176,22 +176,35 @@ final class LegacyMinechemChemistry {
         return kind.endsWith("Chance") ? "C" + rule.getClass().getMethod("getChance").invoke(rule) + "!" + products : products;
     }
 
+    static String synthesisRule(Object world, Object output) throws Exception {
+        LegacyMinechemChemistry probe = new LegacyMinechemChemistry(world, false);
+        Class<?> handler = Class.forName("minechem.tileentity.synthesis.SynthesisRecipeHandler");
+        Object rule = handler.getMethod("getRecipeFromOutput", probe.stack).invoke(handler.getField("instance").get(null), output);
+        return rule == null ? "-" : probe.synthesisRow(rule);
+    }
+
+    private String synthesisRow(Object rule) throws Exception {
+        Class<?> type = Class.forName("minechem.tileentity.synthesis.SynthesisRecipe");
+        Object output = type.getMethod("getOutput").invoke(rule);
+        boolean shaped = (Boolean) type.getMethod("isShaped").invoke(rule);
+        Object pattern = type.getMethod(shaped ? "getShapedRecipe" : "getShapelessRecipe").invoke(rule);
+        if (pattern == null) return null;
+        StringBuilder ghost = new StringBuilder();
+        for (int i = 0; i < Array.getLength(pattern); i++) {
+            if (i > 0) ghost.append(',');
+            ghost.append(part(Array.get(pattern, i)));
+        }
+        return size.getInt(output) + ";" + type.getMethod("energyCost").invoke(rule) + ";" + (shaped ? "shaped" : "shapeless") + ";" + ghost;
+    }
+
     private int synthesis() throws Exception {
         Class<?> type = Class.forName("minechem.tileentity.synthesis.SynthesisRecipe");
         Map<String, String> rows = new TreeMap<String, String>();
         for (Object rule : ((Map<?, ?>) type.getField("recipes").get(null)).values()) {
-            Object output = type.getMethod("getOutput").invoke(rule);
-            String key = stackKey(output);
+            String key = stackKey(type.getMethod("getOutput").invoke(rule));
             if (key == null) continue;
-            boolean shaped = (Boolean) type.getMethod("isShaped").invoke(rule);
-            Object pattern = type.getMethod(shaped ? "getShapedRecipe" : "getShapelessRecipe").invoke(rule);
-            if (pattern == null) continue;
-            StringBuilder ghost = new StringBuilder();
-            for (int i = 0; i < Array.getLength(pattern); i++) {
-                if (i > 0) ghost.append(',');
-                ghost.append(part(Array.get(pattern, i)));
-            }
-            rows.put(key, size.getInt(output) + ";" + type.getMethod("energyCost").invoke(rule) + ";" + (shaped ? "shaped" : "shapeless") + ";" + ghost);
+            String row = synthesisRow(rule);
+            if (row != null) rows.put(key, row);
         }
         output("minechem-all-synthesis.txt", rows);
         return rows.size();
