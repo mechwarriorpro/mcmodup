@@ -2,6 +2,16 @@
 
 Prepare standalone **Minecraft 1.21.1 / NeoForge** modpack updates from installed files. Analyze legacy Forge mods, stage compatible native builds, or compile standalone ports from reviewed source recipes. This is not a general-purpose converter for arbitrary binaries.
 
+## Build the one-JAR legacy testbed
+
+The private-use testbed puts both Minechem releases, the ICBM launchers and Sentry turrets, Atomic Science's accelerator, two Creative Builder rings, and GeoStrata crystals and rocks in **one** installable NeoForge 21.1.267 JAR. It is a playable preview, not full parity. With Python 3.11+ and JDK 21, run:
+
+```sh
+python -m mcmodup build-legacy-testbed --fetch-originals --allow-preview-ports -o ports/legacy-testbed
+```
+
+See the [install instructions, gameplay checklist and missing features](docs/legacy-testbed.md). The build uses checksum-pinned inputs and does not redistribute the private-use JAR.
+
 ## Choose updates with checkboxes
 
 ```sh
