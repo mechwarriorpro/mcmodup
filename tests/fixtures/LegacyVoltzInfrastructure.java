@@ -157,7 +157,7 @@ public final class LegacyVoltzInfrastructure {
         Object[] neighbors = (Object[]) field(platformType, "turrets").get(platform);
         for (int index : new int[]{2, 3}) {
             Object host = turretType.newInstance();
-            turretField.set(host, turretClass.getConstructor(Class.forName("icbm.sentry.interfaces.ITurretProvider")).newInstance(host));
+            turretField.set(host, turretClass.getConstructor(turretType).newInstance(host));
             require(energyField.get(turretField.get(host)) != null, "No neighbor storage");
             neighbors[index] = host;
         }
