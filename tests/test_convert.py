@@ -365,6 +365,8 @@ class ConvertTests(unittest.TestCase):
             self.assertNotIn(f"{ELEMENT}.class", archive.namelist())
             self.assertNotIn(f"{MOLECULE}.class", archive.namelist())
             self.assertEqual(archive.read("assets/minechem_chemistry/textures/item/catalog/0.png"), PNG)
+            self.assertIn("Journal cloning requires the exact FINAL release", doc["not_ported"])
+            self.assertNotIn("data/minechem_chemistry/recipe/journal_clone.json", archive.namelist())
             self.assertNotIn("data/minechem_chemistry/recipe/combine/molecule_water.json", archive.namelist())
             for item in ("microscope", "chemist_journal"):
                 recipe_data = json.loads(archive.read(f"data/minechem_chemistry/recipe/{item}.json"))

@@ -41,7 +41,7 @@ The [NeoForge GameTests](https://github.com/mechwarriorpro/mcmodup/actions/runs/
 
 These are adapted machines: new menus and models, a spyglass instead of the original lens chain, and manual or repeating processing and a redstone fallback (+500 FE) in the Synthesizer. The [exact FINAL Forge run](https://github.com/mechwarriorpro/mcmodup/actions/runs/44366937376/job/135023092554) measured the iron-ingot decomposition queue, one-unit output ticks, reception limit and jam recovery. The [NeoForge release-derived JAR checks](https://github.com/mechwarriorpro/mcmodup/actions/runs/44366937370/job/135023710792) repeated the iron intake/output trace, buffer save/load and jam recovery with the checksum-pinned FINAL build. The later [.394 build](#minechem-505394-machine-preview) has a different cost and uses a separate mod ID.
 
-The original journal cloning and GUI art are not ported. FE is not a conversion of Universal Electricity voltage or power units. Most material, ore dictionary/tag, chance, and fluid recipes are not implemented, nor are integrations, radiation, reactors, the rest of Minechem's machines, and legacy-world migration. Only recovered formulas and the listed starter materials can be processed.
+With the exact FINAL archive, place the journal to the left of a vanilla book in a crafting grid to make two copies. Discoveries, active selection and custom components are preserved. The generic recovered-catalog path does not include cloning. The original GUI art is not ported. FE is not a conversion of Universal Electricity voltage or power units. Most material, ore dictionary/tag, chance, and fluid recipes are not implemented, nor are integrations, radiation, reactors, the rest of Minechem's machines, and legacy-world migration. Only recovered formulas and the listed starter materials can be processed.
 
 ## Minechem 5.0.5.394 machine preview
 
@@ -63,8 +63,9 @@ The 113 element and 173 molecule catalog entries retain their original metadata 
 2. Add the real chemicals to the 18 storage slots and connect FE. The machine stores up to 100,000 FE and accepts at most 100 per transfer. For example, 16 iron tubes and 3,000 FE make an iron ingot.
 3. Take the output once to spend one complete batch. Seeing the output template alone does not mean ingredients or FE have been spent. Partial batches are not extractable. The storage, journal, ghost pattern, and FE save in a new world.
 4. To load a recipe from a journal, craft the .394 book with a book and a **glass pane**, and craft the microscope shown above with **copper** instead of iron. Inspect a supported sample with the book in the microscope; it records the item without consuming it. Use the book in the air to choose a discovery, then put it in the synthesizer slot left of the ghost grid. A supported synthesis recipe fills the grid without paying anything upfront. The usual ingredients and FE are still required, and taking the book out clears the grid.
+5. Craft the .394 journal to the left of a vanilla book to make two copies. A FINAL journal cannot substitute for a .394 journal in its machinery.
 
-The two original outputs that compete for the same `m140`/`m143` template are excluded. Chance and recursive decomposition, unmeasured recipes, other fluids, old power integrations, journal cloning and automation, the original lens chain, and other machines are not in this slice. Use the **generated** JAR in a fresh instance. It is not a drop-in replacement or dependency provider.
+The two original outputs that compete for the same `m140`/`m143` template are excluded. Chance and recursive decomposition, unmeasured recipes, other fluids, old power integrations, journal automation, the original lens chain, and other machines are not in this slice. Use the **generated** JAR in a fresh instance. It is not a drop-in replacement or dependency provider.
 
 ## Thaumcraft 4.2.3.5: Forge 1.7.10 → NeoForge 1.21.1
 

@@ -39,8 +39,9 @@ neoForge.runs.named('client') {{
                             cwd=root, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=420)
     details = evidence.read_text(encoding="utf-8") if evidence.exists() else "No client evidence"
     if result.returncode or not details.startswith("Actual staged client:"):
-        issues = [line for line in result.stdout.splitlines() if any(word in line for word in ("error:", "Exception:", "Missing texture"))]
-        raise AssertionError(details + "\n" + "\n".join(issues[:12]) + "\n" + result.stdout[-6500:])
+        lines = result.stdout.splitlines()
+        issues = ["\n".join(lines[i:i + 5]) for i, line in enumerate(lines) if "error:" in line]
+        raise AssertionError(details + "\n" + "\n".join(issues[:5]) + "\n" + result.stdout[-4800:])
     assert file_digest(root / "run/mods" / jar.name) == expected
     assert (root / "run/saves/geo-connected-check/level.dat").is_file()
     return details.strip()

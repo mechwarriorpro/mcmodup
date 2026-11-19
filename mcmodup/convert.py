@@ -197,7 +197,8 @@ def _project_files(profile: Profile, entries: list[CatalogEntry], textures: dict
         features = "Recovered aspect items and crafting-table combinations. This is not the original research system."
     if mode in (DecomposerMode.FINAL, DecomposerMode.RELEASE_394):
         features += " Journal cloning preserves item components in an ordered two-item craft."
-    description = f"Partial mod with new IDs. {features} Not ported: {profile.not_ported}"
+    not_ported = ("Journal cloning requires the exact FINAL release. " if mode == DecomposerMode.BATCH else "") + profile.not_ported
+    description = f"Partial mod with new IDs. {features} Not ported: {not_ported}"
     code_notice = ("Includes only selected, rewritten legacy method bodies; no original classes or legacy dependencies are bundled."
                    if linked_decomposer else "This JAR contains no legacy JVM classes or dependencies.")
     notice = f"""PARTIAL PORT — NOT A REPLACEMENT FOR THE ORIGINAL MOD.
@@ -205,7 +206,7 @@ def _project_files(profile: Profile, entries: list[CatalogEntry], textures: dict
 Legacy mod: {profile.mod_id} (Minecraft {profile.version}, binary SHA-256 {digest})
 Implemented: {features}
 Old Minecraft worlds and dependent mods are not supported.
-Not ported: {profile.not_ported}
+Not ported: {not_ported}
 
 Original data and icons: {profile.attribution}
 License: {profile.license}.
@@ -225,7 +226,7 @@ adaptations without the owner's permission. {code_notice}
         f"{src}/data/{namespace}/mcmodup/catalog.json": _document({
             "profile": profile.name, "full_port": False, "source_minecraft": profile.version,
             "source_sha256": digest, "target_minecraft": MINECRAFT_VERSION,
-            "target_neoforge": NEOFORGE_VERSION, "not_ported": profile.not_ported,
+            "target_neoforge": NEOFORGE_VERSION, "not_ported": not_ported,
             "catalog_classes": [location.owner for location in locations],
             **({"decomposer_mode": mode.value} if mode else {}),
             "dependencies_observed": dependency_summary,

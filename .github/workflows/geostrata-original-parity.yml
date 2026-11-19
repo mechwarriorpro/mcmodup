@@ -1,11 +1,18 @@
-name: Observe the exact GeoStrata rocks on Forge
+name: Compare GeoStrata rocks on original and native runtimes
 
 on:
   workflow_dispatch:
   push:
     paths:
       - '.github/workflows/geostrata-original-parity.yml'
+      - 'mcmodup/geostrata_rocks.py'
+      - 'mcmodup/templates/geostrata_rocks/**'
+      - 'mcmodup/port.py'
+      - 'mcmodup/source_ports.py'
+      - 'mcmodup/templates/gradle/**'
       - 'tests/geostrata_original_smoke.py'
+      - 'tests/geostrata_client_smoke.py'
+      - 'tests/fixtures/GeoConnectedClientSmoke.java'
       - 'tests/voltz_legacy.py'
       - 'tests/legacy_recipe_fixture.py'
       - 'tests/mixed_legacy_pack_smoke.py'
@@ -82,9 +89,8 @@ jobs:
           import pathlib
           import sys
           text = pathlib.Path(sys.argv[1]).read_text(errors="replace")
-          lines = [line for line in text.splitlines() if "error:" in line or "FAIL:" in line or "AssertionError" in line]
-          excerpt = "\n".join(lines[:12]) + "\n" + text[-5200:]
-          print("::error title=Connected model client failed::" + excerpt.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A"))
+          text = text[text.rfind("\nAssertionError:"):] if "\nAssertionError:" in text else text[-7400:]
+          print("::error title=Connected model client failed::" + text[:7400].replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A"))
           PY
             exit 1
           fi
