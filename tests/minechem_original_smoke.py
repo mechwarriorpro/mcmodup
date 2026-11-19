@@ -35,7 +35,8 @@ def compile_probe(root: Path, server: Path, forge: Path, javac: str) -> None:
                              *(str(fixtures / name) for name in ("LegacyMinechemDecomposer.java", "LegacyMinechemMaterials.java",
                                                                  "LegacyMinechemSynthesis394.java", "LegacyMinechemJournal394.java",
                                                                  "LegacyMinechemReactors.java", "LegacyMinechemSynthesisFinal.java",
-                                                                 "LegacyMinechemChemistry.java", "LegacyMinechemPolytool.java"))],
+                                                                 "LegacyMinechemChemistry.java", "LegacyMinechemPolytool.java",
+                                                                 "LegacyMinechemMatter.java"))],
                             capture_output=True, text=True, timeout=60)
     assert result.returncode == 0, result.stderr
     with ZipFile(server / "mods/mcmodup-minechemoracle.jar", "x") as jar:
@@ -87,6 +88,10 @@ def original(root: Path, version: str) -> None:
     assert file_digest(server / "mods" / name) == checksum
     note(f"Original Minechem decomposer on Forge {version}", evidence)
     verify_chemistry(server, version)
+    for kind in ("fluids", "radiation"):
+        path = server / f"minechem-{kind}.txt"
+        if kind == "radiation": note(f"Minechem {version} radiation", path.read_text(encoding="utf-8"))
+        capture(path, f"Minechem {version} matter {kind}")
     polytool = (server / "minechem-polytool.txt").read_text(encoding="utf-8").splitlines()
     expected_tool = [f"{key}={value}" for key, value in observations(trace_name(version == "1.7.10")).items()]
     assert polytool == expected_tool, ("Polytool trace changed: " + str(sorted(set(polytool).symmetric_difference(expected_tool))[:10]))
@@ -123,6 +128,12 @@ def original(root: Path, version: str) -> None:
              f"the ambiguous pattern selected {selected}. The port lets players explicitly select either output ({first}/{alternate}).")
 
 
+def capture(path: Path, label: str) -> None:
+    data = base64.b64encode(zlib.compress(path.read_bytes(), level=9)).decode("ascii")
+    for offset in range(0, len(data), 3000):
+        note(f"{label} {offset // 3000}", data[offset:offset + 3000])
+
+
 def normalize_material(value: str) -> str:
     # Map/Hashtable iteration order isn't part of .394's product identity.
     if value.startswith("R"):
@@ -143,9 +154,7 @@ def verify_chemistry(server: Path, version: str) -> None:
     for trace, target in table.items():
         path = server / f"minechem-{trace}.txt"
         if os.environ.get("MCMODUP_CAPTURE_CHEMISTRY") == "1":
-            data = base64.b64encode(zlib.compress(path.read_bytes(), level=9)).decode("ascii")
-            for offset in range(0, len(data), 3000):
-                note(f"Minechem {version} {trace} {offset // 3000}", data[offset:offset + 3000])
+            capture(path, f"Minechem {version} {trace}")
         actual = dict(line.split("=", 1) for line in path.read_text(encoding="utf-8").splitlines())
         if not final and trace == "foods":
             expected = {key: "yes" for key in observations("release394-effects.txt")}

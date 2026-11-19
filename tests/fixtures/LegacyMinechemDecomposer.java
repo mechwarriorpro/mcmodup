@@ -188,7 +188,8 @@ public final class LegacyMinechemDecomposer {
                     + "; input_consumed_on_start; saved_queue_emits_16_iron_tubes_one_per_tick; remaining_charge=0" + jam + materials + " | " + cloning(world) +
                     " | " + LegacyMinechemPolytool.survey(world, FINAL_164, x + 24, y + 8, z) +
                     " | " + LegacyMinechemReactors.survey(world, FINAL_164, x, y + 18, z) +
-                    " | " + LegacyMinechemChemistry.survey(world, FINAL_164));
+                    " | " + LegacyMinechemChemistry.survey(world, FINAL_164) +
+                    " | " + LegacyMinechemMatter.survey(world, FINAL_164, x + 24, y + 10, z));
         } catch (Throwable failure) {
             Throwable cause = failure.getCause() == null ? failure : failure.getCause();
             System.err.println("MCMODUP_MINECHEM_ORIGINAL_FAIL " + cause + " at " +
