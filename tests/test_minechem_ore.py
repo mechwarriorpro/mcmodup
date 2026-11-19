@@ -72,6 +72,9 @@ class UraniumOreTests(unittest.TestCase):
         self.assertEqual(code.count("new Rule("), len(minechem_ore.ORE_FORMS))
         self.assertIn('tag("c:ores_in_ground/netherrack"), List.of(new Part("minechem_chemistry_394:chemical_e92", 96))', code)
         self.assertFalse(set(minechem_ore.verification_tags().values()) & set(newer_files.values()))
+        fixtures = minechem_ore.verification_tags()
+        self.assertNotIn("minecraft:iron_ore", fixtures["src/main/resources/data/c/tags/item/ores/uranium.json"])
+        self.assertIn("minecraft:iron_ore", fixtures["src/main/resources/data/c/tags/item/ingots/uranium.json"])
 
 
 if __name__ == "__main__":

@@ -23,7 +23,9 @@ ORE_FORMS = {
 
 # Extra tags are supplied only by the staged verification mod, never by a production port.
 TEST_ITEMS = {
-    "ores/uranium": ["minecraft:light", "minecraft:barrier", "minecraft:iron_ore"],
+    "ores/uranium": ["minecraft:light", "minecraft:barrier"],
+    # Test exact-lookup precedence without making iron ore a valid FINAL crafting ingredient.
+    "ingots/uranium": ["minecraft:iron_ore"],
     "ores_in_ground/netherrack": ["minecraft:barrier"],
     "storage_blocks/uranium": ["minecraft:structure_void"],
 }

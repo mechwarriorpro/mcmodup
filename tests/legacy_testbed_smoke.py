@@ -19,9 +19,10 @@ from pack_release_smoke import boot
 
 
 CHECK = "mcmodup_testbed_check"
+SETTINGS = "mcmodup_testbed_settings"
 
 
-def staged(root: Path, jar: Path) -> str:
+def staged(root: Path, jar: Path) -> tuple[int, int]:
     from mcmodup import atomic_thermometer, geostrata_rocks, icbm_plate, minechem_final_synthesis, minechem_matter, minechem_ore, minechem_pair, minechem_polytool, minechem_reactors
 
     with ZipFile(jar) as archive:
@@ -40,9 +41,17 @@ neoForge.runs.create('gameTestServer') {{
     gameDirectory = project.file('run')
     systemProperty 'neoforge.enabledGameTestNamespaces', '{CHECK}'
 }}
+neoForge.runs.create('gameTestServerSettings') {{
+    type = 'gameTestServer'
+    gameDirectory = project.file('run-settings')
+    systemProperty 'neoforge.enabledGameTestNamespaces', '{SETTINGS}'
+}}
 """,
         f"{resources}/META-INF/neoforge.mods.toml": _metadata(ModMetadata(""), CHECK, "Staged JAR test probe", "1.0.0", "Unlicense"),
         f"run/mods/{JAR_NAME}": jar.read_bytes(),
+        f"run-settings/mods/{JAR_NAME}": jar.read_bytes(),
+        "run-settings/config/minechem_chemistry-crafting.toml": "uraniumOreCraftable = false\n",
+        f"{resources}/data/{SETTINGS}/structure/empty.nbt": empty_test_structure(5),
         **terrain_fixtures(package, CHECK),
         **minechem_ore.verification_tags(),
         f"{source}/GeoCrystalChecks.java": geostrata_rocks.crystal_checks(package, CHECK),
@@ -71,14 +80,21 @@ neoForge.runs.create('gameTestServer') {{
         files[f"{source}/{minechem_ore.check_name(prepaid)}.java"] = minechem_ore.checks(package, CHECK, profile.namespace, prepaid)
     for room, size in {"rock_room": 3, "vein_room": 19, "crystal_room": 9, "water_room": 5, "synthesis_room": 5, "journal_room": 5, "fluid_room": 15, "empty": 5, "test_room": 5, "polytool_room": 11, "turbine_room": 5, "platform_room": 5, "accel_room": 15, "launch_room": 17, "reactor_room": 29}.items():
         files[f"{resources}/data/{CHECK}/structure/{room}.nbt"] = empty_test_structure(size)
+    config_fixture = Path(__file__).with_name("fixtures") / "MinechemConfigSmoke.java"
+    source_text = config_fixture.read_text(encoding="utf-8")
+    expected_settings = source_text.count("@GameTest(")
+    files[f"{source}/{config_fixture.name}"] = source_text
     write_workspace(root, files)
     result = run_gradle(root, "runGameTestServer")
     marker = next((line.split("required tests passed", 1)[0].rsplit("All ", 1)[-1].strip()
                    for line in result.splitlines() if "All " in line and "required tests passed" in line), None)
-    expected = sum(content.count("@GameTest(") for name, content in files.items() if name.endswith(".java"))
+    expected = sum(content.count("@GameTest(") for name, content in files.items() if name.endswith(".java")) - expected_settings
     assert marker == str(expected), result[-5400:]
-    assert digest(root / "run/mods" / JAR_NAME) == digest(jar), "Staged test mutated the JAR"
-    return marker
+    config_result = run_gradle(root, "runGameTestServerSettings")
+    assert f"All {expected_settings} required tests passed" in config_result, config_result[-5400:]
+    for profile in ("run", "run-settings"):
+        assert digest(root / profile / "mods" / JAR_NAME) == digest(jar), "Staged test mutated the JAR"
+    return expected, expected_settings
 
 
 def check(root: Path, *, fetch: bool = False, client: bool = False) -> None:
@@ -108,18 +124,19 @@ def check(root: Path, *, fetch: bool = False, client: bool = False) -> None:
     assert not tuple(mods.iterdir())
     shutil.copyfile(jar, mods / jar.name)
     boot(root / "server", "bash run.sh nogui")
-    count = staged(root / "staged", jar)
+    count, settings_count = staged(root / "staged", jar)
     source = sum(part["gametests"]["passed"] for part in report["components"].values())
     client_evidence = None
     if client:
         from geostrata_client_smoke import check_client
         client_evidence = check_client(root / "client", jar, testbed=True)
-    verified = {"jar": jar.name, "jar_sha256": digest(jar), "source_gametests": source, "staged_gametests": int(count),
+    verified = {"jar": jar.name, "jar_sha256": digest(jar), "source_gametests": source, "staged_gametests": count,
+                "config_gametests": settings_count,
                 "stock_server_ready": True, "staged_client": client_evidence, "complete_parity": False}
     (root / "testbed-verification.json").write_text(json.dumps(verified, indent=2) + "\n", encoding="utf-8")
     note("One-JAR verification passed", json.dumps(verified))
     summary([f"**Single test JAR**: `{jar.name}` (SHA-256 `{digest(jar)}`)", "",
-             f"{source} source and {count} staged test cases passed. A stock server booted with only this mod JAR.",
+             f"{source} source, {count} staged and {settings_count} separate config test cases passed. A stock server booted with only this mod JAR.",
              *([client_evidence] if client_evidence else []),
              "Exact originals were scanned and left unchanged. No legacy libraries or public GeoStrata asset artifact."])
 
