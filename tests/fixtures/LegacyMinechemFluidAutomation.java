@@ -15,6 +15,7 @@ import java.util.TreeMap;
 final class LegacyMinechemFluidAutomation {
     private final Object world, element, molecule, bucket;
     private final Class<?> w = mc("world.World"), block = mc("block.Block"), stack = mc("item.ItemStack"), item = mc("item.Item");
+    private final Class<?> dropped = mc("entity.item.EntityItem"), entity = mc("entity.Entity");
     private final Class<?> inv = mc("inventory.IInventory"), type = Class.forName("minechem.item.MinechemChemicalType");
     private final Class<?> ec = Class.forName("minechem.item.element.ElementEnum"), mol = Class.forName("minechem.item.molecule.MoleculeEnum");
     private final Class<?> bSource = mc("dispenser.IBlockSource"), dispenser = mc("block.BlockDispenser");
@@ -75,7 +76,11 @@ final class LegacyMinechemFluidAutomation {
         Class<?> fuel = Class.forName("minechem.utils.MinechemFuelHandler");
         Object handler = fuel.newInstance();
         Method burn = fuel.getMethod("getBurnTime", stack);
-        for (Class<?> category : new Class<?>[]{ec, mol}) for (Object value : category.getEnumConstants()) {
+        Map<?, ?> elements = (Map<?, ?>) ec.getField("elements").get(null);
+        Map<?, ?> molecules = (Map<?, ?>) mol.getField("molecules").get(null);
+        List<Object> chemicals = new ArrayList<Object>(elements.values());
+        chemicals.addAll(molecules.values());
+        for (Object value : chemicals) {
             String key = chemical(value);
             Object held = tube(value, 1);
             int ticks = (Integer) burn.invoke(handler, held);
@@ -109,13 +114,15 @@ final class LegacyMinechemFluidAutomation {
         rows.put("dispense_element_source", dispense(x + 24, y, z, tube(iron, 8), null, water, 0));
         rows.put("dispense_empty_tube", dispense(x + 28, y, z, makeStack.newInstance(element, 8, 0), null, water, 0));
         rows.put("dispense_molecule_split", dispense(x + 32, y, z, tube(exampleMolecule, 3), tube(exampleMolecule, 5), air, 0));
-        rows.put("dispense_molecule_short", dispense(x + 36, y, z, tube(exampleMolecule, 3), tube(exampleMolecule, 4), air, 0));
+        rows.put("dispense_molecule_short", dispense(x + 36, y, z, tube(exampleMolecule, 3), tube(exampleMolecule, 4), vanilla("flowing_water"), 1));
+        rows.put("dispense_element_split", dispense(x + 40, y, z, tube(iron, 3), makeStack.newInstance(element, 5, 0), water, 0));
     }
 
     private String dispense(int x, int y, int z, Object selected, Object extra, Object front, int level) throws Exception {
         // The real registered behavior, with deterministic slot zero rather than the dispenser's random slot choice.
         put(x + 1, y, z, front, level);
         put(x, y, z, vanilla("dispenser"), 5);
+        w.getMethod("func_72921_c", int.class, int.class, int.class, int.class, int.class).invoke(world, x, y, z, 5, 2);
         Object inventory = w.getMethod("func_147438_o", int.class, int.class, int.class).invoke(world, x, y, z);
         Method set = inv.getMethod("func_70299_a", int.class, stack), get = inv.getMethod("func_70301_a", int.class);
         set.invoke(inventory, 0, selected);
@@ -123,6 +130,7 @@ final class LegacyMinechemFluidAutomation {
         Object behaviorRegistry = dispenser.getField("field_149943_a").get(null);
         Object behavior = behaviorRegistry.getClass().getMethod("func_82594_a", Object.class).invoke(behaviorRegistry, itemOf.invoke(selected));
         Object source = mc("dispenser.BlockSourceImpl").getConstructor(w, int.class, int.class, int.class).newInstance(world, x, y, z);
+        List<Object> before = new ArrayList<Object>(entities());
         String status = "ok";
         try {
             Object result = mc("dispenser.IBehaviorDispenseItem").getMethod("func_82482_a", bSource, stack).invoke(behavior, source, selected);
@@ -134,11 +142,25 @@ final class LegacyMinechemFluidAutomation {
         for (int i = 0; i < 9; i++) {
             Object stored = get.invoke(inventory, i);
             if (stored != null && count.getInt(stored) > 0) {
-                String key = itemKey(stored);
-                contents.put(key, (contents.containsKey(key) ? contents.get(key) : 0) + count.getInt(stored));
+                tally(stored, contents);
             }
         }
-        return status + "/" + position(x + 1, y, z) + "/" + contents;
+        return status + "/" + position(x + 1, y, z) + "/" + contents + "/" + dropsSince(before);
+    }
+
+    private List<?> entities() throws Exception { return (List<?>) w.getField("field_72996_f").get(world); }
+
+    private Map<String, Integer> dropsSince(List<Object> before) throws Exception {
+        Map<String, Integer> drops = new TreeMap<String, Integer>();
+        for (Object found : entities()) {
+            if (dropped.isInstance(found) && !before.contains(found)) tally(dropped.getMethod("func_92059_d").invoke(found), drops);
+        }
+        return drops;
+    }
+
+    private void tally(Object stored, Map<String, Integer> contents) throws Exception {
+        String key = itemKey(stored);
+        contents.put(key, (contents.containsKey(key) ? contents.get(key) : 0) + count.getInt(stored));
     }
 
     private void reactions(int x, int y, int z) throws Exception {
@@ -151,17 +173,44 @@ final class LegacyMinechemFluidAutomation {
         put(x + 1, y, z, lithiumBlock, 0);
         rows.put("react_flow", products(x, y, z));
         x += 8;
-        put(x, y, z, water, 0);
-        Class<?> dropped = mc("entity.item.EntityItem");
-        Object itemEntity = dropped.getConstructor(w, double.class, double.class, double.class, stack)
-            .newInstance(world, x + 0.5, y + 0.1, z + 0.5, fullBucket(lithium));
-        w.getMethod("func_72838_d", mc("entity.Entity")).invoke(world, itemEntity);
-        rules.getMethod("checkEntityItem", w, dropped).invoke(rules.newInstance(), world, itemEntity);
-        rows.put("react_item", mc("entity.Entity").getField("field_70128_L").getBoolean(itemEntity) + "/" + products(x, y, z));
+        rows.put("react_item", itemContact(x, y, z));
+        x += 8;
+        Class<?> settings = Class.forName("minechem.Settings");
+        Field blockToggle = settings.getField("reactionFluidMeetFluid"), itemToggle = settings.getField("reactionItemMeetFluid");
+        boolean originalBlocks = blockToggle.getBoolean(null), originalItems = itemToggle.getBoolean(null);
+        try {
+            blockToggle.setBoolean(null, false);
+            itemToggle.setBoolean(null, false);
+            put(x, y, z, water, 0);
+            put(x + 1, y, z, lithiumBlock, 0);
+            rows.put("react_source_disabled", products(x, y, z));
+            x += 8;
+            rows.put("react_item_disabled", itemContact(x, y, z));
+            x += 8;
+            put(x, y, z, vanilla("lava"), 0);
+            put(x + 1, y, z, fluidBlock(mol.getField("tnt").get(null)), 0);
+            rows.put("ignite_disabled_reactions", position(x + 1, y, z));
+        } finally {
+            blockToggle.setBoolean(null, originalBlocks);
+            itemToggle.setBoolean(null, originalItems);
+        }
         x += 8;
         put(x, y, z, vanilla("lava"), 0);
         put(x + 1, y, z, fluidBlock(mol.getField("tnt").get(null)), 0);
         rows.put("ignite_lava", position(x + 1, y, z));
+    }
+
+    private String itemContact(int x, int y, int z) throws Exception {
+        put(x, y, z, vanilla("water"), 0);
+        Object itemEntity = dropped.getConstructor(w, double.class, double.class, double.class, stack)
+            .newInstance(world, x + 0.5, y + 0.1, z + 0.5, fullBucket(lithium));
+        w.getMethod("func_72838_d", entity).invoke(world, itemEntity);
+        List<Object> before = new ArrayList<Object>(entities());
+        Class<?> event = Class.forName("cpw.mods.fml.common.gameevent.TickEvent$WorldTickEvent");
+        Class<?> side = Class.forName("cpw.mods.fml.relauncher.Side"), phase = Class.forName("cpw.mods.fml.common.gameevent.TickEvent$Phase");
+        Object tick = event.getConstructor(side, phase, w).newInstance(side.getField("SERVER").get(null), phase.getField("END").get(null), world);
+        rules.getMethod("tick", event).invoke(rules.newInstance(), tick);
+        return entity.getField("field_70128_L").getBoolean(itemEntity) + "/" + products(x, y, z) + "/" + dropsSince(before);
     }
 
     private String products(int x, int y, int z) throws Exception {
