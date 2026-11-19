@@ -4,6 +4,7 @@ import java.io.PrintWriter;
 import java.lang.reflect.Array;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.Arrays;
 
@@ -155,12 +156,28 @@ final class LegacyMinechemPolytool {
         Object simulated = charge.invoke(tool, lithium, 100L, true);
         Object before = stored.invoke(tool, lithium);
         Object charged = charge.invoke(tool, lithium, 100L, false);
-        Object after = stored.invoke(tool, reload(lithium));
+        Object saved = reload(lithium);
+        Method tag = stack.getMethod("func_77978_p"), raw = nbt.getMethod("func_74763_f", String.class);
+        Object after = raw.invoke(tag.invoke(saved), "Energy");
+        String reading = invokeEnergy(stored, saved);
+        String next = invokeEnergy(charge, saved, 100L, false);
         Object discharge = type.getMethod("discharge", stack, long.class, boolean.class).invoke(tool, lithium, 50L, true);
         type.getMethod("setEnergy", stack, long.class).invoke(tool, lithium, 1000L);
         Object cap = type.getMethod("getEnergyCapacity", stack).invoke(tool, lithium);
         out.println("lithium=" + clicks + ";rank=" + rank(lithium, 3) + ";absent=" + accepted + "," + without + ";true=" + simulated + "," + before +
-                    ";false=" + charged + "," + after + ";drain=" + discharge + ";set=" + stored.invoke(tool, lithium) + ";cap=" + cap);
+                    ";false=" + charged + "," + after + ";read=" + reading + ";next=" + next + ";drain=" + discharge +
+                    ";set=" + raw.invoke(tag.invoke(lithium), "Energy") + ";cap=" + cap);
+    }
+
+    private String invokeEnergy(Method method, Object... args) throws Exception {
+        try {
+            return String.valueOf(method.invoke(tool, args));
+        } catch (InvocationTargetException e) {
+            Throwable cause = e.getCause();
+            if (!cause.getClass().getName().equals("net.minecraft.util.ReportedException") ||
+                !(cause.getCause() instanceof ClassCastException)) throw e;
+            return "long_as_int";
+        }
     }
 
     private Object fresh() throws Exception {
