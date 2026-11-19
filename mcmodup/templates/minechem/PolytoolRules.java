@@ -26,8 +26,11 @@ import net.neoforged.neoforge.registries.DeferredRegister;
 final class PolytoolRules {
     static final boolean RELEASE_394 = @RELEASE_394@;
     static final int BATCH = 64, MAX_RANK = 64, CAPACITY = Integer.MAX_VALUE;
-    static final int LITHIUM = 3, CARBON = 6, OXYGEN = 8, FLUORINE = 9, SODIUM = 11, SULFUR = 16,
-        CHROMIUM = 24, IRON = 26, NICKEL = 28, BROMINE = 35, MERCURY = 80;
+    static final int HYDROGEN = 1, HELIUM = 2, LITHIUM = 3, BERYLLIUM = 4, BORON = 5, CARBON = 6,
+        NITROGEN = 7, OXYGEN = 8, FLUORINE = 9, NEON = 10, SODIUM = 11, MAGNESIUM = 12, SILICON = 14,
+        PHOSPHORUS = 15, SULFUR = 16, CHLORINE = 17, ARGON = 18, CALCIUM = 20, TITANIUM = 22,
+        CHROMIUM = 24, IRON = 26, NICKEL = 28, ZINC = 30, BROMINE = 35, KRYPTON = 36, RUBIDIUM = 37,
+        SILVER = 47, CAESIUM = 55, PLATINUM = 78, GOLD = 79, MERCURY = 80, LEAD = 82, FRANCIUM = 87, URANIUM = 92;
     static final String TEXT = "gui.@NAMESPACE@.polytool.";
 
     record Stats(int sword, int ore, int stone, int axe, int shovel) {
@@ -56,6 +59,29 @@ final class PolytoolRules {
                 case NICKEL -> "nickel";
                 case BROMINE -> "bromine";
                 case MERCURY -> "mercury";
+                case HYDROGEN -> "hydrogen";
+                case HELIUM -> "helium";
+                case BERYLLIUM -> "beryllium";
+                case BORON -> "boron";
+                case NITROGEN -> "nitrogen";
+                case NEON -> "neon";
+                case MAGNESIUM -> "magnesium";
+                case SILICON -> "silicon";
+                case PHOSPHORUS -> "phosphorus";
+                case CHLORINE -> "chlorine";
+                case ARGON -> "argon";
+                case CALCIUM -> "calcium";
+                case TITANIUM -> "titanium";
+                case ZINC -> "zinc";
+                case KRYPTON -> "krypton";
+                case RUBIDIUM -> "rubidium";
+                case SILVER -> "silver";
+                case CAESIUM -> "caesium";
+                case PLATINUM -> "platinum";
+                case GOLD -> "gold";
+                case LEAD -> "lead";
+                case FRANCIUM -> "francium";
+                case URANIUM -> "uranium";
                 default -> "inactive";
             };
         }

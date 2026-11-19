@@ -3,10 +3,12 @@ package @PACKAGE@;
 import java.util.List;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResultHolder;
 import net.minecraft.world.SimpleMenuProvider;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EquipmentSlotGroup;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.ai.attributes.AttributeModifier;
@@ -40,6 +42,7 @@ final class PolytoolItem extends PickaxeItem {
 
     static void register(IEventBus bus, DeferredItem<PolytoolItem> item) {
         PolytoolRules.register(bus);
+        PolytoolCombat.register(bus);
         PolytoolMenu.register(bus);
         NeoForge.EVENT_BUS.addListener((BlockDropsEvent event) -> {
             if (event.getTool().getItem() instanceof PolytoolItem polytool) polytool.mining.drops(event);
@@ -74,11 +77,13 @@ final class PolytoolItem extends PickaxeItem {
     }
 
     @Override public boolean hurtEnemy(ItemStack stack, LivingEntity target, LivingEntity attacker) {
-        if (!attacker.level().isClientSide()) {
-            int sulfur = state(stack).rank(SULFUR);
-            if (sulfur > 0) target.igniteForSeconds(sulfur + 1);
-        }
+        if (attacker instanceof Player player && player.level() instanceof ServerLevel level && player.getMainHandItem() == stack)
+            PolytoolCombat.strike(stack, target, player, level);
         return true;
+    }
+
+    @Override public void inventoryTick(ItemStack tool, Level level, Entity owner, int slot, boolean selected) {
+        if (level instanceof ServerLevel server) PolytoolCombat.inventoryTick(tool, server, owner);
     }
 
     @Override public void postHurtEnemy(ItemStack stack, LivingEntity target, LivingEntity attacker) {

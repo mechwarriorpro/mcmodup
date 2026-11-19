@@ -1,1 +1,62 @@
-# Exact Forge Polytool combat and carried updates.
+# Checksum-pinned Forge .394: player attacks, drop subscriber and carried/world callbacks.
+argon16_covered=16.00
+argon16_open=9.00
+argon1_covered=9.00
+be5_skeleton={v352:0=1}
+be7_pig={v319:0=1}
+be7_zombie={v367:0=1, v397:2=2}
+boron16_cave_spider=12.80
+boron16_pig=9.00
+boron16_spider=12.80
+boron1_spider=9.00
+caesium_dirt=3/3
+caesium_stone=0/3
+calcium1={v352:0=3}
+calcium_without_bone={v262:0=2}
+francium_clear=3
+francium_mining=3/0
+francium_raining=0
+gold_cofh_api=true
+gold_rank1_roll0=1
+gold_rank1_roll1=0
+helium_clears=[0, 1]
+helium_retarget=0.00/1.00
+helium_unmarked=0.00
+helium_unselected=0.30
+hydrogen_burning=0
+hydrogen_dry=3
+kill_zombie={v364:0=1, v397:2=1}
+krypton0_armor23=0.72
+krypton0_armor24=0.36
+krypton16_armor23=0.72
+krypton16_armor24=7.36
+krypton1_armor23=0.72
+krypton1_armor24=0.36
+lead_vertical=-50.00/-50.00/0.00/0.00
+nitrogen1={v364:0=1}
+phosphorus_planks=3
+phosphorus_stone=0
+plain_pig=9.00
+platinum49=[49, 50, 51, 52, 53, 54, 55, 56, 57]
+platinum_absent=0
+potion_attacker=[15:200:1, 16:30:0, 19:200:1, 20:200:1]
+potion_diagonal=[15:200:1, 19:200:1, 20:200:1]
+potion_far=[]
+potion_spider=[15:200:1, 20:200:1]
+potion_target=[15:200:1, 19:200:1, 20:200:1]
+rubidium_dry=3
+rubidium_mining_dry=3/3
+rubidium_mining_wet=0/3
+rubidium_wet=0
+silicon_bones={m42=2}
+silicon_flesh_miss={}
+silicon_flesh_pass={m85=1}
+silicon_no_recipe=no_recipe_exception
+silicon_not_melee={v352:0=2}
+silver16_enderman=12.80
+silver1_enderman=9.00
+sulfur3_ticks=80
+titanium_first_hit_kill=false/false
+titanium_hit=0.09/0.80
+zinc_dirt_guaranteed={v264:0=1}
+zinc_stone={}

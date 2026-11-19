@@ -18,6 +18,8 @@ import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.Tag;
 import net.minecraft.network.Connection;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.protocol.PacketFlow;
@@ -29,7 +31,14 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.network.CommonListenerCookie;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.InteractionHand;
+import net.minecraft.world.effect.MobEffects;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.entity.ExperienceOrb;
+import net.minecraft.world.entity.LightningBolt;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.inventory.AbstractContainerMenu;
@@ -38,6 +47,7 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.enchantment.Enchantments;
+import net.minecraft.world.level.Explosion;
 import net.minecraft.world.level.GameRules;
 import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.block.Block;
@@ -48,8 +58,10 @@ import net.minecraft.world.phys.Vec3;
 import net.neoforged.bus.api.EventPriority;
 import net.neoforged.neoforge.capabilities.Capabilities;
 import net.neoforged.neoforge.common.NeoForge;
+import net.neoforged.neoforge.event.entity.living.LivingDropsEvent;
 import net.neoforged.neoforge.event.level.BlockDropsEvent;
 import net.neoforged.neoforge.event.level.BlockEvent;
+import net.neoforged.neoforge.event.level.ExplosionEvent;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 import net.neoforged.neoforge.network.registration.NetworkRegistry;
@@ -68,6 +80,9 @@ public final class @CLASS@ {
     };
     private static final Map<String, String> MINING = Map.ofEntries(
 @MINING_CASES@
+    );
+    private static final Map<String, String> COMBAT = Map.ofEntries(
+@COMBAT_CASES@
     );
     // Adapt the vanilla ore items which became raw metals in modern Minecraft.
     private static final Map<Item, String> DROP_IDS = Map.of(Items.COBBLESTONE, "4:0", Items.RAW_GOLD, "14:0",
@@ -515,6 +530,362 @@ public final class @CLASS@ {
 
     private static void silk(GameTestHelper test, ItemStack tool) {
         tool.enchant(test.getLevel().registryAccess().registryOrThrow(Registries.ENCHANTMENT).getHolderOrThrow(Enchantments.SILK_TOUCH), 1);
+    }
+
+    @GameTest(template = "polytool_room")
+    public static void @PREFIX@PolytoolCombatDamage(GameTestHelper test) {
+        withPlayer(test, attacker -> {
+            var pos = test.absolutePos(new BlockPos(3, 2, 3));
+            damage(test, attacker, "plain_pig", EntityType.PIG, pos);
+            damage(test, attacker, "boron1_spider", EntityType.SPIDER, pos, "b:1");
+            damage(test, attacker, "boron16_spider", EntityType.SPIDER, pos, "b:16");
+            damage(test, attacker, "boron16_cave_spider", EntityType.CAVE_SPIDER, pos, "b:16");
+            damage(test, attacker, "boron16_pig", EntityType.PIG, pos, "b:16");
+            damage(test, attacker, "silver1_enderman", EntityType.ENDERMAN, pos, "ag:1");
+            damage(test, attacker, "silver16_enderman", EntityType.ENDERMAN, pos, "ag:16");
+            var level = test.getLevel();
+            damage(test, attacker, "argon16_open", EntityType.PIG, pos, "ar:16");
+            place(level, pos.above(3), Blocks.STONE);
+            damage(test, attacker, "argon1_covered", EntityType.PIG, pos, "ar:1");
+            damage(test, attacker, "argon16_covered", EntityType.PIG, pos, "ar:16");
+            for (int armor : new int[]{23, 24}) {
+                float base = armored(test, attacker, pos, armor, 0);
+                for (int rank : new int[]{1, 16}) {
+                    String suffix = "_armor" + armor;
+                    float expected = Float.parseFloat(COMBAT.get("krypton" + rank + suffix)) - Float.parseFloat(COMBAT.get("krypton0" + suffix));
+                    float actual = armored(test, attacker, pos, armor, rank) - base;
+                    test.assertTrue(Math.abs(actual - expected) < .02F, "Krypton extra damage at armor " + armor + " rank " + rank + ": " + actual + ", expected " + expected);
+                }
+            }
+        });
+        test.succeed();
+    }
+
+    @GameTest(template = "polytool_room")
+    public static void @PREFIX@PolytoolCarriedEffects(GameTestHelper test) {
+        withPlayer(test, attacker -> {
+            var level = test.getLevel();
+            var pos = test.absolutePos(new BlockPos(3, 2, 3));
+            attacker.moveTo(pos.getX() + .5, pos.getY(), pos.getZ() - .5, 0, 0);
+            var pig = mob(test, EntityType.PIG, pos, .5, .5);
+            var diagonal = mob(test, EntityType.PIG, pos, 2, 2);
+            var spider = mob(test, EntityType.SPIDER, pos, 1.5, .5);
+            var far = mob(test, EntityType.PIG, pos, 4.5, .5);
+            var tool = tuned(test, attacker, "mg:2", "cl:2", "u:2", "ne:3", "s:3", "pb:1");
+            swing(attacker, pig, tool);
+            combat(test, "potion_target", effects(pig));
+            combat(test, "potion_diagonal", effects(diagonal));
+            combat(test, "potion_spider", effects(spider));
+            combat(test, "potion_far", effects(far));
+            combat(test, "potion_attacker", effects(attacker));
+            combat(test, "lead_vertical", vertical(pig) + "/" + vertical(diagonal) + "/" + vertical(far) + "/" + vertical(attacker));
+            combat(test, "sulfur3_ticks", Integer.toString(pig.getRemainingFireTicks()));
+            for (var mob : List.of(pig, diagonal, spider, far)) mob.discard();
+
+            var first = mob(test, EntityType.PIG, pos, .5, .5);
+            var last = mob(test, EntityType.PIG, pos, 2.5, .5);
+            tool = tuned(test, attacker, "he:1");
+            first.setDeltaMovement(Vec3.ZERO);
+            tool.inventoryTick(level, attacker, 0, true);
+            combat(test, "helium_unmarked", vertical(first));
+            swing(attacker, first, tool);
+            first.setDeltaMovement(0, .2, 0);
+            var saved = load(test, tool);
+            attacker.getInventory().setItem(10, saved);
+            attacker.setItemInHand(InteractionHand.MAIN_HAND, ItemStack.EMPTY);
+            seedRoll(level.random, 10, 1);
+            attacker.getInventory().tick();
+            combat(test, "helium_unselected", vertical(first));
+            attacker.getInventory().setItem(10, ItemStack.EMPTY);
+            attacker.setItemInHand(InteractionHand.MAIN_HAND, saved);
+            swing(attacker, last, saved);
+            first.setDeltaMovement(Vec3.ZERO);
+            last.setDeltaMovement(0, .95, 0);
+            seedRoll(level.random, 10, 0);
+            attacker.getInventory().tick();
+            combat(test, "helium_retarget", vertical(first) + "/" + vertical(last));
+            last.setDeltaMovement(Vec3.ZERO);
+            attacker.getInventory().tick();
+            test.assertTrue(last.getDeltaMovement().y == 0, "A cleared Helium mark kept lifting its last target");
+            first.discard();
+            last.discard();
+
+            ItemStack foreign = ItemStack.EMPTY;
+            var finalTool = ResourceLocation.parse("minechem_chemistry:polytool");
+            if (RELEASE_394 && BuiltInRegistries.ITEM.containsKey(finalTool)) {
+                foreign = new ItemStack(BuiltInRegistries.ITEM.get(finalTool));
+                var menu = openForeignTool(attacker, foreign);
+                var lithium = new ItemStack(BuiltInRegistries.ITEM.get(ResourceLocation.parse("minechem_chemistry:element_li")), 64);
+                infuse(test, attacker, menu, lithium);
+                attacker.closeContainer();
+                attacker.getInventory().setItem(11, foreign);
+            }
+            var gold = RELEASE_394 ? tuned(test, attacker, "au:1") : tuned(test, attacker, "au:1", "li:2");
+            attacker.getInventory().setItem(10, gold);
+            attacker.setItemInHand(InteractionHand.MAIN_HAND, ItemStack.EMPTY);
+            var box = new AABB(attacker.position(), attacker.position()).inflate(1);
+            for (int roll : new int[]{1, 0}) {
+                seedRoll(level.random, 35000, roll);
+                attacker.getInventory().tick();
+                var bolts = level.getEntitiesOfClass(LightningBolt.class, box);
+                combat(test, "gold_rank1_roll" + roll, Integer.toString(bolts.size()));
+                bolts.forEach(LightningBolt::discard);
+            }
+            if (!RELEASE_394) test.assertTrue(gold.getCapability(Capabilities.EnergyStorage.ITEM).getEnergyStored() == 10_000_000,
+                "Gold's FE strike did not feed this release's Lithium receiver");
+            if (!foreign.isEmpty()) test.assertTrue(foreign.getCapability(Capabilities.EnergyStorage.ITEM).getEnergyStored() == 0,
+                ".394 Gold charged a FINAL item");
+        });
+        test.succeed();
+    }
+
+    @GameTest(template = "polytool_room")
+    public static void @PREFIX@PolytoolCombatDrops(GameTestHelper test) {
+        withPlayer(test, actor -> {
+            var level = test.getLevel();
+            var pos = test.absolutePos(new BlockPos(4, 2, 4));
+            var zombie = mob(test, EntityType.ZOMBIE, pos, .5, .5);
+            var skeleton = mob(test, EntityType.SKELETON, pos, .5, .5);
+            tuned(test, actor, "n:1");
+            combat(test, "nitrogen1", loot(test, actor, zombie, Items.ROTTEN_FLESH, 2, true));
+            tuned(test, actor, "ca:1");
+            combat(test, "calcium1", loot(test, actor, skeleton, Items.BONE, 2, true));
+            combat(test, "calcium_without_bone", loot(test, actor, skeleton, Items.ARROW, 2, true));
+            tuned(test, actor, "be:5");
+            combat(test, "be5_skeleton", loot(test, actor, skeleton, Items.BONE, 1, true));
+            tuned(test, actor, "be:7");
+            combat(test, "be7_zombie", loot(test, actor, zombie, Items.ROTTEN_FLESH, 1, true));
+            var silicon = tuned(test, actor, "si:15");
+            combat(test, "silicon_bones", loot(test, actor, skeleton, Items.BONE, 2, true));
+            combat(test, "silicon_not_melee", loot(test, actor, skeleton, Items.BONE, 2, false));
+            for (boolean pass : new boolean[]{false, true}) {
+                long seed = 0;
+                for (;; seed++) {
+                    var rand = RandomSource.create(seed);
+                    rand.nextInt(16); // Silicon's guaranteed rank-15 activation still consumes the roll.
+                    if ((rand.nextFloat() < .05F) == pass) break;
+                }
+                level.random.setSeed(seed);
+                combat(test, "silicon_flesh_" + (pass ? "pass" : "miss"), loot(test, actor, zombie, Items.ROTTEN_FLESH, 1, true));
+            }
+            test.assertTrue(loot(test, actor, skeleton, Items.BEDROCK, 1, true).equals("{minecraft:bedrock=1}"),
+                "Silicon deleted an item with no native decomposition rule");
+            test.assertTrue(actor.getMainHandItem() == silicon, "Loot events replaced the attacking tool");
+            zombie.setHealth(1);
+            swing(actor, zombie, tuned(test, actor, "n:1", "be:6"));
+            combat(test, "kill_zombie", lootSnapshot(level, pos));
+            zombie.discard();
+            skeleton.discard();
+
+            var tool = tuned(test, actor, "ti:1");
+            var equipped = mob(test, EntityType.ZOMBIE, pos, .5, .5);
+            equipped.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.IRON_SWORD));
+            equipped.setItemSlot(EquipmentSlot.HEAD, new ItemStack(Items.IRON_HELMET));
+            equipped.setDropChance(EquipmentSlot.MAINHAND, 0);
+            equipped.setDropChance(EquipmentSlot.HEAD, 0);
+            equipped.setHealth(1);
+            swing(actor, equipped, tool);
+            var killed = lootSnapshot(level, pos);
+            combat(test, "titanium_first_hit_kill", killed.contains("v267:") + "/" + killed.contains("v306:"));
+            equipped.discard();
+            var living = mob(test, EntityType.ZOMBIE, pos, .5, .5);
+            swing(actor, living, tool);
+            var tag = living.saveWithoutId(new CompoundTag());
+            combat(test, "titanium_hit", "0.09/" + decimal(tag.getList("HandDropChances", Tag.TAG_FLOAT).getFloat(0)));
+            living.discard();
+        });
+        test.succeed();
+    }
+
+    @GameTest(template = "polytool_room")
+    public static void @PREFIX@PolytoolWorldEffects(GameTestHelper test) {
+        withPlayer(test, actor -> {
+            var level = test.getLevel();
+            var pos = test.absolutePos(new BlockPos(4, 2, 4));
+            var blasts = new ArrayList<Explosion>();
+            Consumer<ExplosionEvent.Start> veto = event -> {
+                if (event.getLevel() == level) { blasts.add(event.getExplosion()); event.setCanceled(true); }
+            };
+            NeoForge.EVENT_BUS.addListener(veto);
+            float rain = level.getRainLevel(1);
+            try {
+                var h = tuned(test, actor, "h:2");
+                var target = mob(test, EntityType.PIG, pos, .5, .5);
+                swing(actor, target, h);
+                test.assertTrue(blasts.isEmpty(), "Hydrogen triggered against a nonburning mob");
+                target.discard();
+                target = mob(test, EntityType.PIG, pos, .5, .5);
+                target.igniteForSeconds(5);
+                swing(actor, target, h);
+                expectBlast(test, blasts, target.position(), target, 2);
+                target.discard();
+                target = mob(test, EntityType.PIG, pos, .5, .5);
+                place(level, pos, Blocks.WATER);
+                target.baseTick();
+                var rb = tuned(test, actor, "rb:1");
+                test.assertTrue(target.isInWater(), "Rubidium fixture did not immerse the target");
+                swing(actor, target, rb);
+                expectBlast(test, blasts, target.position(), target, 1);
+                target.discard();
+                place(level, pos, Blocks.AIR);
+
+                tuned(test, actor, "cs:1");
+                breakIt(test, actor, pos, Blocks.DIRT);
+                test.assertTrue(blasts.isEmpty(), "Caesium triggered on dirt");
+                breakIt(test, actor, pos, Blocks.STONE);
+                expectBlast(test, blasts, actor.position(), actor, 1);
+
+                level.setRainLevel(0);
+                var fr = tuned(test, actor, "fr:1");
+                target = mob(test, EntityType.PIG, pos, .5, .5);
+                swing(actor, target, fr);
+                test.assertTrue(blasts.isEmpty(), "Francium fired in clear weather");
+                target.discard();
+                level.setRainLevel(1);
+                target = mob(test, EntityType.PIG, pos, .5, .5);
+                swing(actor, target, fr);
+                expectBlast(test, blasts, target.position(), RELEASE_394 ? null : target, 1);
+                target.discard();
+                if (RELEASE_394) level.getChunkAt(new BlockPos(pos.getX(), pos.getY(), 0));
+                breakIt(test, actor, pos, Blocks.STONE);
+                expectBlast(test, blasts, RELEASE_394 ? new Vec3(pos.getX() + .5, pos.getY() + .5, .5) : actor.position(),
+                    RELEASE_394 ? null : actor, 1);
+            } finally { NeoForge.EVENT_BUS.unregister(veto); level.setRainLevel(rain); }
+
+            tuned(test, actor, "p:1");
+            var fire = pos.west();
+            place(level, fire.below(), Blocks.NETHERRACK);
+            Consumer<BlockEvent.EntityPlaceEvent> vetoFire = event -> {
+                if (event.getEntity() == actor && event.getPos().equals(fire)) event.setCanceled(true);
+            };
+            NeoForge.EVENT_BUS.addListener(vetoFire);
+            try { breakIt(test, actor, pos, Blocks.OAK_PLANKS); }
+            finally { NeoForge.EVENT_BUS.unregister(vetoFire); }
+            test.assertTrue(level.isEmptyBlock(fire), "Phosphorus ignored protected placement");
+            breakIt(test, actor, pos, Blocks.STONE);
+            test.assertTrue(level.isEmptyBlock(fire), "Phosphorus triggered on stone");
+            breakIt(test, actor, pos, Blocks.OAK_PLANKS);
+            test.assertTrue(level.getBlockState(fire).is(Blocks.FIRE), "Phosphorus did not light a supported block next to flammable material");
+            place(level, fire, Blocks.AIR);
+            collect(level, pos, false);
+
+            tuned(test, actor, "zn:1");
+            for (int roll : new int[]{2, 1, 0}) {
+                Consumer<BlockDropsEvent> control = event -> {
+                    if (event.getBreaker() == actor) seedRoll(level.random, 8192, roll);
+                };
+                NeoForge.EVENT_BUS.addListener(EventPriority.HIGHEST, control);
+                try { breakIt(test, actor, pos, Blocks.DIRT); }
+                finally { NeoForge.EVENT_BUS.unregister(control); }
+                var loot = collect(level, pos, false)[0];
+                test.assertTrue(loot.contains("264:0=1") == (roll < 2), "Zinc rank-one threshold at roll " + roll + ": " + loot);
+            }
+            var tool = tuned(test, actor, "pt:49");
+            var target = mob(test, EntityType.PIG, pos, .5, .5);
+            swing(actor, target, tool);
+            var xp = level.getEntitiesOfClass(ExperienceOrb.class, new AABB(actor.position(), actor.position()).inflate(1));
+            int bonus = xp.stream().mapToInt(ExperienceOrb::getValue).sum();
+            test.assertTrue(bonus >= 49 && bonus <= 57, "Platinum total XP was " + bonus + ", expected " + COMBAT.get("platinum49"));
+            xp.forEach(ExperienceOrb::discard);
+            target.discard();
+        });
+        test.succeed();
+    }
+
+    private static AbstractContainerMenu openForeignTool(ServerPlayer player, ItemStack stack) {
+        player.setItemInHand(InteractionHand.MAIN_HAND, stack);
+        stack.getItem().use(player.serverLevel(), player, InteractionHand.MAIN_HAND);
+        return player.containerMenu;
+    }
+
+    private static void expectBlast(GameTestHelper test, List<Explosion> blasts, Vec3 pos, Entity source, int power) {
+        test.assertTrue(blasts.size() == 1 && blasts.getFirst().center().distanceToSqr(pos) < .0001 &&
+            blasts.getFirst().getDirectSourceEntity() == source && blasts.getFirst().radius() == power, "Unexpected Polytool explosion: " + blasts);
+        blasts.clear();
+    }
+
+    private static float armored(GameTestHelper test, ServerPlayer attacker, BlockPos pos, int armor, int rank) {
+        var victim = test.makeMockPlayer(GameType.SURVIVAL);
+        victim.moveTo(pos.getX() + .5, pos.getY(), pos.getZ() + .5);
+        victim.getAttribute(Attributes.ARMOR).setBaseValue(armor);
+        float health = victim.getHealth();
+        swing(attacker, victim, rank == 0 ? tuned(test, attacker) : tuned(test, attacker, "kr:" + rank));
+        return health - victim.getHealth();
+    }
+
+    private static void damage(GameTestHelper test, ServerPlayer attacker, String key, EntityType<? extends Mob> type, BlockPos pos, String... ranks) {
+        var victim = mob(test, type, pos, .5, .5);
+        float before = victim.getHealth();
+        swing(attacker, victim, tuned(test, attacker, ranks));
+        combat(test, key, decimal(before - victim.getHealth()));
+        victim.discard();
+    }
+
+    private static void swing(ServerPlayer actor, LivingEntity victim, ItemStack tool) {
+        // Apply equipment modifiers without waiting for a tick and its unrelated inventory effects.
+        var damage = actor.getAttribute(Attributes.ATTACK_DAMAGE);
+        damage.removeModifier(Item.BASE_ATTACK_DAMAGE_ID);
+        tool.getAttributeModifiers().modifiers().stream().filter(entry -> entry.attribute().equals(Attributes.ATTACK_DAMAGE))
+            .forEach(entry -> damage.addTransientModifier(entry.modifier()));
+        actor.getAttribute(Attributes.ATTACK_SPEED).setBaseValue(1024);
+        actor.setOnGround(true);
+        actor.attack(victim);
+    }
+
+    private static <T extends Mob> T mob(GameTestHelper test, EntityType<T> type, BlockPos pos, double dx, double dz) {
+        var level = test.getLevel();
+        var mob = type.create(level);
+        if (mob == null) throw new AssertionError("Could not create " + type);
+        mob.moveTo(pos.getX() + dx, pos.getY(), pos.getZ() + dz, 0, 0);
+        mob.getAttribute(Attributes.MAX_HEALTH).setBaseValue(100);
+        mob.setHealth(100);
+        mob.setNoAi(true);
+        if (!level.addFreshEntity(mob)) throw new AssertionError("Could not spawn " + type);
+        return mob;
+    }
+
+    private static String effects(LivingEntity target) {
+        var values = new ArrayList<String>();
+        var potions = Map.of(15, MobEffects.BLINDNESS, 16, MobEffects.NIGHT_VISION, 19, MobEffects.POISON, 20, MobEffects.WITHER);
+        for (int id : new int[]{15, 16, 19, 20}) {
+            var effect = target.getEffect(potions.get(id));
+            if (effect != null) values.add(id + ":" + effect.getDuration() + ":" + effect.getAmplifier());
+        }
+        return values.toString();
+    }
+
+    private static String vertical(Entity target) { return decimal(target.getDeltaMovement().y); }
+    private static String decimal(double value) { return String.format(Locale.ROOT, "%.2f", value); }
+
+    private static void combat(GameTestHelper test, String key, String actual) {
+        test.assertTrue(actual.equals(COMBAT.get(key)), key + " gave " + actual + "; expected " + COMBAT.get(key));
+    }
+
+    private static String loot(GameTestHelper test, ServerPlayer attacker, LivingEntity victim, Item item, int count, boolean melee) {
+        var level = test.getLevel();
+        var drops = new ArrayList<ItemEntity>();
+        drops.add(new ItemEntity(level, victim.getX(), victim.getY(), victim.getZ(), new ItemStack(item, count)));
+        NeoForge.EVENT_BUS.post(new LivingDropsEvent(victim, melee ? level.damageSources().playerAttack(attacker) : level.damageSources().magic(), drops, true));
+        return combatItems(drops);
+    }
+
+    private static String lootSnapshot(ServerLevel level, BlockPos pos) {
+        var drops = level.getEntitiesOfClass(ItemEntity.class, new AABB(pos).inflate(1));
+        var result = combatItems(drops);
+        drops.forEach(ItemEntity::discard);
+        return result;
+    }
+
+    private static String combatItems(List<ItemEntity> drops) {
+        var ids = Map.of(Items.ARROW, "v262:0", Items.BONE, "v352:0", Items.ROTTEN_FLESH, "v367:0", Items.COOKED_BEEF, "v364:0",
+            Items.ZOMBIE_HEAD, "v397:2", Items.IRON_SWORD, "v267:0", Items.IRON_HELMET, "v306:0",
+            item("molecule_hydroxylapatite", 1).getItem(), "m42", item("molecule_nodularin", 1).getItem(), "m85");
+        var loot = new TreeMap<String, Integer>();
+        for (var entity : drops) {
+            var drop = entity.getItem();
+            loot.merge(ids.getOrDefault(drop.getItem(), BuiltInRegistries.ITEM.getKey(drop.getItem()).toString()), drop.getCount(), Integer::sum);
+        }
+        return loot.toString();
     }
 
     private static ItemStack tuned(GameTestHelper test, ServerPlayer actor, String... upgrades) {

@@ -5,7 +5,7 @@ from unittest.mock import patch
 from mcmodup.catalogs import CatalogEntry
 from mcmodup.inputs import InputError
 from mcmodup.minechem_materials import observations
-from mcmodup.minechem_polytool import asset_paths, checks, features, infusions, mining_trace_name, project, trace_name
+from mcmodup.minechem_polytool import asset_paths, checks, combat_trace_name, features, infusions, mining_trace_name, project, trace_name
 
 
 def catalog(release_394):
@@ -34,7 +34,7 @@ class MinechemPolytoolTests(unittest.TestCase):
         for prepaid in (False, True):
             ns = "minechem_chemistry_394" if prepaid else "minechem_chemistry"
             files, locales = project(ns, "test.polytool", catalog(prepaid), prepaid)
-            self.assertEqual(len(files), 5)
+            self.assertEqual(len(files), 7)
             self.assertTrue(all(re.search(r"@[A-Z_]+@", java) is None for java in files.values()))
             source = files["src/main/java/test/polytool/PolytoolRules.java"]
             self.assertEqual(source.count("new Infusion("), 48 if prepaid else 49)
@@ -61,6 +61,16 @@ class MinechemPolytoolTests(unittest.TestCase):
             source = observations(mining_trace_name(release_394))
             self.assertIn(f'Map.entry("iron_only", "{source["iron_only"]}")', code)
             self.assertIsNone(re.search(r"@[A-Z_]+@", code))
+
+    def test_combat_observations_keep_different_release_paths(self):
+        final, newer = (observations(combat_trace_name(value)) for value in (False, True))
+        self.assertEqual(len(final), 60)
+        self.assertEqual(newer.keys() - final.keys(), {"gold_cofh_api"})
+        self.assertEqual((final["boron16_spider"], newer["boron16_spider"]), ("33.60", "12.80"))
+        self.assertEqual((final["titanium_first_hit_kill"], newer["titanium_first_hit_kill"]), ("true/true", "false/false"))
+        self.assertEqual((final["silicon_flesh_miss"], newer["silicon_flesh_miss"]), ("{m85=1}", "{}"))
+        self.assertEqual((final["francium_mining"], newer["francium_mining"]), ("0/3", "3/0"))
+        self.assertIn('Map.entry("helium_unselected", "0.30")', checks("test.probe", "test", "final", catalog(False), False))
 
     def test_unobserved_catalog_or_inconsistent_trace_fails_closed(self):
         entries = catalog(True)

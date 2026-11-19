@@ -58,6 +58,7 @@ final class PolytoolMining {
                 case IRON -> { if (block.is(Tags.Blocks.ORES)) mineAdjacent(player, tool, block, pos, rank); }
                 case NICKEL -> attract(level, player.position(), rank);
                 case MERCURY -> warn(player, level, pos, rank);
+                case PHOSPHORUS, RUBIDIUM, CAESIUM, FRANCIUM -> PolytoolWorld.mine(player, block, pos, upgrade.element(), rank);
                 default -> {} // Loot effects are applied after a successful harvest.
             }
         }
@@ -115,6 +116,14 @@ final class PolytoolMining {
                 repeatLoot(event, null, ItemStack.EMPTY);
             }
             return; // No recursive Carbon, Bromine, Chromium or utility hooks on bonus ore.
+        }
+        if (block == Blocks.DIRT && upgrades.rank(ZINC) > 0 && level.random.nextInt(8192) < upgrades.rank(ZINC) + 1) {
+            // The legacy "fake" diamond was an ordinary diamond item, offset within the dirt block.
+            var at = event.getPos();
+            var drop = new ItemEntity(level, at.getX() + level.random.nextDouble(), at.getY() + level.random.nextDouble(),
+                at.getZ() + level.random.nextDouble(), new ItemStack(Items.DIAMOND));
+            drop.setDefaultPickUpDelay();
+            event.getDrops().add(drop);
         }
         if (carbonOre && carbon > 0) {
             addDrop(event, new ItemStack(block == Blocks.COAL_ORE ? Items.COAL : Items.DIAMOND, bonus(level.random, carbon)));

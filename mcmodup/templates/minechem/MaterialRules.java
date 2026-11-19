@@ -119,6 +119,9 @@ final class MaterialRules {
         return products;
     }
 
+    // FINAL Silicon read the stored output directly rather than calling getOutput() (no chance/select roll).
+    static List<Part> rawProducts(Recipe recipe) { return GRAPH.get(ITEMS.get(recipe.id()).node()).parts(); }
+
     static boolean variable(Recipe recipe) { return VARIABLE_ITEMS.contains(recipe.id()); }
 
     static boolean validInput(ItemStack stack) {

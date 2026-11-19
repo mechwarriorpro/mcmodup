@@ -12,10 +12,10 @@ from .minechem_materials import observations
 
 
 TEMPLATES = Path(__file__).with_name("templates") / "minechem"
-JAVA = ("PolytoolItem", "PolytoolRules", "PolytoolMenu", "PolytoolScreen", "PolytoolMining")
-LIMIT = ("Polytool supports measured infusion/alloy rules, ore and wool drops, mining utility, oxygen air and sulfur ignition. "
-         "Only FINAL has a Lithium FE adapter; unported combat, tick and inventory modules still store ranks without effects. "
-         "No legacy NBT migration, UE/RF item charging API, or original Polytool orbit animation.")
+JAVA = ("PolytoolItem", "PolytoolRules", "PolytoolMenu", "PolytoolScreen", "PolytoolMining", "PolytoolCombat", "PolytoolWorld")
+LIMIT = ("Polytool ports the original module roster with native combat, inventories, drops and world hooks. "
+         "Modern armor, cooldowns, FE, explosions and guarded fire placement differ; no legacy NBT, UE/CoFH "
+         "item API, original infuser graphics or orbit animation.")
 
 
 def trace_name(release_394: bool) -> str:
@@ -106,6 +106,30 @@ def project(namespace: str, package: str, entries: list[CatalogEntry], release_3
            "bromine": "Bromine: turns mined gold ore into ingots",
            "mercury": "Mercury: warns of lava below a mined block", "lava_warning": "WARNING: LAVA UNDERNEATH",
            "fire": "Sulfur: ignites targets on melee hits", "lithium": "Lithium: enables FE charging and a melee bonus",
+           "hydrogen": "Hydrogen: a burning mob explodes when hit",
+           "helium": "Helium: the last target lifts while the tool is carried",
+           "beryllium": "Beryllium: eligible kills drop heads above rank 5",
+           "boron": "Boron: extra melee damage against spiders",
+           "nitrogen": "Nitrogen: zombie kills yield cooked beef instead of rotten flesh",
+           "neon": "Neon: melee hits grant brief night vision",
+           "magnesium": "Magnesium: blinds nearby living entities on a hit",
+           "silicon": "Silicon: chance to decompose loot on melee kills",
+           "phosphorus": "Phosphorus: lights nearby supported fire when mining flammable blocks",
+           "chlorine": "Chlorine: poisons nearby living entities on a hit",
+           "argon": "Argon: suffocation damage attempt under cover",
+           "calcium": "Calcium: boosts bones already dropped by a skeleton",
+           "titanium": "Titanium: struck mobs are more likely to drop their held item" if release_394 else
+                       "Titanium: eligible kills drop equipped items",
+           "zinc": "Zinc: rare diamond when harvesting dirt",
+           "krypton": "Krypton: damage attempt against players above 23 armor",
+           "rubidium": "Rubidium: wet targets or underwater mining cause an explosion",
+           "silver": "Silver: extra melee damage against Endermen",
+           "caesium": "Caesium: causes an explosion when mining stone",
+           "platinum": "Platinum: chance to gain experience on a hit",
+           "gold": "Gold: carried tool may summon lightning and charge compatible FE items",
+           "lead": "Lead: drives nearby targets downward",
+           "francium": "Francium: hits and mining cause explosions in rainy weather",
+           "uranium": "Uranium: withers nearby living entities on a hit",
            "inactive": "Rank is saved; this module effect isn't ported"}
     return files, {f"gui.{namespace}.polytool.{key}": value for key, value in gui.items()}
 
@@ -117,7 +141,11 @@ def features(release_394: bool) -> dict[str, str]:
             "Polytool ore, air and hit hooks; release-local charging": prefix + "polytoolminingandcharge",
             "Polytool drops, separate Iron and Carbon harvest, Silk Touch": prefix + "polytooldrops",
             "Polytool torch and food rolls, item attraction and lava warnings": prefix + "polytoolutility",
-            "Polytool protected breaks, drop cancellation and creative isolation": prefix + "polytoolprotection"}
+            "Polytool protected breaks, drop cancellation and creative isolation": prefix + "polytoolprotection",
+            "Polytool damage and hurt resistance against spiders, Endermen and covered targets": prefix + "polytoolcombatdamage",
+            "Polytool attack effects, launch target persistence and carried lightning": prefix + "polytoolcarriedeffects",
+            "Polytool release-local melee drops, equipment, and decomposition rolls": prefix + "polytoolcombatdrops",
+            "Polytool blast, protected fire, diamond and experience effects": prefix + "polytoolworldeffects"}
 
 
 def checks(package: str, test_namespace: str, namespace: str, entries: list[CatalogEntry], release_394: bool) -> str:
@@ -126,9 +154,12 @@ def checks(package: str, test_namespace: str, namespace: str, entries: list[Cata
              for row in infusions(namespace, entries, release_394)]
     mining = observations(mining_trace_name(release_394))
     mining_rows = [f"        Map.entry({json.dumps(key)}, {json.dumps(value)})" for key, value in mining.items()]
+    combat = observations(combat_trace_name(release_394))
+    combat_rows = [f"        Map.entry({json.dumps(key)}, {json.dumps(value)})" for key, value in combat.items()]
     return ((TEMPLATES / "PolytoolChecks.java").read_text(encoding="utf-8")
             .replace("@PACKAGE@", package).replace("@TEST_NAMESPACE@", test_namespace).replace("@NAMESPACE@", namespace)
             .replace("@RELEASE_394@", str(release_394).lower()).replace("@PREFIX@", prefix)
             .replace("@CLASS@", "PolytoolChecks394" if release_394 else "PolytoolChecksFinal")
             .replace("@CASES@", ",\n".join(f"        {case}" for case in cases))
-            .replace("@MINING_CASES@", ",\n".join(mining_rows)))
+            .replace("@MINING_CASES@", ",\n".join(mining_rows))
+            .replace("@COMBAT_CASES@", ",\n".join(combat_rows)))
