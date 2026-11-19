@@ -216,11 +216,13 @@ class ConvertTests(unittest.TestCase):
             _project_files(profile, [row for row in entries if row.path != "element_fe"], {"test.png": PNG}, RELEASE_394_SHA256, {}, [])
         package = "src/main/java/mcmodup/generated/minechem_chemistry_394"
         self.assertIn("PREPAID_DECOMPOSER = true;", files[f"{package}/ChemistryMachines.java"])
-        self.assertNotIn("ChemistryResearch.register", files[f"{package}/CatalogPort.java"])
-        self.assertNotIn(f"{package}/ResearchScreens.java", files)
+        self.assertIn("ChemistryResearch.register", files[f"{package}/CatalogPort.java"])
+        self.assertIn(f"{package}/ResearchScreens.java", files)
         resources = "src/main/resources/data/minechem_chemistry_394"
         self.assertIn(f"{resources}/recipe/synthesizer.json", files)
-        self.assertNotIn(f"{resources}/recipe/chemist_journal.json", files)
+        self.assertEqual(json.loads(files[f"{resources}/recipe/chemist_journal.json"])["ingredients"],
+                         [{"item": "minecraft:book"}, {"item": "minecraft:glass_pane"}])
+        self.assertIn("Synthesis394Rules.ALL.stream()", files[f"{package}/ChemistryRecipes.java"])
         catalog = json.loads(files[f"{resources}/mcmodup/catalog.json"])
         self.assertFalse(catalog["full_port"])
         self.assertEqual(catalog["decomposer_mode"], DecomposerMode.RELEASE_394)
@@ -230,7 +232,7 @@ class ConvertTests(unittest.TestCase):
         self.assertEqual(len(synth), 182)
         self.assertNotIn("minechem_chemistry_394:molecule_140", synth)
         self.assertNotIn("minechem_chemistry_394:molecule_143", synth)
-        for block in ("decomposer", "synthesizer"):
+        for block in ("decomposer", "synthesizer", "microscope"):
             recipe = json.loads(files[f"{resources}/recipe/{block}.json"])
             self.assertEqual(recipe["key"]["I"], {"item": "minecraft:copper_ingot"})
         self.assertEqual(synth["minecraft:iron_ingot"]["energy_fe"], 3_000)

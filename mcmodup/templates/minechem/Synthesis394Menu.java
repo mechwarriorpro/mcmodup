@@ -15,20 +15,20 @@ import net.neoforged.neoforge.items.SlotItemHandler;
 import static @PACKAGE@.Synthesizer394.*;
 
 final class Synthesis394Menu extends AbstractContainerMenu {
-    static final int OUTPUT = GHOST_SLOTS, STORAGE = OUTPUT + 1, PLAYER = STORAGE + STORAGE_SLOTS;
+    static final int OUTPUT = GHOST_SLOTS, STORAGE = OUTPUT + 1, JOURNAL = STORAGE + STORAGE_SLOTS, PLAYER = JOURNAL + 1;
     static final int PREVIOUS = 0, NEXT = 1, BACK_TEN = 2, AHEAD_TEN = 3, CLEAR = 4;
     private final Synthesizer394.Tile machine;
     private final ContainerData state;
 
     Synthesis394Menu(int id, Inventory player) {
-        this(id, player, null, new ItemStackHandler(GHOST_SLOTS + 1), new ItemStackHandler(STORAGE_SLOTS));
+        this(id, player, null, new ItemStackHandler(GHOST_SLOTS + 1), new ItemStackHandler(STORAGE_SLOTS), new JournalSlot());
     }
 
     Synthesis394Menu(int id, Inventory player, Synthesizer394.Tile machine) {
-        this(id, player, machine, machine.display, machine.storage);
+        this(id, player, machine, machine.display, machine.storage, machine.journal);
     }
 
-    private Synthesis394Menu(int id, Inventory player, Synthesizer394.Tile machine, ItemStackHandler display, ItemStackHandler storage) {
+    private Synthesis394Menu(int id, Inventory player, Synthesizer394.Tile machine, ItemStackHandler display, ItemStackHandler storage, JournalSlot journal) {
         super(Synthesizer394.MENU.get(), id);
         this.machine = machine;
         state = machine == null ? new SimpleContainerData(5) : new ContainerData() {
@@ -55,7 +55,9 @@ final class Synthesis394Menu extends AbstractContainerMenu {
         }
         for (int i = 0; i < STORAGE_SLOTS; ++i) addSlot(new SlotItemHandler(storage, i, 8 + (i % 9) * 18, 111 + (i / 9) * 18) {
             @Override public boolean mayPlace(ItemStack stack) { return chemical(stack) && super.mayPlace(stack); }
+            @Override public void setChanged() { if (machine != null) machine.setChanged(); }
         });
+        addSlot(new SlotItemHandler(journal, 0, 25, 43));
         for (int i = 0; i < 27; ++i) addSlot(new Slot(player, i + 9, 8 + (i % 9) * 18, 162 + (i / 9) * 18));
         for (int i = 0; i < 9; ++i) addSlot(new Slot(player, i, 8 + i * 18, 220));
     }
@@ -108,9 +110,8 @@ final class Synthesis394Menu extends AbstractContainerMenu {
     }
 
     @Override public ItemStack quickMoveStack(Player player, int index) {
-        if (index < OUTPUT || index >= slots.size()) return ItemStack.EMPTY;
+        if (machine == null || !stillValid(player) || index < OUTPUT || index >= slots.size()) return ItemStack.EMPTY;
         if (index == OUTPUT) {
-            if (machine == null || !stillValid(player)) return ItemStack.EMPTY;
             var result = machine.extract(64, true);
             if (result.isEmpty() || room(result) < result.getCount()) return ItemStack.EMPTY;
             // Commit one batch at a time, after confirming destination space.
@@ -123,8 +124,10 @@ final class Synthesis394Menu extends AbstractContainerMenu {
         if (!slot.hasItem()) return ItemStack.EMPTY;
         var stack = slot.getItem();
         var copy = stack.copy();
-        if (!(index < PLAYER ? moveItemStackTo(stack, PLAYER, slots.size(), true) : moveItemStackTo(stack, STORAGE, PLAYER, false)))
-            return ItemStack.EMPTY;
+        boolean moved = index < PLAYER ? moveItemStackTo(stack, PLAYER, slots.size(), true) :
+                ChemistryResearch.isJournal(stack) ? moveItemStackTo(stack, JOURNAL, PLAYER, false) :
+                    moveItemStackTo(stack, STORAGE, JOURNAL, false);
+        if (!moved) return ItemStack.EMPTY;
         if (stack.isEmpty()) slot.set(ItemStack.EMPTY);
         else slot.setChanged();
         slot.onTake(player, stack);

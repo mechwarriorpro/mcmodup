@@ -25,13 +25,14 @@ STACK = "net/minecraft/item/ItemStack"
 RESOURCE = "src/main/resources/"
 FINAL = PROFILES["minechem-chemistry"]
 RELEASE_394 = PROFILES[RELEASE_394_PROFILE]
-VERSIONS = {FINAL.namespace: "1.3.1-partial", RELEASE_394.namespace: "1.3.0-partial"}
+VERSIONS = {FINAL.namespace: "1.3.1-partial", RELEASE_394.namespace: "1.4.0-partial"}
 FEATURES = {"Buffered iron decomposition and saved remaining output": "savedbufferdrains",
             "Original decomposer output-slot method": "linkedslotrule"}
 FEATURES_394 = FEATURES | {"All 198 measured item and molecule decomposition rules": "materialdecompositionmatchestrace",
                            "5,000 mB water tank, shared input priority and buffer save": "watertankroundtripandpriority",
                            "Measured .394 synthesis batches with exact ghost slot counts and extraction cost": "exactsynthesisbatches",
-                           "Ghost editing and saved synthesis, no unpaid extraction": "ghosteditingandsavedsynthesis"}
+                           "Ghost editing and saved synthesis, no unpaid extraction": "ghosteditingandsavedsynthesis",
+                           "Microscope research, journal selection, and saved synthesis template": "discoveredjournalrestoresactivesynthesis"}
 
 
 def release394_checks(package: str, test_namespace: str, entries: list[CatalogEntry]) -> str:
@@ -135,6 +136,8 @@ def _recipe(original: Path, profile: Profile, checksum: str, output: Path) -> di
     files[f"src/main/java/mcmodup_kernel/{namespace}/DecomposerAccess.java"] = _adapter(namespace, prepaid)
     structure = f"data/{namespace}/structure/test_room.nbt"
     files[RESOURCE + structure] = empty_test_structure()
+    if prepaid:
+        files[RESOURCE + f"data/{namespace}/structure/journal_room.nbt"] = empty_test_structure(5)
     metadata = RESOURCE + "META-INF/neoforge.mods.toml"
     files[metadata] = files[metadata].replace(f"[{NEOFORGE_VERSION},21.2)", f"[{NEOFORGE_VERSION}]")
     files["build.gradle"] += f"""
@@ -142,7 +145,7 @@ def _recipe(original: Path, profile: Profile, checksum: str, output: Path) -> di
 tasks.named('compileJava') {{ classpath += files('src/main/resources') }}
 tasks.named('jar') {{
     archiveFileName = '{artifact}'
-    exclude '{tests}.class', '{java_root}/Release394Checks*.class', '{java_root}/Synthesis394Checks*.class', '{structure}'
+    exclude '{tests}.class', '{java_root}/Release394Checks*.class', '{java_root}/Synthesis394Checks*.class', 'data/{namespace}/structure/*.nbt'
 }}
 neoForge.runs.create('gameTestServer') {{
     type = 'gameTestServer'

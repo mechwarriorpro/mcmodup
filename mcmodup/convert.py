@@ -78,8 +78,7 @@ def _java(package: str, namespace: str, entries: list[CatalogEntry], mode: Decom
                            f'.component(DataComponents.LORE, new ItemLore(List.of({lore})))));')
     if mode is not None:
         definitions.append("        entries.addAll(ChemistryMachines.register(bus, items));")
-        if mode != DecomposerMode.RELEASE_394:
-            definitions.append("        entries.addAll(ChemistryResearch.register(bus, items));")
+        definitions.append("        entries.addAll(ChemistryResearch.register(bus, items));")
     body = "\n".join(definitions)
     return f'''package {package};
 
@@ -170,7 +169,7 @@ def _project_files(profile: Profile, entries: list[CatalogEntry], textures: dict
     package = f"mcmodup.generated.{namespace}"
     mode = _decomposer_mode(profile, digest)
     version = project_version or {DecomposerMode.FINAL: "1.3.0-partial", DecomposerMode.BATCH: "1.2.0-partial",
-                                  DecomposerMode.RELEASE_394: "1.2.0-partial"}.get(mode, "1.0.0-partial")
+                                  DecomposerMode.RELEASE_394: "1.3.0-partial"}.get(mode, "1.0.0-partial")
     machine_rules = machine_recipes(namespace, entries, mode=mode) if mode else []
     if mode:
         recipe_files, extra_locales = machine_project(namespace, package, entries, machine_rules, mode=mode,
@@ -185,6 +184,7 @@ def _project_files(profile: Profile, entries: list[CatalogEntry], textures: dict
             decomposition = sum(rule.machine == "decomposer" for rule in machine_rules)
             features = (f"Recovered .394 catalog items, {decomposition} measured decomposition rules and a plain-water tank, "
                         f"and {count - decomposition} measured synthesis rules with ghost templates and payment on extraction. "
+                        "The microscope records supported discoveries in a journal, which can load an active synthesis pattern. "
                         "CoFH RF linkage is not provided.")
         else:
             recipe_status = {entry.path: "powered_synthesis" for entry in entries if entry.components}

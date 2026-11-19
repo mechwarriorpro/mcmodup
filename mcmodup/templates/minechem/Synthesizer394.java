@@ -75,12 +75,20 @@ final class Synthesizer394 extends BaseEntityBlock {
         return InteractionResult.sidedSuccess(level.isClientSide());
     }
 
+    static class JournalSlot extends ItemStackHandler {
+        JournalSlot() { super(1); }
+        @Override public int getSlotLimit(int slot) { return 1; }
+        @Override public boolean isItemValid(int slot, ItemStack stack) { return ChemistryResearch.isJournal(stack); }
+    }
+
     @Override protected void onRemove(BlockState state, Level level, BlockPos pos, BlockState replacement, boolean moved) {
         if (!level.isClientSide() && !state.is(replacement.getBlock()) && level.getBlockEntity(pos) instanceof Tile tile) {
             for (int slot = 0; slot < STORAGE_SLOTS; ++slot) {
                 var stack = tile.storage.getStackInSlot(slot);
                 if (!stack.isEmpty()) Containers.dropItemStack(level, pos.getX(), pos.getY(), pos.getZ(), stack);
             }
+            var book = tile.journal.extractItem(0, 1, false);
+            if (!book.isEmpty()) Containers.dropItemStack(level, pos.getX(), pos.getY(), pos.getZ(), book);
         }
         super.onRemove(state, level, pos, replacement, moved);
     }
@@ -93,6 +101,27 @@ final class Synthesizer394 extends BaseEntityBlock {
         final ItemStackHandler storage = new ItemStackHandler(STORAGE_SLOTS) {
             @Override public boolean isItemValid(int slot, ItemStack stack) { return chemical(stack); }
             @Override protected void onContentsChanged(int slot) { setChanged(); }
+        };
+        private boolean loading;
+        final JournalSlot journal = new JournalSlot() {
+            @Override public void setStackInSlot(int slot, ItemStack stack) {
+                super.setStackInSlot(slot, isItemValid(slot, stack) ? stack.copyWithCount(1) : ItemStack.EMPTY);
+            }
+            @Override protected void onContentsChanged(int slot) {
+                if (loading) return;
+                var book = getStackInSlot(slot);
+                if (book.isEmpty()) {
+                    clear();
+                } else {
+                    String active = ChemistryResearch.active(book);
+                    for (var rule : Synthesis394Rules.ALL) {
+                        if (!rule.result().id().equals(active)) continue;
+                        apply(rule);
+                        break;
+                    }
+                    setChanged();
+                }
+            }
         };
         // The result template and ghost pattern never belong to extractable storage.
         final ItemStackHandler display = new ItemStackHandler(GHOST_SLOTS + 1);
@@ -134,7 +163,10 @@ final class Synthesizer394 extends BaseEntityBlock {
         void advance(int distance) {
             var rows = Synthesis394Rules.ALL;
             int start = cursor == -1 && distance < 0 ? 0 : cursor;
-            var rule = rows.get(Math.floorMod(start + distance, rows.size()));
+            apply(rows.get(Math.floorMod(start + distance, rows.size())));
+        }
+
+        private void apply(Synthesis394Rules.Rule rule) {
             for (int i = 0; i < GHOST_SLOTS; ++i) display.setStackInSlot(i, rule.pattern().get(i).stack());
             refresh();
         }
@@ -210,6 +242,7 @@ final class Synthesizer394 extends BaseEntityBlock {
             tag.putInt("energy", power.getEnergyStored());
             tag.put("chemical_storage", saveStacks(storage, STORAGE_SLOTS, lookup));
             tag.put("templates", saveStacks(display, GHOST_SLOTS, lookup));
+            tag.put("journal", journal.getStackInSlot(0).saveOptional(lookup));
         }
 
         @Override protected void loadAdditional(CompoundTag tag, HolderLookup.Provider lookup) {
@@ -217,6 +250,12 @@ final class Synthesizer394 extends BaseEntityBlock {
             power.restore(tag.getInt("energy"));
             loadStacks(storage, STORAGE_SLOTS, tag.getCompound("chemical_storage"), lookup);
             loadStacks(display, GHOST_SLOTS, tag.getCompound("templates"), lookup);
+            loading = true;
+            try {
+                journal.setStackInSlot(0, ItemStack.parseOptional(lookup, tag.getCompound("journal")));
+            } finally {
+                loading = false;
+            }
             refresh();
         }
 

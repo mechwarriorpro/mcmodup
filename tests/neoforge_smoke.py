@@ -77,12 +77,14 @@ neoForge.runs.create('gameTestServer') {{
     tests = {"src/main/java/mcmodup/test/CatalogSmoke.java": fixture}
     if include_aspects:
         tests["src/main/java/mcmodup/test/CatalogAspectSmoke.java"] = (FIXTURES / "CatalogAspectSmoke.java").read_bytes()
+    research_rooms = {}
     if minechem_394:
         assert buffered, "The paired tests require the actual FINAL-based build"
         entries = check_minechem_artifacts(outputs[0], minechem_394)
         tests["src/main/java/mcmodup/test/MinechemPairChecks.java"] = (FIXTURES / "MinechemPairChecks.java").read_bytes()
         tests["src/main/java/mcmodup/test/Release394Checks.java"] = release394_checks("mcmodup.test", namespace, entries)
         tests["src/main/java/mcmodup/test/Synthesis394Checks.java"] = synthesis394_checks("mcmodup.test", namespace, entries)
+        research_rooms[f"src/main/resources/data/{namespace}/structure/journal_room.nbt"] = empty_test_structure(5)
     def integrate_fixture(filename, code, package, own_namespace):
         # The standalone fixtures normally own independent test mod IDs.
         name = filename.removesuffix(".java")
@@ -147,13 +149,14 @@ neoForge.runs.create('gameTestServer') {{
         f"src/main/resources/data/{namespace}/structure/test_room.nbt": empty_test_structure(5),
         **inputs,
         **controls,
+        **research_rooms,
         **geostrata_rooms,
         **thermal_rooms,
         **platform_rooms,
     })
     run = subprocess.run(["./gradlew", "--no-daemon", "--console=plain", "runGameTestServer"],
                          cwd=project, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=420)
-    count = (7 + include_aspects + (6 if minechem_394 else 0) + bool(controls)
+    count = (7 + include_aspects + (7 if minechem_394 else 0) + bool(controls)
              + (5 if icbm_plate else 0) + (3 if atomic_thermometer else 0) + cross_voltz
              + (2 if mimicry else 0) + (3 if geostrata else 0))
     if run.returncode or f"All {count} required tests passed" not in run.stdout:

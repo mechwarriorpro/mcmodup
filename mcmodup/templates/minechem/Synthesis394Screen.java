@@ -39,6 +39,9 @@ public final class Synthesis394Screen extends AbstractContainerScreen<Synthesis3
     @Override public void render(GuiGraphics gui, int x, int y, float partial) {
         super.render(gui, x, y, partial);
         renderTooltip(gui, x, y);
+        if (!menu.getSlot(Synthesis394Menu.JOURNAL).hasItem() && isHovering(25, 43, 16, 16, x, y)) {
+            gui.renderTooltip(font, Component.translatable("gui.@NAMESPACE@.load_journal"), x, y);
+        }
         if (isHovering(55, 25, 52, 52, x, y) && (hoveredSlot == null || !hoveredSlot.hasItem())) {
             gui.renderTooltip(font, Component.translatable("gui.@NAMESPACE@.ghost_help"), x, y);
         }

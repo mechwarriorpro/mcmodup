@@ -8,8 +8,6 @@ import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.tags.BlockTags;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.crafting.CraftingInput;
-
-import java.util.List;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Blocks;
 import net.neoforged.neoforge.capabilities.Capabilities;
@@ -47,6 +45,9 @@ public final class MinechemPairChecks {
                 RELEASE_394, "decomposer");
         check(test, CraftingInput.of(3, 3, List.of(copper, redstone, copper, copper, piston, copper, copper, diamond, copper)),
                 RELEASE_394, "synthesizer");
+        check(test, CraftingInput.of(3, 3, List.of(ItemStack.EMPTY, new ItemStack(Items.SPYGLASS), copper,
+                ItemStack.EMPTY, new ItemStack(Items.GLASS_PANE), copper, copper, copper, copper)), RELEASE_394, "microscope");
+        check(test, CraftingInput.of(2, 1, List.of(new ItemStack(Items.BOOK), new ItemStack(Items.GLASS_PANE))), RELEASE_394, "chemist_journal");
         test.assertTrue(right.power().getMaxEnergyStored() == 10_000 && right.power().receiveEnergy(1000, true) == 100 &&
                 right.power().getEnergyStored() == 0, "Wrong .394 capacity or simulated receive limit");
         var finalWater = stack(test, MINECHEM, "molecule_water");

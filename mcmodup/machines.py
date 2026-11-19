@@ -26,8 +26,7 @@ class DecomposerMode(StrEnum):
 
 
 def machine_classes(mode: DecomposerMode) -> tuple[str, ...]:
-    # No subscriber should try to register screens for unavailable research menus.
-    return JAVA_CLASSES if mode != DecomposerMode.RELEASE_394 else JAVA_CLASSES[:-1] + SYNTHESIS_394_CLASSES
+    return JAVA_CLASSES + SYNTHESIS_394_CLASSES if mode == DecomposerMode.RELEASE_394 else JAVA_CLASSES
 
 
 @dataclass(frozen=True)
@@ -194,6 +193,13 @@ def _java_recipes(package: str, namespace: str, entries: list[CatalogEntry], rec
                            f'{parts(r.inputs)}, {parts(r.outputs)})' for r in recipes
                            if r.machine == machine and not r.ghost_pattern and bool(r.fluid_input) == fluid)
 
+    if any(recipe.ghost_pattern for recipe in recipes):
+        # The .394 inspector reads the same verified rule table as the ghost-grid machine.
+        synthesis = """Synthesis394Rules.ALL.stream().map(row -> new Recipe(row.result().id(), row.cost(), 0, 0,
+        row.pattern().stream().filter(part -> part.count() > 0).map(part -> new Part(part.id(), part.count())).toList(),
+        List.of(new Part(row.result().id(), row.result().count())))).toList()"""
+    else:
+        synthesis = f"List.of(\n{rows('synthesizer')}\n    )"
     chemical_ids = ",\n".join(f'        "{namespace}:{entry.path}"' for entry in entries)
     return f'''package {package};
 
@@ -216,9 +222,7 @@ final class ChemistryRecipes {{
     static final Set<String> CHEMICALS = Set.of(
 {chemical_ids}
     );
-    static final List<Recipe> SYNTHESIZE = List.of(
-{rows('synthesizer')}
-    );
+    static final List<Recipe> SYNTHESIZE = {synthesis};
     static final Map<String, Recipe> BY_RESULT = index(SYNTHESIZE);
     static final Map<String, Recipe> DECOMPOSE = index(List.of(
 {rows('decomposer')}
@@ -295,16 +299,17 @@ def machine_project(namespace: str, package: str, entries: list[CatalogEntry], r
         "journal_previous": "Select previous discovery", "journal_next": "Select next discovery",
         "load_journal": "Insert a journal to load its active synthesis recipe",
     }.items()}
-    if not prepaid:
-        locales[f"item.{namespace}.chemist_journal"] = "Chemist's Journal"
-        files[f"{assets}/models/item/chemist_journal.json"] = document({
-            "parent": "minecraft:item/generated", "textures": {"layer0": "minecraft:item/writable_book"},
-        })
-        files[f"{data}/{namespace}/recipe/chemist_journal.json"] = document({
-            "type": "minecraft:crafting_shapeless", "category": "misc",
-            "ingredients": [{"item": "minecraft:book"}, {"item": "minecraft:glass"}],
-            "result": {"id": f"{namespace}:chemist_journal", "count": 1},
-        })
+    locales[f"item.{namespace}.chemist_journal"] = "Chemist's Journal"
+    files[f"{assets}/models/item/chemist_journal.json"] = document({
+        "parent": "minecraft:item/generated", "textures": {"layer0": "minecraft:item/writable_book"},
+    })
+    # Both originals use a book and glass. The pane variant prevents the .394
+    # preview from capturing FINAL's craft when the two are installed together.
+    files[f"{data}/{namespace}/recipe/chemist_journal.json"] = document({
+        "type": "minecraft:crafting_shapeless", "category": "misc",
+        "ingredients": [{"item": "minecraft:book"}, {"item": "minecraft:glass_pane" if prepaid else "minecraft:glass"}],
+        "result": {"id": f"{namespace}:chemist_journal", "count": 1},
+    })
     blocks = []
     for block, name, texture, pattern, keys in (
         ("synthesizer", "Chemical Synthesizer", "minecraft:block/lapis_block", ["IRI", "IPI", "IDI"],
@@ -315,8 +320,6 @@ def machine_project(namespace: str, package: str, entries: list[CatalogEntry], r
         ("microscope", "Microscope", "minecraft:block/polished_andesite", [" LI", " PI", "III"],
          {"I": "iron_ingot", "L": "spyglass", "P": "glass_pane"}),
     ):
-        if prepaid and block == "microscope":
-            continue
         blocks.append(block)
         model = f"{namespace}:block/{block}"
         identifier = f"{namespace}:{block}"

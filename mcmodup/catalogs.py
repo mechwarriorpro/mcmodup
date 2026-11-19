@@ -54,8 +54,8 @@ PROFILES = {profile.name: profile for profile in (
             "Minechem .394 Chemistry (Partial Port)", "Don't Be a Jerk (DBaJ) non-commercial license",
             "Minechem and its contributors — https://github.com/iopleke/Minechem/tree/1.7.10-5.0.5.394",
             "Unmeasured materials, random and recursive decomposition, fluids other than plain water, original menus and models, "
-            "radiation, unmeasured synthesis and the nondeterministic m140/m143 ghost collision, journal and research, other machines, "
-            "legacy integrations, configuration and old saves.", RELEASE_394_SHA256),
+            "radiation, unmeasured synthesis and the nondeterministic m140/m143 ghost collision, journal cloning and automation, "
+            "the original lens chain, other machines, legacy integrations, configuration and old saves.", RELEASE_394_SHA256),
     Profile("thaumcraft-aspects", "thaumcraft", "1.7.10", (ASPECT,), "thaumcraft_aspects", "Thaumcraft Aspects (Partial Port)",
             "Thaumcraft custom license — private use only unless authorized", "Thaumcraft by Azanor — https://www.curseforge.com/minecraft/mc-mods/thaumcraft",
             "Essentia storage and transport, research, wands, infusion, golems, magic, add-on integration, worldgen, and old saves."),

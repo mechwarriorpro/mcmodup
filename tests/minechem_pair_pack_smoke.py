@@ -91,7 +91,7 @@ def check(root: Path) -> None:
     assert set((out / "mods").iterdir()) == {*artifacts, *controls, plate, sensor, catalyst, rocks}
     for split_row, path, label, method in zip(split["archives"], artifacts, labels, ("canUnjam()Z", "pushQueue()V")):
         evidence = report["native_builds"][path.name]
-        tests_passed = 6 if method == "pushQueue()V" else 2
+        tests_passed = 7 if method == "pushQueue()V" else 2
         assert evidence["status"] == "preview" and evidence["gametests"]["passed"] == tests_passed, evidence
         assert evidence["original_sha256"] == split_row["sha256"] == before[source / label], split_row
         assert evidence["legacy_ids"] == {"minechem": split_row["native_id"]}, evidence
@@ -141,12 +141,12 @@ def check(root: Path) -> None:
     assert code == 1 and not report["ready"] and not delta.exists() and not report["native_builds"], report["problems"]
     assert not report["legacy_selection_conflicts"] and report["legacy_identity_splits"], report["legacy_selection_conflicts"]
     note("Combined native previews booted", "Both Minechem previews, ICBM glass plate and platform, the Atomic Science thermal machines, GeoStrata rocks "
-         "and the Mimicry catalyst reached dedicated server ready with unchanged Multipart and CCL. Twenty-one source and 28 staged-JAR tests passed. "
+         "and the Mimicry catalyst reached dedicated server ready with unchanged Multipart and CCL. Twenty-two source and 29 staged-JAR tests passed. "
          "All eight still block without writing a pack.")
     summary(["## Combined native previews", "",
              "Six previews built in one updater invocation and staged with unchanged CB Multipart and CodeChickenLib: both Minechem releases, "
-             "ICBM glass plate and platform, Atomic Science thermal machines, GeoStrata rocks, and Mimicry catalyst. Twenty-one source GameTests, stock dedicated boot, "
-             "and 28 staged-JAR GameTests (including turbine → platform → receiver FE) passed. These are bounded previews, not full ports. The all-eight selection staged nothing.", ""])
+             "ICBM glass plate and platform, Atomic Science thermal machines, GeoStrata rocks, and Mimicry catalyst. Twenty-two source GameTests, stock dedicated boot, "
+             "and 29 staged-JAR GameTests (including turbine → platform → receiver FE) passed. These are bounded previews, not full ports. The all-eight selection staged nothing.", ""])
 
 
 if __name__ == "__main__":
