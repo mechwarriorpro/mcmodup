@@ -129,7 +129,7 @@ final class LegacyMinechemFluidAutomation {
         if (extra != null) set.invoke(inventory, 1, extra);
         Object behaviorRegistry = dispenser.getField("field_149943_a").get(null);
         Object behavior = behaviorRegistry.getClass().getMethod("func_82594_a", Object.class).invoke(behaviorRegistry, itemOf.invoke(selected));
-        Object source = mc("dispenser.BlockSourceImpl").getConstructor(w, int.class, int.class, int.class).newInstance(world, x, y, z);
+        Object source = mc("block.BlockSourceImpl").getConstructor(w, int.class, int.class, int.class).newInstance(world, x, y, z);
         List<Object> before = new ArrayList<Object>(entities());
         String status = "ok";
         try {
@@ -261,5 +261,11 @@ final class LegacyMinechemFluidAutomation {
     private void put(int x, int y, int z, Object value, int meta) throws Exception {
         setBlock.invoke(world, x, y, z, value, meta, 3);
     }
-    private static Class<?> mc(String suffix) throws Exception { return Class.forName("net.minecraft." + suffix); }
+    private static Class<?> mc(String suffix) throws Exception {
+        try {
+            return Class.forName("net.minecraft." + suffix);
+        } catch (ClassNotFoundException missing) {
+            throw new AssertionError("Missing legacy class " + suffix + ": " + missing);
+        }
+    }
 }
