@@ -90,9 +90,11 @@ def staged_test(project: Path, staged: Path) -> None:
         "src/main/resources/META-INF/neoforge.mods.toml": _metadata(ModMetadata(""), namespace, namespace, "1.0.0", "Unlicense"),
         f"src/main/resources/data/{namespace}/structure/empty.nbt": empty_test_structure(5),
         f"src/main/resources/data/{namespace}/structure/turbine_room.nbt": empty_test_structure(5),
+        f"src/main/resources/data/{namespace}/structure/accel_room.nbt": empty_test_structure(15),
         f"src/main/java/{package.replace('.', '/')}/{fixture.name}": fixture.read_bytes(),
         f"src/main/java/{package.replace('.', '/')}/TurbineChecks.java": turbine_checks(package, namespace),
         f"src/main/java/{package.replace('.', '/')}/SteamChecks.java": steam_checks(package, namespace),
+        f"src/main/java/{package.replace('.', '/')}/AcceleratorChecks.java": accelerator_checks(package, namespace),
         "build.gradle": _build_gradle(namespace, package, "1.0.0") + f"""
 dependencies {{ compileOnly fileTree(dir: 'run/mods', include: ['*.jar']) }}
 neoForge.runs.create('gameTestServer') {{
