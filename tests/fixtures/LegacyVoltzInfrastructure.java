@@ -200,8 +200,8 @@ public final class LegacyVoltzInfrastructure {
             int[] seen = (int[]) available.invoke(platform, side);
             require(seen.length == slots, "Platform does not expose all slots to side " + side);
             for (int slot = 0; slot < slots; ++slot) {
-                require(seen[slot] == slot && (Boolean) insertable.invoke(platform, slot, payload, side) &&
-                        (Boolean) extractable.invoke(platform, slot, payload, side), "Denied inert storage at " + side + "/" + slot);
+                require(seen[slot] == slot && !(Boolean) insertable.invoke(platform, slot, payload, side) &&
+                        (Boolean) extractable.invoke(platform, slot, payload, side), "Unexpected sided storage rule at " + side + "/" + slot);
             }
         }
         Method set = tile.getMethod("func_70299_a", int.class, stack);
@@ -217,7 +217,7 @@ public final class LegacyVoltzInfrastructure {
         float hardness = (Float) blockType.getMethod("func_71934_m", worldType, int.class, int.class, int.class).invoke(block, world, px, y, z);
         float blast = (Float) blockType.getMethod("getExplosionResistance", mc("entity.Entity"), worldType, int.class, int.class, int.class,
                 double.class, double.class, double.class).invoke(block, null, world, px, y, z, 0D, 0D, 0D);
-        return "Sentry placed inventory=" + slots + "×" + stackLimit + "; all six sides; saved cobblestone x37 at slot 19; hardness=" + hardness +
+        return "Sentry placed inventory=" + slots + "×" + stackLimit + "; extraction only on all six sides; saved cobblestone x37 at slot 19; hardness=" + hardness +
                 "; resistance=" + blast;
     }
 

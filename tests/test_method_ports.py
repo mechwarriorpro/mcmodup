@@ -11,7 +11,7 @@ from unittest.mock import patch
 from zipfile import ZipFile
 
 from mcmodup.classfiles import Symbol, read_class
-from mcmodup.icbm_plate import KERNEL, LEGACY_SHA256, MOD_ID, OWNER as PLATE, TEXTURE, prepare as prepare_plate
+from mcmodup.icbm_plate import KERNEL, LEGACY_SHA256, MOD_ID, OWNER as PLATE, PLATFORM, TEXTURES, prepare as prepare_plate
 from mcmodup.inputs import InputError
 from mcmodup.method_ports import PROVENANCE, parse_method_ports, transplant, verify
 from mcmodup.native_pack import REPORT_NAME, inventory, plan, stage
@@ -249,22 +249,29 @@ class MethodPortTests(unittest.TestCase):
         port = load_ports(BuildOptions(one))[LEGACY_SHA256]
         self.assertEqual(set(port.ids), {MOD_ID})
         self.assertTrue(port.isolated_preview)
-        self.assertEqual(set(port.imports), {TEXTURE})
+        self.assertEqual(set(port.imports), set(TEXTURES))
         self.assertEqual(port.legacy_ids, {"icbm": MOD_ID, "icbm|explosion": None, "icbm|sentry": None})
         with ZipFile(port.archive) as src:
             self.assertIn(f"src/main/java/{KERNEL}/GlassPlate.java", src.namelist())
             self.assertNotIn(f"src/main/resources/{KERNEL}/PlateLogic.class", src.namelist())
-            self.assertNotIn(port.imports[TEXTURE], src.namelist())
+            self.assertFalse(any(path in src.namelist() for path in port.imports.values()))
+            self.assertIn(f"src/main/java/{KERNEL}/SentryPlatform.java", src.namelist())
 
     @unittest.skipUnless(os.environ.get("MCMODUP_VOLTZ_ARCHIVE"), "exact Voltz archive not supplied")
-    def test_actual_voltz_bytes_transplant_the_expected_two_bodies(self):
+    def test_actual_voltz_bytes_transplant_plate_and_platform_bodies(self):
         with ZipFile(os.environ["MCMODUP_VOLTZ_ARCHIVE"]) as voltz:
             original = self.root / "icbm.jar"
             original.write_bytes(voltz.read("mods/icbm-1.4.1.344.jar"))
         self.assertEqual(digest(original), LEGACY_SHA256)
         port = load_ports(BuildOptions(prepare_plate(self.root / "recipe")))[LEGACY_SHA256]
-        [group] = port.method_imports
+        plate, platform = port.method_imports
         with ZipFile(original) as artifact:
-            result = transplant(artifact.read(PLATE + ".class"), group)
+            result = transplant(artifact.read(PLATE + ".class"), plate)
+            sentry = transplant(artifact.read(PLATFORM + ".class"), platform)
         self.assertEqual(result.report()["sha256"], "007274c0d2fcf80984e36d2cddfa8d0910df26da774e7a29012a518c4bc8c1d8")
         self.assertEqual(result.report()["call_redirects"][0]["sites"], 1)
+        self.assertEqual(sentry.report()["sha256"], "b3dc4b18467856100971856df10eed71b9d6df85f679cbfc146228703362a369")
+        self.assertEqual(sorted(row["sites"] for row in sentry.report()["call_redirects"]), [1, 1, 1, 2])
+        linked = read_class(sentry.bytecode)
+        self.assertEqual({name for name, _ in linked.members}, {"forward", "extract"})
+        self.assertTrue(all(ref.owner.startswith((KERNEL + "/", "java/")) for ref in linked.references))

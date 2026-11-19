@@ -11,9 +11,10 @@ from zipfile import ZipFile
 
 from atomic_thermometer_smoke import check_artifact as check_thermometer
 from geostrata_original_smoke import DRAGONAPI, DRAGONAPI_SHA256
+from icbm_plate_smoke import check_artifact as check_icbm
 from mcmodup.atomic_thermometer import ARCHIVE as THERMOMETER, prepare as prepare_thermometer
 from mcmodup.geostrata_rocks import ARCHIVE as ROCKS, MOD_ID as ROCK_ID, prepare as prepare_rocks, textures as rock_textures
-from mcmodup.icbm_plate import ARCHIVE as PLATE, MOD_ID as PLATE_ID, prepare as prepare_plate
+from mcmodup.icbm_plate import ARCHIVE as PLATE, prepare as prepare_plate
 from mcmodup.method_ports import PROVENANCE
 from mcmodup.mimicry_catalyst import ARCHIVE as CATALYST, LEGACY_TEXTURE as CATALYST_ICON, MOD_ID as CATALYST_ID
 from mcmodup.mimicry_catalyst import TEXTURE as PORTED_ICON, prepare as prepare_mimicry
@@ -103,11 +104,7 @@ def check(root: Path) -> None:
             assert not any(name.endswith((".jar", "DecomposerChecks.class")) or name.startswith("minechem/") or "Release394Checks" in name or "Synthesis394Checks" in name
                            for name in jar.namelist())
         note("Original method linked and tested", f"{path.name}: {method}; {len(linked['call_redirects'])} approved redirects; {tests_passed} source GameTests passed.")
-    evidence = report["native_builds"][plate.name]
-    assert evidence["status"] == "preview" and evidence["gametests"]["passed"] == 2, evidence
-    assert evidence["original_sha256"] == plate_original.sha256 == before[source / plate_original.label], evidence
-    assert evidence["jar_sha256"] == file_digest(plate)
-    assert evidence["legacy_ids"] == {"icbm": PLATE_ID, "icbm|explosion": None, "icbm|sentry": None}, evidence
+    check_icbm(plate, source / plate_original.label, report["native_builds"][plate.name])
     check_thermometer(sensor, source / sensor_original.label, report["native_builds"][sensor.name])
     evidence = report["native_builds"][catalyst.name]
     assert evidence["status"] == "preview" and evidence["gametests"]["passed"] == 2, evidence
@@ -143,13 +140,13 @@ def check(root: Path) -> None:
     code, report = run(*full)
     assert code == 1 and not report["ready"] and not delta.exists() and not report["native_builds"], report["problems"]
     assert not report["legacy_selection_conflicts"] and report["legacy_identity_splits"], report["legacy_selection_conflicts"]
-    note("Combined native previews booted", "Both Minechem previews, the ICBM plate, the Atomic Science thermal machines, GeoStrata rocks "
-         "and the Mimicry catalyst reached dedicated server ready with unchanged Multipart and CCL. Nineteen source and 25 staged-JAR tests passed. "
+    note("Combined native previews booted", "Both Minechem previews, ICBM glass plate and platform, the Atomic Science thermal machines, GeoStrata rocks "
+         "and the Mimicry catalyst reached dedicated server ready with unchanged Multipart and CCL. Twenty-one source and 27 staged-JAR tests passed. "
          "All eight still block without writing a pack.")
     summary(["## Combined native previews", "",
              "Six previews built in one updater invocation and staged with unchanged CB Multipart and CodeChickenLib: both Minechem releases, "
-             "ICBM plate, Atomic Science thermal machines, GeoStrata rocks, and Mimicry catalyst. Nineteen source GameTests, stock dedicated boot, "
-             "and 25 staged-JAR GameTests passed. These are bounded previews, not full ports. The all-eight selection staged nothing.", ""])
+             "ICBM glass plate and platform, Atomic Science thermal machines, GeoStrata rocks, and Mimicry catalyst. Twenty-one source GameTests, stock dedicated boot, "
+             "and 27 staged-JAR GameTests passed. These are bounded previews, not full ports. The all-eight selection staged nothing.", ""])
 
 
 if __name__ == "__main__":

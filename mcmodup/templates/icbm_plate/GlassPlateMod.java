@@ -1,6 +1,7 @@
 package mcmodup.icbmplate;
 
 import mcmodup_kernel.icbm_glass_plate.GlassPlate;
+import mcmodup_kernel.icbm_glass_plate.SentryPlatform;
 import net.minecraft.world.item.CreativeModeTabs;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.common.Mod;
@@ -18,6 +19,7 @@ public final class GlassPlateMod {
         var item = items.registerSimpleBlockItem(plate);
         blocks.register(bus);
         items.register(bus);
+        SentryPlatform.register(bus);
         bus.addListener((BuildCreativeModeTabContentsEvent event) -> {
             if (event.getTabKey() == CreativeModeTabs.REDSTONE_BLOCKS) event.accept(item);
         });

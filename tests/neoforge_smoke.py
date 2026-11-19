@@ -97,15 +97,20 @@ neoForge.runs.create('gameTestServer') {{
         assert controls, "Thermometer integration checks require the unchanged native controls"
     if controls:
         compile_inputs = [*controls]
-        if atomic_thermometer:
-            compile_inputs.append(f"fixtures/{len(jars) - 1}.jar")
+        for artifact in (icbm_plate, atomic_thermometer):
+            if artifact:
+                compile_inputs.append(f"fixtures/{jars.index(artifact)}.jar")
         compile_jars = ", ".join(f"'{relative}'" for relative in compile_inputs)
         gradle += f"\ndependencies {{ compileOnly files({compile_jars}) }}\n"
         integrate_fixture("MultipartControlSmoke.java", (FIXTURES / "MultipartControlSmoke.java").read_text(encoding="utf-8"),
                           "mcmodup.multipartcheck", "mcmodup_multipart_control")
+    platform_rooms = {}
     if icbm_plate:
         assert controls, "Plate integration checks require the unchanged native controls"
-        from mcmodup.icbm_plate import checks
+        from mcmodup.icbm_plate import checks, platform_checks
+
+        tests["src/main/java/mcmodup/test/PlatformChecks.java"] = platform_checks("mcmodup.test", namespace)
+        platform_rooms[f"src/main/resources/data/{namespace}/structure/platform_room.nbt"] = empty_test_structure(5)
 
         integrate_fixture("PlateChecks.java", checks(namespace), "mcmodup.icbmplate", namespace)
         integrate_fixture("PlateMultipartSmoke.java", (FIXTURES / "PlateMultipartSmoke.java").read_text(encoding="utf-8"),
@@ -141,11 +146,12 @@ neoForge.runs.create('gameTestServer') {{
         **controls,
         **geostrata_rooms,
         **thermal_rooms,
+        **platform_rooms,
     })
     run = subprocess.run(["./gradlew", "--no-daemon", "--console=plain", "runGameTestServer"],
                          cwd=project, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=420)
     count = (7 + include_aspects + (6 if minechem_394 else 0) + bool(controls)
-             + (3 if icbm_plate else 0) + (3 if atomic_thermometer else 0) + (2 if mimicry else 0) + (3 if geostrata else 0))
+             + (5 if icbm_plate else 0) + (3 if atomic_thermometer else 0) + (2 if mimicry else 0) + (3 if geostrata else 0))
     if run.returncode or f"All {count} required tests passed" not in run.stdout:
         raise AssertionError(run.stdout[-8000:])
     parsing_errors = [line for line in run.stdout.splitlines() if "Parsing error loading recipe" in line

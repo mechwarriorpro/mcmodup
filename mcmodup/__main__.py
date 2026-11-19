@@ -160,7 +160,7 @@ def _parser() -> argparse.ArgumentParser:
     build.add_argument("--keep-recipe", type=Path, metavar="NEW_DIR", help="preserve the generated recipe and its local sources for review")
     build.add_argument("--json", action="store_true", help="emit the staged build report as JSON")
 
-    plate = commands.add_parser("prepare-icbm-plate", help="prepare the local source recipe for the exact Voltz ICBM glass plate preview")
+    plate = commands.add_parser("prepare-icbm-plate", help="prepare the local source recipe for the exact Voltz ICBM glass plate and passive platform preview")
     plate.add_argument("--output", "-o", required=True, type=Path, help="new directory for a reviewable source ZIP and recipe")
     thermometer = commands.add_parser("prepare-atomic-thermometer", help="prepare a local source recipe for the Voltz Atomic Science thermometer and standalone turbine")
     thermometer.add_argument("--output", "-o", required=True, type=Path, help="new directory for a reviewable source ZIP and recipe")
