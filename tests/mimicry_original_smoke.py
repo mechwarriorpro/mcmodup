@@ -16,14 +16,14 @@ MIMICRY = next(entry for entry in ORIGINALS if entry.ids == ("mimicry",))
 def check(root: Path) -> None:
     original = root / MIMICRY.filename
     assert file_digest(original) == MIMICRY.sha256
-    observed = probe(root, "LegacyMimicryCatalyst", {}, (), "MCMODUP_MIMICRY",
-                     supplied={MIMICRY.label: (original, MIMICRY.sha256)}, providers=())
-    note("Exact Mimicry catalyst on Forge", observed)
     # Record names only. Do not publish the ZIP, game data, or its textures.
     with ZipFile(original) as archive:
         items = sorted(path for path in archive.namelist()
                        if path.startswith("assets/") and "/textures/items/" in path and path.endswith(".png"))
     note("Mimicry source texture paths", "; ".join(items[:30]))
+    observed = probe(root, "LegacyMimicryCatalyst", {}, (), "MCMODUP_MIMICRY",
+                     supplied={MIMICRY.label: (original, MIMICRY.sha256)}, providers=())
+    note("Exact Mimicry catalyst on Forge", observed)
 
 
 if __name__ == "__main__":

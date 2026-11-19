@@ -12,6 +12,7 @@ import java.lang.reflect.Method;
 import java.security.CodeSource;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 /** Execute recipes in the exact Forge crafting manager, not a translated recipe list. */
 @Mod(modid = "mcmodup_mimicry_check", name = "Mimicry catalyst probe", version = "1.0.0")
@@ -36,7 +37,7 @@ public final class LegacyMimicryCatalyst {
             int catalyst = -1;
             for (int id : candidates) {
                 String result = describe(crafting.craft(id, 0, 15, 0, false));
-                attempts.add(id + " -> " + result);
+                attempts.add(id + ":" + name(itemArray()[id]) + " -> " + result);
                 if ("265:0x2".equals(result)) {
                     require(catalyst < 0, "More than one Mimicry item doubles smelting iron ore: " + catalyst + "/" + id);
                     catalyst = id;
@@ -58,7 +59,7 @@ public final class LegacyMimicryCatalyst {
         Object item = itemArray()[catalyst];
         GameRegistry.UniqueIdentifier key = (GameRegistry.UniqueIdentifier) GameRegistry.class
                 .getMethod("findUniqueIdentifierFor", type("item.Item")).invoke(null, item);
-        String name = key == null ? "unregistered_name" : key.modId + ":" + key.name;
+        String name = key == null ? name(item) : key.modId + ":" + key.name;
         String other = "gold_ore=" + describe(crafting.craft(catalyst, 0, 14, 0, false))
                 + "; sand=" + describe(crafting.craft(catalyst, 0, 12, 0, false))
                 + "; iron_ingot=" + describe(crafting.craft(catalyst, 0, 265, 0, false))
@@ -77,8 +78,11 @@ public final class LegacyMimicryCatalyst {
         for (int id = 0; id < items.length; id++) {
             if (items[id] == null) continue;
             GameRegistry.UniqueIdentifier key = (GameRegistry.UniqueIdentifier) identifier.invoke(null, items[id]);
+            // Some 1.6 items are plain Item instances with only an unlocalized
+            // name, so neither their class's code source nor FML names own them.
             if (owned(items[id], source) || (id < blocks.length && owned(blocks[id], source))
-                    || key != null && modid.equalsIgnoreCase(key.modId)) {
+                    || key != null && modid.equalsIgnoreCase(key.modId)
+                    || name(items[id]).toLowerCase(Locale.ROOT).contains("mimic")) {
                 ids.add(id);
             }
         }
@@ -93,6 +97,10 @@ public final class LegacyMimicryCatalyst {
                 && source.equals(new File(code.getLocation().toURI()).getCanonicalFile());
     }
 
+    private static String name(Object item) throws Exception {
+        String name = (String) type("item.Item").getMethod("func_77658_a").invoke(item);
+        return name == null ? "" : name;
+    }
     private static Object[] itemArray() throws Exception { return (Object[]) type("item.Item").getField("field_77698_e").get(null); }
     private static int itemId(Object stack) throws Exception { return stack == null ? -1 : stack.getClass().getField("field_77993_c").getInt(stack); }
     private static int count(Object stack) throws Exception { return stack.getClass().getField("field_77994_a").getInt(stack); }
