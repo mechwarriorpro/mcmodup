@@ -57,6 +57,7 @@ final class LegacyMinechemSynthesisFinal {
                 "Could not place original FINAL synthesizer");
         Object placed = w.getMethod("func_72796_p", int.class, int.class, int.class).invoke(world, x, y, z);
         require(tile.isInstance(placed), "Registered block did not produce a synthesizer");
+        verifySurvivalCraft(blockId);
         require((Integer) tile.getMethod("func_70302_i_").invoke(placed) == 20, "FINAL does not have 20 slots");
         long capacity = (Long) tile.getMethod("getEnergyCapacity", direction).invoke(placed, unknown);
         require(capacity == 1_022_220L && (Long) receive.invoke(placed, unknown, 10_000L, false) == 200L && energy(placed) == 0,
@@ -84,7 +85,7 @@ final class LegacyMinechemSynthesisFinal {
                 StringBuilder pattern = new StringBuilder();
                 for (int j = 0; j < ingredients.length; j++) {
                     if (j > 0) pattern.append(',');
-                    varPart(pattern, ingredients[j]);
+                    appendPart(pattern, ingredients[j]);
                 }
                 String status;
                 if (ingredients.length > 9) {
@@ -129,7 +130,7 @@ final class LegacyMinechemSynthesisFinal {
         }
         require(paid > 100, "Too few observed FINAL synthesis extractions");
         return "FINAL synthesis: 20 slots, 9 ghost/9 storage, cap " + capacity + "/packet 200; default automation never withdraws, " +
-                "ready non-top shows only output, journal reload, ghost editing, stone click/shift-click verified; " + recipes.size() + " ordered recipes, " +
+                "ready non-top shows only output, journal reload, ghost editing, stone left/right/shift-click and survival craft verified; " + recipes.size() + " ordered recipes, " +
                 paid + " paid batches, " + shadowed + " shadowed canonical patterns and " + blocked + " grid/power/storage limits";
     }
 
@@ -178,6 +179,34 @@ final class LegacyMinechemSynthesisFinal {
         }
         require(made == 14 && energy(machine) == 0 && get.invoke(machine, 10) == null && get.invoke(machine, 11) == null,
                 "FINAL shift-click did not craft two seven-stone batches: " + made + ", power=" + energy(machine));
+        require(store(machine, new Object[]{make.newInstance(chemical, 5, 13), make.newInstance(chemical, 10, 7)}), "Split stone inputs did not fit");
+        charge(machine, 2500);
+        click.invoke(menu, 0, 1, 0, player);
+        Object split = carried.invoke(inv);
+        require(split != null && key(split).equals("v1:0") && count.getInt(split) == 4 && energy(machine) == 500,
+                "FINAL right-click did not pay for half the seven-item preview, rounded up");
+        Object[] special = (Object[]) tile.getMethod("extractOutput", boolean.class, int.class).invoke(machine, true, 1);
+        require(special.length == 1 && key(special[0]).equals("v1:0") && count.getInt(special[0]) == 7 && energy(machine) == 0,
+                "FINAL separate legacy extraction helper did not deliver the full batch when asked for one item");
+    }
+
+    private void verifySurvivalCraft(int synthesizer) throws Exception {
+        Class<?> gridType = mc("inventory.InventoryCrafting"), managerType = mc("item.crafting.CraftingManager");
+        Object grid = gridType.getConstructor(mc("inventory.Container"), int.class, int.class).newInstance(null, 3, 3);
+        Field raw = gridType.getDeclaredField("field_70466_a");
+        raw.setAccessible(true);
+        Object[] slots = (Object[]) raw.get(grid);
+        Object manager = managerType.getMethod("func_77594_a").invoke(null);
+        Method craft = managerType.getMethod("func_82787_a", gridType, mc("world.World"));
+        for (int i = 0; i < 9; i++) slots[i] = make.newInstance(i == 4 ? 42 : 33, 1, 0);
+        Object manipulator = craft.invoke(manager, grid, world);
+        Object expected = Class.forName("minechem.MinechemItemsGeneration").getField("atomicManipulator").get(null);
+        require(manipulator != null && item.invoke(manipulator) == expected && count.getInt(manipulator) == 1,
+                "FINAL's iron block and eight pistons didn't craft its own Atomic Manipulator");
+        for (int i = 0; i < 9; i++) slots[i] = i == 4 ? manipulator : make.newInstance(i == 1 ? 331 : i == 7 ? 264 : 265, 1, 0);
+        Object result = craft.invoke(manager, grid, world);
+        require(result != null && rawId.getInt(result) == synthesizer && count.getInt(result) == 1,
+                "FINAL did not register the original synthesizer crafting chain");
     }
 
     private void verifyJournal(Object machine, Object target, int x, int y, int z) throws Exception {
@@ -269,7 +298,7 @@ final class LegacyMinechemSynthesisFinal {
         tile.getField("field_70327_n").setInt(machine, z);
         return machine;
     }
-    private void varPart(StringBuilder pattern, Object part) throws Exception {
+    private void appendPart(StringBuilder pattern, Object part) throws Exception {
         if (part == null) pattern.append('_');
         else pattern.append(key(part)).append('x').append(count.getInt(part));
     }
