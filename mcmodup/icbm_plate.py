@@ -15,7 +15,7 @@ from .source_ports import digest
 
 LEGACY_SHA256 = "34a0efec6a1d078d2d0f1b7681c1040d4d68cb096330f4db79bf569a00f75130"
 MOD_ID = "icbm_glass_plate"
-VERSION = "1.4.1.344-preview.5"
+VERSION = "1.4.1.344-preview.6"
 ARCHIVE = f"{MOD_ID}-{VERSION}.jar"
 PACKAGE = "mcmodup.icbmplate"
 KERNEL = f"mcmodup_kernel/{MOD_ID}"
@@ -39,7 +39,10 @@ BUILDING = (
 )
 TEXTURES = {TEXTURE: f"assets/{MOD_ID}/textures/block/glass_pressure_plate.png", **PLATFORM_TEXTURES,
             **{f"assets/icbm/textures/blocks/{old}.png": f"assets/{MOD_ID}/textures/block/{name}.png" for name, old, _, _ in BUILDING}}
-LAUNCH_BLOCKS = {"launcher_base": "iron_block", "launcher_frame": "iron_bars", "launcher_screen": "observer_front", "anti_air_turret": "dispenser_front"}
+LAUNCH_PARTS = {"launcher_base": "iron_block", "launcher_frame": "iron_bars", "launcher_screen": "observer_front"}
+LAUNCH_BLOCKS = {**LAUNCH_PARTS,
+                 **{f"{name}_mk{tier}": texture for name, texture in LAUNCH_PARTS.items() for tier in (2, 3)},
+                 "anti_air_turret": "dispenser_front", "gun_turret": "dropper_front", "laser_turret": "redstone_lamp"}
 LAUNCH_ITEMS = {"training_missile": f"{MOD_ID}:item/training_missile", "condensed_missile": "minecraft:item/firework_rocket",
                 "target_designator": "minecraft:item/compass"}
 TEXTURES["assets/icbm/textures/items/missileModule.png"] = f"assets/{MOD_ID}/textures/item/training_missile.png"
@@ -50,7 +53,8 @@ FEATURES = {
     "Passive platform forwarding, direction order, simulation and no extraction": "passivesentrytransfer",
     "Platform GUI storage, sided extraction and save/load": "storedsentryinventory",
     "Four building blocks with exact recipes, drops and physical properties": "measuredbuildingblocks",
-    "Saved tier-one launcher, practice missile flight and active Sentry interception": "savedlauncherandsentry",
+    "Saved launcher, practice missile flight and active Sentry interception": "savedlauncherandsentry",
+    "Three screen capacities and turret costs, target filters and cooldown": "launchertiersanddefense",
 }
 
 
@@ -132,7 +136,7 @@ def _launch_resources(assets: str, data: str) -> dict[str, str]:
         model = f"{MOD_ID}:block/{name}"
         files[f"{assets}/blockstates/{name}.json"] = _json({"variants": {"": {"model": model}}})
         files[f"{assets}/models/block/{name}.json"] = _json({"parent": "minecraft:block/cube_all", "textures": {"all": f"minecraft:block/{texture}"},
-            **({"render_type": "minecraft:cutout"} if name == "launcher_frame" else {})})
+            **({"render_type": "minecraft:cutout"} if name.startswith("launcher_frame") else {})})
         files[f"{assets}/models/item/{name}.json"] = _json({"parent": model})
         files[f"{data}/loot_table/blocks/{name}.json"] = _json({"type": "minecraft:block", "pools": [{"rolls": 1,
             "conditions": [{"condition": "minecraft:survives_explosion"}], "entries": [{"type": "minecraft:item", "name": f"{MOD_ID}:{name}"}]}]})
@@ -149,6 +153,13 @@ def _launch_resources(assets: str, data: str) -> dict[str, str]:
     ):
         files[f"{data}/recipe/{name}.json"] = _json({"type": "minecraft:crafting_shaped", "pattern": pattern,
             "key": {symbol: {"item": item} for symbol, item in materials.items()}, "result": {"id": f"{MOD_ID}:{name}"}})
+    for part in LAUNCH_PARTS:
+        for suffix, source, upgrade in (("_mk2", "", "minecraft:gold_ingot"), ("_mk3", "_mk2", "minecraft:diamond")):
+            files[f"{data}/recipe/{part}{suffix}.json"] = _json({"type": "minecraft:crafting_shaped", "pattern": [" U ", "ULU", " U "],
+                "key": {"U": {"item": upgrade}, "L": {"item": f"{MOD_ID}:{part}{source}"}}, "result": {"id": f"{MOD_ID}:{part}{suffix}"}})
+    for name, ingredient in (("gun_turret", "minecraft:bow"), ("laser_turret", "minecraft:amethyst_shard")):
+        files[f"{data}/recipe/{name}.json"] = _json({"type": "minecraft:crafting_shapeless", "ingredients": [
+            {"item": f"{MOD_ID}:anti_air_turret"}, {"item": ingredient}], "result": {"id": f"{MOD_ID}:{name}"}})
     return files
 
 
@@ -162,7 +173,7 @@ def _project(workspace: Path) -> None:
                                                         "textures": {"texture": prefix}})
               for name, parent in ((item, "pressure_plate_up"), (item + "_down", "pressure_plate_down"))}
     title = "ICBM Utilities and Building Blocks (Preview)"
-    desc = "Building blocks, glass plate, native first-tier missile launcher and active anti-air Sentry preview. Not a replacement for the exact ICBM add-ons."
+    desc = "Building blocks, glass plate, native missile launchers and active Sentry preview. Not a replacement for the exact ICBM add-ons."
     meta = _metadata(ModMetadata("", description=desc), MOD_ID, title, VERSION, "Original ICBM license applies (local conversion)")
     write_workspace(workspace, {
         "settings.gradle": f"rootProject.name = '{MOD_ID}'\n",
@@ -198,7 +209,7 @@ neoForge.runs.create('gameTestServer') {{
             {"rolls": 1, "entries": [{"type": "minecraft:item", "name": f"{MOD_ID}:{platform}",
                 "conditions": [{"condition": "minecraft:survives_explosion"}]}]}],
         }),
-        "src/main/resources/data/minecraft/tags/block/mineable/pickaxe.json": _json({"replace": False, "values": [f"{MOD_ID}:{platform}", *(f"{MOD_ID}:{name}" for name, _, _, _ in BUILDING if name != "reinforced_glass")]}),
+        "src/main/resources/data/minecraft/tags/block/mineable/pickaxe.json": _json({"replace": False, "values": [f"{MOD_ID}:{platform}", *(f"{MOD_ID}:{name}" for name in LAUNCH_BLOCKS), *(f"{MOD_ID}:{name}" for name, _, _, _ in BUILDING if name != "reinforced_glass")]}),
         f"src/main/resources/data/{MOD_ID}/recipe/{item}.json": _json({"type": "minecraft:crafting_shaped", "category": "redstone",
                 "pattern": ["##"], "key": {"#": {"item": "minecraft:glass"}}, "result": {"id": f"{MOD_ID}:{item}", "count": 1}}),
         f"{assets}/lang/en_us.json": _json({f"block.{MOD_ID}.{item}": "Glass Pressure Plate",
@@ -242,7 +253,7 @@ def prepare(output: Path) -> Path:
                   "neoforge": f"[{NEOFORGE_VERSION}]", "artifact": f"build/libs/{ARCHIVE}", "tasks": ["jar", "runGameTestServer"],
                   "game_report": "build/gametest.xml", "minimum_tests": len(FEATURES), "features": FEATURES,
                   "status": "preview", "limitations": [
-                      "First-tier launcher and anti-air Sentry are native adaptations; only practice and small condensed missile payloads. No other missile tiers, assemblers, station interfaces, payloads, or other turret types.",
+                      "Three matching launch tiers and AA, gun and laser Sentry adapters. Only practice and small condensed payloads; no modular assembler, station interfaces, exotic payloads, or mounted railgun.",
                       "Direct target designator, adjacent frame required, bounded loaded-chunk flight and new recipes/models differ from the original GUI, spread and forced chunks. No original missile physics parity.",
                       "The creative-only platform forwards FE only to native receivers advertising the dedicated Sentry capability. The legacy crafting prerequisites and receivers are not included.",
                       "Separate registry IDs for fresh worlds. Old saves and add-ons expecting ICBM are not supported.",

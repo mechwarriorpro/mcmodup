@@ -7,6 +7,7 @@ import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Blocks;
@@ -70,6 +71,50 @@ public final class LaunchChecks {
         test.assertTrue(flight.isRemoved() && turretPower.getEnergyStored() == 0 && rounds.getStackInSlot(0).getCount() == 1,
                 "Active Sentry did not spend one charge and one round to intercept");
         test.assertTrue(world.getBlockState(target).is(Blocks.GLASS), "Training missile destroyed its marker");
+        test.succeed();
+    }
+
+    @GameTest(template = "launch_room", timeoutTicks = 60)
+    public static void launcherTiersAndDefense(GameTestHelper test) {
+        var world = test.getLevel();
+        var origin = test.absolutePos(new BlockPos(3, 2, 3));
+        int[] capacity = {500_000_000, 800_000_000, 1_000_000_000};
+        int[] distance = {1_000, 2_000, 10_000};
+        for (int i = 0; i < capacity.length; i++) {
+            var pos = origin.east(i * 2);
+            var suffix = i == 0 ? "" : "_mk" + (i + 1);
+            put(test, pos, "launcher_screen" + suffix);
+            var power = world.getCapability(Capabilities.EnergyStorage.BLOCK, pos, Direction.UP);
+            test.assertTrue(power != null && power.getMaxEnergyStored() == capacity[i], "Wrong screen capacity " + suffix);
+            test.assertTrue(!LaunchSystem.LauncherTile.inRange(pos, pos.east(9), i) &&
+                    LaunchSystem.LauncherTile.inRange(pos, pos.east(distance[i] - 1).above(23), i) &&
+                    !LaunchSystem.LauncherTile.inRange(pos, pos.east(distance[i]), i), "Wrong horizontal range " + suffix);
+        }
+        var gunPos = origin.south(4);
+        put(test, gunPos, "gun_turret");
+        var gun = (LaunchSystem.LauncherTile) world.getBlockEntity(gunPos);
+        var power = world.getCapability(Capabilities.EnergyStorage.BLOCK, gunPos, Direction.DOWN);
+        var ammo = world.getCapability(Capabilities.ItemHandler.BLOCK, gunPos, Direction.UP);
+        test.assertTrue(ammo != null && power != null && ammo.insertItem(0, new ItemStack(Items.IRON_NUGGET, 2), false).isEmpty(), "Missing gun inputs");
+        power.receiveEnergy(1_200, false);
+        var cow = test.spawn(EntityType.COW, new BlockPos(4, 2, 7));
+        var zombie = test.spawn(EntityType.ZOMBIE, new BlockPos(7, 2, 7));
+        float start = zombie.getHealth();
+        LaunchSystem.LauncherTile.tick(world, gunPos, world.getBlockState(gunPos), gun);
+        LaunchSystem.LauncherTile.tick(world, gunPos, world.getBlockState(gunPos), gun);
+        test.assertTrue(zombie.getHealth() < start && cow.getHealth() == cow.getMaxHealth() && power.getEnergyStored() == 600 &&
+                ammo.getStackInSlot(0).getCount() == 1, "Gun did not filter hostile mobs or obey its paid cooldown");
+        var laserPos = origin.south(7);
+        put(test, laserPos, "laser_turret");
+        var laser = (LaunchSystem.LauncherTile) world.getBlockEntity(laserPos);
+        var supply = world.getCapability(Capabilities.EnergyStorage.BLOCK, laserPos, Direction.UP);
+        test.assertTrue(supply != null && world.getCapability(Capabilities.ItemHandler.BLOCK, laserPos, Direction.UP) == null, "Laser should not expose an ammo slot");
+        supply.receiveEnergy(8_000, false);
+        float remaining = zombie.getHealth();
+        // Only the gun used the target this tick; reset invulnerability to exercise the laser separately.
+        zombie.invulnerableTime = 0;
+        LaunchSystem.LauncherTile.tick(world, laserPos, world.getBlockState(laserPos), laser);
+        test.assertTrue(zombie.getHealth() < remaining && supply.getEnergyStored() == 0, "Laser did not spend FE on its hostile target");
         test.succeed();
     }
 

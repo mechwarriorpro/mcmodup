@@ -16,6 +16,7 @@ from pack_release_smoke import boot
 from updater_sample import fingerprints, run
 from voltz_legacy import FIXTURES, FORGE_SHA256, VOLTZ_SHA256, probe, unpack
 
+from mcmodup.icbm_plate import launch_checks
 from mcmodup.audit import ModMetadata
 from mcmodup.classfiles import read_class
 from mcmodup.icbm_plate import ARCHIVE, FEATURES, KERNEL, LEGACY_SHA256, MOD_ID, PLATFORM, TEXTURES, building_checks, checks, platform_checks
@@ -70,7 +71,7 @@ def modern(root: Path) -> None:
     assert fingerprints(source, target) == before
     boot(out, report["instance_runtime"]["launch"]["unix"])
     integration(root / "integration", out)
-    note("Staged executable preview passed", "Five source GameTests and six staged-JAR GameTests passed. Four Core building blocks matched recipes, drops and properties. The exact glass plate and passive "
+    note("Staged executable preview passed", f"{len(FEATURES)} source and eight staged-JAR GameTests passed. Four Core building blocks matched recipes, drops and properties. The exact glass plate and passive "
          "Sentry platform methods ran on NeoForge. Native CB Multipart read 0 → 15 → 0. The platform forwarded 5 then 12 FE with no retained "
          "charge and restored 20-slot storage. Both native dependencies were unchanged. Not full ICBM.")
 
@@ -111,6 +112,8 @@ def integration(project: Path, staged: Path) -> None:
         f"{java}/PlateChecks.java": checks(check).replace("package mcmodup.icbmplate;", f"package {package};"),
         f"{java}/PlatformChecks.java": platform_checks(package, check),
         f"{java}/BuildingChecks.java": building_checks(package, check),
+        f"{java}/LaunchChecks.java": launch_checks(package, check),
+        f"src/main/resources/data/{check}/structure/launch_room.nbt": empty_test_structure(17),
         f"{java}/PlateMultipartSmoke.java": (FIXTURES / "PlateMultipartSmoke.java").read_bytes(),
         "build.gradle": _build_gradle(check, package, "1.0.0") + f"""
 dependencies {{ compileOnly fileTree(dir: 'run/mods', include: ['*.jar']) }}
@@ -123,7 +126,7 @@ neoForge.runs.create('gameTestServer') {{
     })
     shutil.copytree(staged / "mods", project / "run/mods")
     result = run_gradle(project, "runGameTestServer")
-    assert "All 6 required tests passed" in result, result[-4000:]
+    assert "All 8 required tests passed" in result, result[-4000:]
 
 
 if __name__ == "__main__":
