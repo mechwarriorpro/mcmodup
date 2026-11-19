@@ -2,6 +2,7 @@
 
 import os
 from pathlib import Path
+import shutil
 import subprocess
 from zipfile import ZipFile
 
@@ -23,14 +24,15 @@ def unpack(pack: ZipFile, member: str, path: Path) -> None:
     path.write_bytes(pack.read(member))
 
 
-def probe(root: Path, name: str, originals: dict[str, str], configs: tuple[str, ...], marker: str) -> str:
+def probe(root: Path, name: str, originals: dict[str, str], configs: tuple[str, ...], marker: str, *,
+          supplied: dict[str, tuple[Path, str]] | None = None, providers: tuple[str, ...] = PROVIDERS) -> str:
     source = root / "voltz.zip"
     assert file_digest(source) == VOLTZ_SHA256
     server = root / (name + "-server")
     server.mkdir()
     exact = {"Voltz.jar": FORGE_SHA256, "minecraft_server.1.6.4.jar": SERVER_SHA256, **originals}
     with ZipFile(source) as pack:
-        for member in (*exact, *PROVIDERS):
+        for member in (*exact, *providers):
             unpack(pack, member, server / member)
         for member in pack.namelist():
             if member.startswith("libraries/") and member.endswith(".jar"):
@@ -42,6 +44,15 @@ def probe(root: Path, name: str, originals: dict[str, str], configs: tuple[str, 
             path = f"config/{config_name}.cfg"
             unpack(pack, path, server / path)
         (server / "config/modstats.cfg").write_bytes(config)
+    for member, (path, checksum) in (supplied or {}).items():
+        relative = Path(member)
+        assert relative.parts[:1] == ("mods",) and len(relative.parts) > 1 and ".." not in relative.parts, member
+        assert not (server / relative).exists(), member
+        assert file_digest(path) == checksum, f"Unexpected original {member}"
+        destination = server / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(path, destination)
+        exact[member] = checksum
     for path, sha in exact.items():
         assert file_digest(server / path) == sha, f"Unexpected original {path}"
     classes = root / (name + "-classes")

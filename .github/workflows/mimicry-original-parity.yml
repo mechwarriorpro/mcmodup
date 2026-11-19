@@ -1,0 +1,48 @@
+name: Observe the exact Mimicry catalyst on Forge
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/mimicry-original-parity.yml'
+      - 'tests/mimicry_original_smoke.py'
+      - 'tests/voltz_legacy.py'
+      - 'tests/legacy_recipe_fixture.py'
+      - 'tests/mixed_legacy_pack_smoke.py'
+      - 'tests/fixtures/LegacyMimicryCatalyst.java'
+
+permissions:
+  contents: read
+
+jobs:
+  original:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      PYTHONPATH: .:tests
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.11'
+      - name: Pin the original ZIP, 1.6.4 Forge runtime, and Java 7
+        shell: bash
+        run: |
+          root="$RUNNER_TEMP/mimicry-original"
+          mkdir -p "$root"
+          cd "$root"
+          download() {
+            curl --proto '=https' --proto-redir '=https' --fail --location --silent --show-error \
+              --retry 2 --max-time 120 --max-filesize "$4" --output "$1" "$2"
+            printf '%s  %s\n' "$3" "$1" | sha256sum --check
+          }
+          jdk=zulu7.56.0.11-ca-jdk7.0.352-linux_x64
+          download "$jdk.tar.gz" "https://cdn.azul.com/zulu/bin/$jdk.tar.gz" 8a7387c1ed151474301b6553c6046f865dc6c1e1890bcf106acc2780c55727c8 68604442
+          tar -xf "$jdk.tar.gz"
+          echo "JAVA_HOME=$root/$jdk" >> "$GITHUB_ENV"
+          download voltz.zip https://raw.githubusercontent.com/TechnicPack/Technic/8c4e20f9225bcd6612fca4cb29c53366317d3e13/servers/voltz/Voltz_Server_v3.0.0c.zip 2eda607746a22edbf45612243adce37a876251e36d46c692a48344fe98eec84e 76658094
+          download 'Mimicry 1.6.4_965_1.3.9_final.zip' https://edge.forgecdn.net/files/2214/561/Mimicry%201.6.4_965_1.3.9_final.zip 4a3d6e72be0ae0f8929c11890dcf96b49750db48908c5bd5b5957d2d9542eada 128106
+      - name: Exercise the original catalyst in the real crafting manager
+        run: python -m mimicry_original_smoke "$RUNNER_TEMP/mimicry-original"
