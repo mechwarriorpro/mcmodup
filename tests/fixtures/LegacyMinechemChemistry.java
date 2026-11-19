@@ -362,6 +362,24 @@ final class LegacyMinechemChemistry {
             require(size.getInt(taken) == 0, ".394 food use did not consume one item");
         }
         verifySpeed(player, old ? 1000 : 400);
+        foodRecipeSurvey(grid, set, match, manager, bread, enumType);
+    }
+
+    private void foodRecipeSurvey(Object grid, Method set, Method match, Object manager, Object bread, Class<?> enumType) throws Exception {
+        Map<String, String> rows = new TreeMap<String, String>();
+        List<?> values;
+        if (old) values = java.util.Arrays.asList(enumType.getEnumConstants());
+        else values = new ArrayList<Object>(((Map<?, ?>) staticField(Class.forName("minechem.potion.PharmacologyEffectRegistry"), "effects")).keySet());
+        set.invoke(grid, 0, bread);
+        for (Object molecule : values) {
+            int id = (Integer) enumType.getMethod("id").invoke(molecule);
+            set.invoke(grid, 1, makeStack(molecules, 1, id));
+            Object result = match.invoke(manager, grid, world);
+            if (result == null || itemOf.invoke(result) != itemOf.invoke(bread)) continue;
+            Object tag = stack.getMethod("func_77978_p").invoke(result);
+            if (tag != null && (Boolean) tag.getClass().getMethod("func_74767_n", String.class).invoke(tag, "minechem.isPoisoned")) rows.put("m" + id, "yes");
+        }
+        output("minechem-foods.txt", rows);
     }
 
     private void verifySpeed(Object entity, int duration) throws Exception {

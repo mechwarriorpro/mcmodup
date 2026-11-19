@@ -2,12 +2,19 @@ name: Compare exact Minechem releases on Forge
 
 on:
   workflow_dispatch:
+    inputs:
+      capture_chemistry:
+        type: boolean
+        default: false
+        description: Include compressed raw chemistry observations in job annotations
   push:
     paths:
       - '.github/workflows/minechem-original-parity.yml'
       - 'mcmodup/machines.py'
       - 'mcmodup/minechem_final_synthesis.py'
-      - 'mcmodup/templates/minechem/final-synthesis.txt'
+      - 'mcmodup/templates/minechem/final-*.txt'
+      - 'mcmodup/minechem_materials.py'
+      - 'mcmodup/minechem_effects.py'
       - 'mcmodup/templates/minechem/release394-*.txt'
       - 'tests/minechem_original_smoke.py'
       - 'tests/fixtures/LegacyMinechemDecomposer.java'
@@ -34,6 +41,7 @@ jobs:
         minecraft: [1.6.4, 1.7.10]
     env:
       PYTHONPATH: .:tests
+      MCMODUP_CAPTURE_CHEMISTRY: ${{ inputs.capture_chemistry && '1' || '0' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

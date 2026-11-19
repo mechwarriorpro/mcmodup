@@ -31,7 +31,7 @@ final class Synthesis394Menu extends AbstractContainerMenu {
     private Synthesis394Menu(int id, Inventory player, Synthesizer394.Tile machine, ItemStackHandler display, ItemStackHandler storage, JournalSlot journal) {
         super(Synthesizer394.MENU.get(), id);
         this.machine = machine;
-        state = machine == null ? new SimpleContainerData(5) : new ContainerData() {
+        state = machine == null ? new SimpleContainerData(5 + GHOST_SLOTS) : new ContainerData() {
             @Override public int get(int index) {
                 return switch (index) {
                     case 0 -> machine.power.getEnergyStored() & 0xffff;
@@ -39,11 +39,11 @@ final class Synthesis394Menu extends AbstractContainerMenu {
                     case 2 -> machine.cost() & 0xffff;
                     case 3 -> machine.cost() >>> 16;
                     case 4 -> machine.ready() ? 1 : 0;
-                    default -> 0;
+                    default -> machine.ghostCount(index - 5);
                 };
             }
             @Override public void set(int index, int value) {}
-            @Override public int getCount() { return 5; }
+            @Override public int getCount() { return 5 + GHOST_SLOTS; }
         };
         addDataSlots(state);
         for (int i = 0; i <= OUTPUT; ++i) {
@@ -64,6 +64,7 @@ final class Synthesis394Menu extends AbstractContainerMenu {
 
     int energy() { return (state.get(1) << 16) | (state.get(0) & 0xffff); }
     int cost() { return (state.get(3) << 16) | (state.get(2) & 0xffff); }
+    int ghostCount(int slot) { return state.get(5 + slot); }
     boolean ready() { return state.get(4) != 0; }
 
     @Override public boolean stillValid(Player player) {

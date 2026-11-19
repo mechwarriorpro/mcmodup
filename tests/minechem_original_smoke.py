@@ -13,6 +13,7 @@ from zipfile import ZipFile
 from legacy_recipe_fixture import java8, legacy_command, prepare, run_server
 from mixed_legacy_pack_smoke import note
 from mcmodup.minechem_final_synthesis import TRACE
+from mcmodup.minechem_materials import observations
 from mcmodup.machines import SYNTHESIS_394_COLLISION, release394_synthesis_trace, release394_trace
 from mcmodup.runtime import file_digest
 
@@ -82,12 +83,7 @@ def original(root: Path, version: str) -> None:
         raise
     assert file_digest(server / "mods" / name) == checksum
     note(f"Original Minechem decomposer on Forge {version}", evidence)
-    for key in ("all-decomposition", "pharmacology", "all-synthesis"):
-        path = server / f"minechem-{key}.txt"
-        if path.exists() and os.environ.get("GITHUB_ACTIONS") == "true":
-            data = base64.b64encode(zlib.compress(path.read_bytes(), level=9)).decode("ascii")
-            for offset in range(0, len(data), 3000):
-                note(f"Minechem {version} {key} {offset // 3000}", data[offset:offset+3000])
+    verify_chemistry(server, version)
     shape = (server / "minechem-blueprints.txt").read_text(encoding="utf-8")
     expected_shape = Path(__file__).resolve().parents[1] / "mcmodup/templates/minechem/reactor-blueprints.txt"
     assert shape.splitlines() == expected_shape.read_text(encoding="utf-8").splitlines(), "Blueprint geometry in the original binary changed"
@@ -117,7 +113,50 @@ def original(root: Path, version: str) -> None:
                                             "; unexpected " + str(sorted(set(synthesis) - set(alternatives[0]))[:5]))
         selected = first if synthesis == alternatives[0] else alternate
         note("Pinned .394 synthesis trace re-observed", f"{len(expected_synthesis)} stable ghost-and-extraction rows matched; "
-             f"the ambiguous pattern selected {selected}. Both observed outcomes ({first}/{alternate}) are excluded from the port.")
+             f"the ambiguous pattern selected {selected}. The port lets players explicitly select either output ({first}/{alternate}).")
+
+
+def normalize_material(value: str) -> str:
+    # Map/Hashtable iteration order isn't part of .394's product identity.
+    if value.startswith("R"):
+        base, *refs = value[1:].split("|")
+        return "R" + normalize_material(base) + "|" + "|".join(sorted(refs))
+    if value.startswith(("S", "C")):
+        roll, _, values = value.partition("!")
+        return roll + "!" + "|".join(normalize_material(part) for part in values.split("|"))
+    return ",".join(sorted(value.split(",")))
+
+
+def verify_chemistry(server: Path, version: str) -> None:
+    final = version == "1.6.4"
+    profile = "final" if final else "release394"
+    table = {"all-decomposition": "materials", "pharmacology": "effects", "foods": "foods"}
+    if not final:
+        table["all-synthesis"] = "synthesis-registry"
+    for trace, target in table.items():
+        path = server / f"minechem-{trace}.txt"
+        if os.environ.get("MCMODUP_CAPTURE_CHEMISTRY") == "1":
+            data = base64.b64encode(zlib.compress(path.read_bytes(), level=9)).decode("ascii")
+            for offset in range(0, len(data), 3000):
+                note(f"Minechem {version} {trace} {offset // 3000}", data[offset:offset + 3000])
+        actual = dict(line.split("=", 1) for line in path.read_text(encoding="utf-8").splitlines())
+        if not final and trace == "foods":
+            expected = {key: "yes" for key in observations("release394-effects.txt")}
+        else:
+            expected = observations(f"{profile}-{target}.txt")
+        if trace == "all-decomposition":
+            if final:
+                # The unported fractional fallback may return extra sample results.
+                actual = {key: value for key, value in actual.items() if key in expected}
+            else:
+                # Optional, unported Minechem bucket outputs depend on boot-time registration order.
+                actual.pop("citem.minechemBucket:0", None)
+                expected.pop("citem.minechemBucket:0", None)
+            actual = {key: normalize_material(value) for key, value in actual.items()}
+            expected = {key: normalize_material(value) for key, value in expected.items()}
+        mismatch = [key for key in sorted(expected.keys() | actual.keys()) if expected.get(key) != actual.get(key)]
+        assert not mismatch, f"{version} {trace} differs at {[(key, expected.get(key), actual.get(key)) for key in mismatch[:12]]}"
+        note(f"Pinned Minechem {version} {target}", f"{len(expected)} original rows re-observed")
 
 
 if __name__ == "__main__":

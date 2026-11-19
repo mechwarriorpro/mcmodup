@@ -45,6 +45,7 @@ final class Synthesizer394 extends BaseEntityBlock {
     private static final DeferredRegister<BlockEntityType<?>> ENTITIES = DeferredRegister.create(Registries.BLOCK_ENTITY_TYPE, CatalogPort.MOD_ID);
     private static final DeferredRegister<MenuType<?>> MENUS = DeferredRegister.create(Registries.MENU, CatalogPort.MOD_ID);
     static final int STORAGE_SLOTS = 18, GHOST_SLOTS = 9, CAPACITY = 100_000;
+    private static final int MAX_TEMPLATE_COUNT = GHOST_SLOTS * 64;
 
     private static final DeferredBlock<Synthesizer394> BLOCK =
         BLOCKS.register("synthesizer", () -> new Synthesizer394(Properties.of().strength(3.5F).requiresCorrectToolForDrops()));
@@ -126,6 +127,7 @@ final class Synthesizer394 extends BaseEntityBlock {
         };
         // The result template and ghost pattern never belong to extractable storage.
         final ItemStackHandler display = new ItemStackHandler(GHOST_SLOTS + 1);
+        private final int[] ghostCounts = new int[GHOST_SLOTS];
         final Power power = new Power();
         private Synthesis394Rules.Rule selected;
         private int cursor = -1;
@@ -182,7 +184,7 @@ final class Synthesizer394 extends BaseEntityBlock {
 
         void clear() {
             preferredResult = "";
-            for (int i = 0; i < GHOST_SLOTS; ++i) display.setStackInSlot(i, ItemStack.EMPTY);
+            for (int i = 0; i < GHOST_SLOTS; ++i) setGhost(i, ItemStack.EMPTY);
             refresh();
         }
 
@@ -194,24 +196,33 @@ final class Synthesizer394 extends BaseEntityBlock {
 
         private void apply(Synthesis394Rules.Rule rule) {
             preferredResult = rule.result().id();
-            for (int i = 0; i < GHOST_SLOTS; ++i) display.setStackInSlot(i, rule.pattern().get(i).stack());
+            for (int i = 0; i < GHOST_SLOTS; ++i) setGhost(i, rule.pattern().get(i).stack());
             refresh();
         }
 
         void edit(int slot, ItemStack held, boolean single) {
             if (slot < 0 || slot >= GHOST_SLOTS || (!held.isEmpty() && !chemical(held))) return;
-            var before = display.getStackInSlot(slot);
+            var before = ghostStack(slot);
             var updated = ItemStack.EMPTY;
             if (held.isEmpty()) {
                 if (single && before.getCount() > 1) updated = before.copyWithCount(before.getCount() - 1);
             } else {
                 int count = single ? (before.is(held.getItem()) ? before.getCount() + 1 : 1) : held.getCount();
-                updated = new ItemStack(held.getItem(), Math.min(count, held.getMaxStackSize()));
+                updated = new ItemStack(held.getItem(), Math.min(count, MAX_TEMPLATE_COUNT));
             }
-            display.setStackInSlot(slot, updated);
+            setGhost(slot, updated);
             preferredResult = "";
             refresh();
         }
+
+        private void setGhost(int slot, ItemStack stack) {
+            ghostCounts[slot] = stack.getCount();
+            // Keep the on-wire stack legal even for 72 carbon tubes in one ghost slot.
+            display.setStackInSlot(slot, stack.getCount() > stack.getMaxStackSize() ? stack.copyWithCount(1) : stack);
+        }
+
+        private ItemStack ghostStack(int slot) { return display.getStackInSlot(slot).copyWithCount(ghostCounts[slot]); }
+        int ghostCount(int slot) { return ghostCounts[slot]; }
 
         int cost() { return selected == null ? 0 : selected.cost(); }
         boolean ready() { return plan() != null; }
@@ -219,7 +230,7 @@ final class Synthesizer394 extends BaseEntityBlock {
 
         private void refresh() {
             var ghosts = NonNullList.withSize(GHOST_SLOTS, ItemStack.EMPTY);
-            for (int i = 0; i < GHOST_SLOTS; ++i) ghosts.set(i, display.getStackInSlot(i));
+            for (int i = 0; i < GHOST_SLOTS; ++i) ghosts.set(i, ghostStack(i));
             cursor = -1;
             selected = null;
             var rows = Synthesis394Rules.ALL;
@@ -274,6 +285,7 @@ final class Synthesizer394 extends BaseEntityBlock {
             tag.put("chemical_storage", saveStacks(storage, STORAGE_SLOTS, lookup));
             tag.putString("preferred_result", preferredResult);
             tag.put("templates", saveStacks(display, GHOST_SLOTS, lookup));
+            tag.putIntArray("template_counts", ghostCounts);
             tag.put("journal", journal.getStackInSlot(0).saveOptional(lookup));
         }
 
@@ -282,6 +294,12 @@ final class Synthesizer394 extends BaseEntityBlock {
             power.restore(tag.getInt("energy"));
             loadStacks(storage, STORAGE_SLOTS, tag.getCompound("chemical_storage"), lookup);
             loadStacks(display, GHOST_SLOTS, tag.getCompound("templates"), lookup);
+            var amounts = tag.getIntArray("template_counts");
+            for (int i = 0; i < GHOST_SLOTS; i++) {
+                var icon = display.getStackInSlot(i);
+                int count = amounts.length == GHOST_SLOTS ? Math.clamp(amounts[i], 0, MAX_TEMPLATE_COUNT) : icon.getCount();
+                setGhost(i, icon.copyWithCount(count));
+            }
             preferredResult = tag.getString("preferred_result");
             loading = true;
             try {

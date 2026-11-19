@@ -65,7 +65,15 @@ public final class Synthesis394Checks {
             int index = 0;
             for (int slot = 0; slot < pattern.length; ++slot) {
                 var part = part(pattern[slot]);
-                checkStack(test, machine.menu().getSlot(slot).getItem(), part, "wrong ghost slot " + slot + " for " + recipe[0]);
+                var icon = part.getCount() > part.getMaxStackSize() ? part.copyWithCount(1) : part;
+                checkStack(test, machine.menu().getSlot(slot).getItem(), icon, "wrong ghost slot " + slot + " for " + recipe[0]);
+                try {
+                    var count = machine.menu().getClass().getDeclaredMethod("ghostCount", int.class);
+                    count.setAccessible(true);
+                    test.assertTrue((Integer) count.invoke(machine.menu(), slot) == part.getCount(), "wrong virtual count for " + recipe[0]);
+                } catch (ReflectiveOperationException e) {
+                    throw new AssertionError(e);
+                }
                 for (int left = part.getCount(); left > 0;) {
                     int count = Math.min(left, part.getMaxStackSize());
                     test.assertTrue(machine.input().insertItem(index++, part.copyWithCount(count), false).isEmpty(), "Test could not load " + part);

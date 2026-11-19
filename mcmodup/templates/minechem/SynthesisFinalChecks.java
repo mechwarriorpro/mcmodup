@@ -259,7 +259,7 @@ public final class SynthesisFinalChecks {
             for (int slot = 0; slot < 9; slot++) test.assertTrue(m.input().getStackInSlot(slot).isEmpty(), "Storage not consumed on row " + i);
             paid++;
         }
-        test.assertTrue(TRACE.length == 301 && paid == 277 && shadowed == 22 && unavailable == 2, "Unexpected FINAL trace coverage");
+        test.assertTrue(TRACE.length == 301 && paid == 278 && shadowed == 22 && unavailable == 1, "Unexpected FINAL trace coverage");
         test.succeed();
     }
 

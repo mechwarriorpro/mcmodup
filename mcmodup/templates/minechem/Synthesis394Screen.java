@@ -62,5 +62,11 @@ public final class Synthesis394Screen extends AbstractContainerScreen<Synthesis3
         super.renderLabels(gui, x, y);
         gui.drawString(font, Component.translatable("gui.@NAMESPACE@.synthesis_power", menu.energy()), 8, 15, 0x404040, false);
         if (menu.cost() != 0) gui.drawString(font, Component.translatable("gui.@NAMESPACE@.synthesis_cost", menu.cost()), 8, 101, 0x404040, false);
+        for (int i = 0; i < Synthesis394Menu.OUTPUT; i++) {
+            var slot = menu.getSlot(i);
+            var icon = slot.getItem();
+            int count = menu.ghostCount(i);
+            if (!icon.isEmpty() && count > icon.getMaxStackSize()) gui.renderItemDecorations(font, icon, slot.x, slot.y, Integer.toString(count));
+        }
     }
 }

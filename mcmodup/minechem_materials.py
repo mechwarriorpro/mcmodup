@@ -181,6 +181,6 @@ def synthesis394(namespace: str, ids: dict[str, str]):
         if shape not in {"shaped", "shapeless"} or not 1 <= count <= 64 or not 1 <= cost <= 100_000 or not 1 <= len(parts) <= 9 or not any(parts):
             raise InputError(f"Invalid .394 synthesis row {key}={row}")
         output = item_id(key, namespace, ids)
-        if not output or any(part and part[1] > 64 for part in parts):
+        if not output or any(part and part[1] > 9 * 64 for part in parts):
             continue
         yield output, count, cost, shape == "shaped", tuple(parts)
