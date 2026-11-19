@@ -7,6 +7,7 @@ import cpw.mods.fml.common.event.FMLServerStartedEvent;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -78,8 +79,9 @@ public final class LegacyGeoRockSurvey {
             }
             require(placed == 153 && natural.size() == 17 && crafts == 153, "The original rock families changed");
             String generated = rockGeneration(world, worldType, place, getId, getMeta, natural);
+            String terrain = terrainRules(world, worldType, place, getId, getMeta, x, z, rocks);
             System.out.println("MCMODUP_GEO_PASS " + rocks.length + " rock types; " + shapes.length + " shapes; "
-                    + placed + " exact placements and drops; " + crafts + " crafting or smelting cases | " + specs + " | " + generated);
+                    + placed + " exact placements and drops; " + crafts + " crafting or smelting cases | " + specs + " | " + generated + " | " + terrain);
         } catch (Throwable failure) {
             Throwable cause = failure.getCause() == null ? failure : failure.getCause();
             System.err.println("MCMODUP_GEO_FAIL " + cause + " (probe: " + failure.getStackTrace()[0] + ")");
@@ -107,7 +109,8 @@ public final class LegacyGeoRockSurvey {
         for (int x = first; x < last; x++) for (int z = first; z < last; z++) for (int y = 4; y < maxHeight; y++) {
             place.invoke(world, x, y, z, (x == 259 && (z == 263 || z == 265)) ? ore : stone, 0, 2);
         }
-        generate.invoke(instance, new Random(seed), chunk, chunk, world, provider, provider);
+        OriginRandom random = new OriginRandom(seed);
+        generate.invoke(instance, random, chunk, chunk, world, provider, provider);
         Map<String, Integer> counts = new LinkedHashMap<String, Integer>();
         int changed = 0, untouched = 0;
         for (int x = first; x < last; x++) for (int z = first; z < last; z++) for (int y = 4; y < maxHeight; y++) {
@@ -123,7 +126,93 @@ public final class LegacyGeoRockSurvey {
         }
         require(counts.size() >= 4 && changed > 0 && untouched > changed, "No credible original rock veins: " + counts);
         return "seed=" + seed + "; center chunk=" + chunk + "," + chunk + "; original replaced " + changed
-                + " stones; left " + untouched + " cells including both ore pillars; counts=" + counts;
+                + " stones; left " + untouched + " cells including both ore pillars; counts=" + counts + "; direct generator RNG bounds=" + random.bounds;
+    }
+
+    /** Inspect the original generator's settings and exercise its origin predicate in a controlled chunk. */
+    private static String terrainRules(Object world, Class<?> worldType, Method place, Method getId, Method getMeta,
+                                       int x, int z, Object[] rocks) throws Exception {
+        Class<?> generator = Class.forName("Reika.GeoStrata.World.RockGenerator");
+        Object instance = generator.newInstance();
+        Class<?> rocksType = ((Enum<?>) rocks[0]).getDeclaringClass();
+        Method density = getter(generator, "getDensityFactor", rocksType);
+        Method dimension = getter(generator, "canGenInDimension", int.class);
+        Method canGen = rocksType.getMethod("canGenerateAt", worldType, int.class, int.class, int.class, Random.class);
+        int base = generator.getField("BASE_GEN").getInt(null), size = generator.getField("VEIN_SIZE").getInt(null);
+        require(base > 0 && size > 0, "Missing original rock generator parameters");
+        Map<Integer, Boolean> dimensions = new LinkedHashMap<Integer, Boolean>();
+        for (int id : new int[]{0, -1, 1, 7, 42}) dimensions.put(id, (Boolean) dimension.invoke(instance, id));
+        Object chunk = worldType.getMethod("func_72938_d", int.class, int.class).invoke(world, x, z);
+        Method setBiomes = chunk.getClass().getMethod("func_76616_a", byte[].class);
+        byte[] previous = ((byte[]) chunk.getClass().getMethod("func_76605_m").invoke(chunk)).clone();
+        Class<?> biomeType = mc("world.biome.BiomeGenBase");
+        Method getBiome = worldType.getMethod("func_72807_a", int.class, int.class);
+        Field biomeId = biomeType.getField("field_76756_M");
+        Object[] biomes = {biomeType.getField("field_76772_c").get(null), biomeType.getField("field_76769_d").get(null),
+                           biomeType.getField("field_76774_n").get(null)};
+        Class<?> block = mc("block.Block");
+        int lava = block.getField("field_71990_ca").getInt(block.getField("field_71938_D").get(null));
+        Map<String, String> results = new LinkedHashMap<String, String>();
+        try {
+            for (Object rock : rocks) {
+                int lo = rocksType.getField("minY").getInt(rock), hi = rocksType.getField("maxY").getInt(rock);
+                int y = Math.max(4, (lo + hi) / 2);
+                int old = (Integer) getId.invoke(world, x + 1, y, z);
+                int metadata = (Integer) getMeta.invoke(world, x + 1, y, z);
+                StringBuilder predicates = new StringBuilder();
+                try {
+                    place.invoke(world, x + 1, y, z, 0, 0, 2);
+                    for (Object biome : biomes) {
+                        byte[] all = new byte[previous.length];
+                        Arrays.fill(all, (byte) biomeId.getInt(biome));
+                        setBiomes.invoke(chunk, (Object) all);
+                        require(getBiome.invoke(world, x, z) == biome,
+                            "Could not select original sample biome");
+                        predicates.append(allowed(canGen, rock, world, x, y, z) ? '1' : '0');
+                    }
+                    byte[] plains = new byte[previous.length];
+                    Arrays.fill(plains, (byte) biomeId.getInt(biomes[0]));
+                    setBiomes.invoke(chunk, (Object) plains);
+                    place.invoke(world, x + 1, y, z, lava, 0, 2);
+                    predicates.append(allowed(canGen, rock, world, x, y, z) ? '1' : '0');
+                    require(!allowed(canGen, rock, world, x, lo - 1, z) && !allowed(canGen, rock, world, x, hi + 1, z),
+                        "Rock origin was accepted outside the recorded height range: " + rock);
+                } finally {
+                    place.invoke(world, x + 1, y, z, old, metadata, 2);
+                }
+                float rarity = rocksType.getField("rarity").getFloat(rock);
+                double factor = ((Number) density.invoke(instance, rock)).doubleValue();
+                results.put(((Enum<?>) rock).name(), factor + "/" + (int) Math.ceil(base * rarity * factor) + "/" + predicates);
+            }
+        } finally {
+            setBiomes.invoke(chunk, (Object) previous);
+        }
+        return "base=" + base + "; vein size=" + size + "; dimensions=" + dimensions
+            + "; density/effective ceiling/plains-desert-snow-lava=" + results;
+    }
+
+    private static boolean allowed(Method predicate, Object rock, Object world, int x, int y, int z) throws Exception {
+        return (Boolean) predicate.invoke(rock, world, x, y, z, new Random(237));
+    }
+
+    private static Method getter(Class<?> owner, String name, Class<?> arg) throws Exception {
+        Method method = owner.getDeclaredMethod(name, arg);
+        method.setAccessible(true);
+        return method;
+    }
+
+    private static final class OriginRandom extends Random {
+        private static final long serialVersionUID = 1L;
+        final Map<Integer, Integer> bounds = new LinkedHashMap<Integer, Integer>();
+        OriginRandom(long seed) { super(seed); }
+        @Override public int nextInt(int bound) {
+            StackTraceElement[] callers = new Throwable().getStackTrace();
+            if (callers.length > 1 && callers[1].getClassName().equals("Reika.GeoStrata.World.RockGenerator")) {
+                Integer seen = bounds.get(bound);
+                bounds.put(bound, seen == null ? 1 : seen + 1);
+            }
+            return super.nextInt(bound);
+        }
     }
 
     private static Object constant(Object[] constants, String name) {

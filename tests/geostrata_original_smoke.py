@@ -20,10 +20,11 @@ def run(root: Path) -> None:
         f"mods/{GEOSTRATA.filename}": (original, GEOSTRATA.sha256),
         f"mods/{DRAGONAPI}": (root / DRAGONAPI, DRAGONAPI_SHA256),
     })
-    cases, properties, generated = evidence.split(" | ")
+    cases, properties, generated, terrain = evidence.split(" | ")
     note("Exact GeoStrata v23b rock survey on Forge", cases)
     note("Original hardness, blast resistance, pickaxe tier, height bounds and rarity", properties)
     note("Exact GeoStrata controlled stone replacement", generated)
+    note("Exact GeoStrata origin rules and vein settings", terrain)
     with ZipFile(original) as archive:
         textures = sorted(path for path in archive.namelist()
                           if path.lower().endswith(".png") and any(name in path.lower() for name in ("granite", "opal", "/connected/")))
