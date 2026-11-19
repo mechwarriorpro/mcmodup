@@ -107,12 +107,20 @@ final class LegacyMinechemReactors {
             set(combiner, 1, chemical(1, 2));
             set(combiner, 2, chemical(1, 2));
             if (old) set(combiner, 0, stack.getConstructor(int.class, int.class, int.class).newInstance(399, 1, 0));
-            else fill(combiner, 200);
+            else {
+                int need = (Integer) combiner.getClass().getMethod("getEnergyNeeded").invoke(combiner);
+                boolean valid = (Boolean) combiner.getClass().getMethod("inputsCanBeFused").invoke(combiner);
+                require(need == 200 && valid, "The .394 fusion inputs (H + H) had need=" + need + ", valid=" + valid);
+                fill(combiner, 200);
+            }
             tick(combiner);
             if (!old) {
                 require(get(combiner, 3) == null && energy(combiner) == 200, ".394 fusion did not wait for strictly more than its cost");
                 fill(combiner, 1);
                 tick(combiner);
+                boolean ready = (Boolean) combiner.getClass().getMethod("func_70300_a", mc("entity.player.EntityPlayer")).invoke(combiner, new Object[]{null});
+                require(get(combiner, 3) != null, ".394 fusion did not yield output; complete=" + ready +
+                        ", energy=" + energy(combiner) + ", need=" + combiner.getClass().getMethod("getEnergyNeeded").invoke(combiner));
             }
             expect(get(combiner, 3), 2, 1, "Fusion of H + H");
             if (old) {
