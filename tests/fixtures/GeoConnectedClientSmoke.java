@@ -19,12 +19,18 @@ import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.StringTag;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.Difficulty;
 import net.minecraft.world.MenuProvider;
+import net.minecraft.world.inventory.ClickType;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.item.TooltipFlag;
+import net.minecraft.world.item.crafting.CraftingInput;
+import net.minecraft.world.item.crafting.RecipeType;
 import net.minecraft.world.item.component.CustomData;
 import net.minecraft.world.level.GameRules;
 import net.minecraft.world.level.GameType;
@@ -50,7 +56,7 @@ public final class GeoConnectedClientSmoke {
     private BlockPos center;
     private int age;
     private CompletableFuture<Void> reload;
-    private enum Stage { TITLE, JOIN, ISOLATED, JOINED, CHANGE, RELOAD, REACTOR, SYNTHESIS, PAID, DEPOSITED, RETRIEVED, DONE }
+    private enum Stage { TITLE, JOIN, ISOLATED, JOINED, CHANGE, RELOAD, REACTOR, SYNTHESIS, PAID, DEPOSITED, RETRIEVED, BATCH, BATCH_PAID, BATCH_DEPOSITED, BULK_PAID, TREATMENT, DONE }
 
     public GeoConnectedClientSmoke() { NeoForge.EVENT_BUS.addListener(this::tick); }
 
@@ -169,7 +175,44 @@ public final class GeoConnectedClientSmoke {
                     var screen = synthesisScreen(client);
                     if (screen == null || !screen.getMenu().getCarried().is(BuiltInRegistries.ITEM.get(finalId("chemist_journal")))) return;
                     if (screen.getMenu().getSlot(0).hasItem() || screen.getMenu().getSlot(1).hasItem() || menuInt(screen, "ghostCount", 0) != 0) return;
-                    finish(client, " The .394 projector synced its actual blueprint; FINAL's original-sized screen synced a 144-tube ghost and power, paid on a real screen click, and cleared on journal retrieval.");
+                    open394Synthesis(client);
+                    advance(Stage.BATCH);
+                }
+                case BATCH -> {
+                    var screen = synthesisScreen(client, release394Id("synthesizer"));
+                    if (screen == null || menuInt(screen, "energy") != 900 || !screen.getMenu().getSlot(9).getItem().is(Items.STONE)) return;
+                    require(menuInt(screen, "cost") == 300 && screen.getMenu().getSlot(9).getItem().getCount() == 16, "Wrong .394 stone batch in sync");
+                    click(screen, 9);
+                    advance(Stage.BATCH_PAID);
+                }
+                case BATCH_PAID -> {
+                    var screen = synthesisScreen(client, release394Id("synthesizer"));
+                    if (screen == null || menuInt(screen, "energy") != 600 || !screen.getMenu().getCarried().is(Items.STONE)) return;
+                    require(screen.getMenu().getCarried().getCount() == 16, "Regular .394 click should deliver exactly one batch");
+                    click(screen, 29);
+                    advance(Stage.BATCH_DEPOSITED);
+                }
+                case BATCH_DEPOSITED -> {
+                    var screen = synthesisScreen(client, release394Id("synthesizer"));
+                    if (screen == null || !screen.getMenu().getCarried().isEmpty() || screen.getMenu().getSlot(29).getItem().getCount() != 16) return;
+                    // Send the same reachable packet as shift-click. This bypasses GLFW key state, not the container or server.
+                    client.gameMode.handleInventoryMouseClick(screen.getMenu().containerId, 9, 0, ClickType.QUICK_MOVE, client.player);
+                    advance(Stage.BULK_PAID);
+                }
+                case BULK_PAID -> {
+                    var screen = synthesisScreen(client, release394Id("synthesizer"));
+                    if (screen == null || menuInt(screen, "energy") != 0 || screen.getMenu().getSlot(29).getItem().getCount() != 48) return;
+                    require(screen.getMenu().slots.subList(10, 28).stream().noneMatch(slot -> slot.hasItem()), "Bulk withdrawal did not spend all three batches");
+                    startTreatment(client);
+                    advance(Stage.TREATMENT);
+                }
+                case TREATMENT -> {
+                    var sword = client.player.getMainHandItem();
+                    if (!sword.is(Items.IRON_SWORD) || !client.player.hasEffect(delirium(release394Id("delirium")))) return;
+                    require(!client.player.hasEffect(delirium(finalId("delirium"))), "Delirium mixed releases");
+                    var lines = sword.getTooltipLines(Item.TooltipContext.EMPTY, client.player, TooltipFlag.NORMAL);
+                    require(lines.stream().anyMatch(line -> line.getString().contains("Coated")), "Saved coating did not reach the client tooltip");
+                    finish(client, " The .394 projector synced its blueprint; FINAL synced a 144-tube ghost and paid on a GUI click before clearing its journal. .394 synced a 16-stone batch, paid for a regular click and two bulk batches, and synced its coating tooltip and Delirium effect.");
                 }
                 default -> { }
             }
@@ -209,9 +252,67 @@ public final class GeoConnectedClientSmoke {
 
     private static ResourceLocation finalId(String path) { return ResourceLocation.fromNamespaceAndPath("minechem_chemistry", path); }
 
-    private static AbstractContainerScreen<?> synthesisScreen(Minecraft client) {
+    private static ResourceLocation release394Id(String path) { return ResourceLocation.fromNamespaceAndPath("minechem_chemistry_394", path); }
+
+    private static AbstractContainerScreen<?> synthesisScreen(Minecraft client) { return synthesisScreen(client, finalId("synthesizer")); }
+
+    private static AbstractContainerScreen<?> synthesisScreen(Minecraft client, ResourceLocation id) {
         return client.screen instanceof AbstractContainerScreen<?> screen &&
-            BuiltInRegistries.MENU.getKey(screen.getMenu().getType()).equals(finalId("synthesizer")) ? screen : null;
+            id.equals(BuiltInRegistries.MENU.getKey(screen.getMenu().getType())) ? screen : null;
+    }
+
+    private static net.minecraft.core.Holder<net.minecraft.world.effect.MobEffect> delirium(ResourceLocation id) {
+        return BuiltInRegistries.MOB_EFFECT.getHolderOrThrow(ResourceKey.create(Registries.MOB_EFFECT, id));
+    }
+
+    private static ItemStack journal(ResourceLocation id, String output) {
+        var book = new ItemStack(BuiltInRegistries.ITEM.get(id));
+        CustomData.update(DataComponents.CUSTOM_DATA, book, data -> {
+            var research = data.getCompound("ChemistJournal");
+            var known = new ListTag();
+            known.add(StringTag.valueOf(output));
+            research.put("Discoveries", known);
+            research.putString("Active", output);
+            data.put("ChemistJournal", research);
+        });
+        return book;
+    }
+
+    private void open394Synthesis(Minecraft client) {
+        var server = client.getSingleplayerServer();
+        var playerId = client.player.getUUID();
+        var pos = client.player.blockPosition().west(3).above(1);
+        server.execute(() -> {
+            var player = server.getPlayerList().getPlayer(playerId);
+            var level = player.serverLevel();
+            level.setBlockAndUpdate(pos, BuiltInRegistries.BLOCK.get(release394Id("synthesizer")).defaultBlockState());
+            if (level.getBlockEntity(pos) instanceof MenuProvider synth) {
+                var menu = synth.createMenu(0, player.getInventory(), player);
+                menu.getSlot(28).set(journal(release394Id("chemist_journal"), "minecraft:stone"));
+                var input = level.getCapability(Capabilities.ItemHandler.BLOCK, pos, Direction.UP);
+                require(input.insertItem(0, new ItemStack(BuiltInRegistries.ITEM.get(release394Id("element_si")), 3), false).isEmpty(), "Cannot fill silicon");
+                require(input.insertItem(1, new ItemStack(BuiltInRegistries.ITEM.get(release394Id("element_o")), 15), false).isEmpty(), "Cannot fill oxygen");
+                require(input.insertItem(2, new ItemStack(BuiltInRegistries.ITEM.get(release394Id("element_al")), 6), false).isEmpty(), "Cannot fill aluminium");
+                var power = level.getCapability(Capabilities.EnergyStorage.BLOCK, pos, Direction.UP);
+                for (int i = 0; i < 9; i++) require(power.receiveEnergy(100, false) == 100, "Cannot charge .394 synthesizer");
+                player.openMenu(synth);
+            }
+        });
+    }
+
+    private void startTreatment(Minecraft client) {
+        var server = client.getSingleplayerServer();
+        var playerId = client.player.getUUID();
+        server.execute(() -> {
+            var player = server.getPlayerList().getPlayer(playerId);
+            var level = player.serverLevel();
+            player.closeContainer();
+            var tube = new ItemStack(BuiltInRegistries.ITEM.get(release394Id("molecule_latropine")));
+            var grid = CraftingInput.of(2, 1, List.of(new ItemStack(Items.IRON_SWORD), tube));
+            var sword = level.getRecipeManager().getRecipeFor(RecipeType.CRAFTING, grid, level).orElseThrow().value().assemble(grid, level.registryAccess());
+            tube.getItem().finishUsingItem(tube, level, player);
+            player.setItemInHand(net.minecraft.world.InteractionHand.MAIN_HAND, sword);
+        });
     }
 
     private static int menuInt(AbstractContainerScreen<?> screen, String name, int... arguments) throws Exception {
@@ -238,17 +339,8 @@ public final class GeoConnectedClientSmoke {
             var level = player.serverLevel();
             level.setBlockAndUpdate(pos, BuiltInRegistries.BLOCK.get(finalId("synthesizer")).defaultBlockState());
             if (level.getBlockEntity(pos) instanceof MenuProvider synth) {
-                var book = new ItemStack(BuiltInRegistries.ITEM.get(finalId("chemist_journal")));
-                CustomData.update(DataComponents.CUSTOM_DATA, book, data -> {
-                    var research = data.getCompound("ChemistJournal");
-                    var known = new ListTag();
-                    known.add(StringTag.valueOf("minecraft:iron_block"));
-                    research.put("Discoveries", known);
-                    research.putString("Active", "minecraft:iron_block");
-                    data.put("ChemistJournal", research);
-                });
                 var menu = synth.createMenu(0, player.getInventory(), player);
-                menu.getSlot(19).set(book);
+                menu.getSlot(19).set(journal(finalId("chemist_journal"), "minecraft:iron_block"));
                 var iron = BuiltInRegistries.ITEM.get(finalId("element_fe"));
                 var input = level.getCapability(Capabilities.ItemHandler.BLOCK, pos, Direction.UP);
                 input.insertItem(0, new ItemStack(iron, 64), false);

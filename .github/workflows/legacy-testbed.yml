@@ -9,6 +9,8 @@ on:
       - 'mcmodup/__main__.py'
       - 'mcmodup/minechem_pair.py'
       - 'mcmodup/minechem_final_synthesis.py'
+      - 'mcmodup/minechem_materials.py'
+      - 'mcmodup/minechem_effects.py'
       - 'mcmodup/convert.py'
       - 'mcmodup/minechem_reactors.py'
       - 'mcmodup/machines.py'

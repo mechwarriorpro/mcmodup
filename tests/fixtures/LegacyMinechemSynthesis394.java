@@ -125,7 +125,7 @@ final class LegacyMinechemSynthesis394 {
         }
         String ports = automation(recipes, lookup, candidates.get("iron_ingot"));
         return "synthesis slots=29 (9 ghost + 18 storage + output + journal); capacity=" + capacity + "; receive=" + receiveLimit +
-                "; " + observed.size() + " exact extraction traces; unresolved ghost collisions=" + mismatches + " | " + ports;
+                "; " + observed.size() + " exact extraction traces; unresolved ghost collisions=" + mismatches + " | " + ports + " | " + containerClicks(recipes, lookup, candidates.get("stone"));
     }
 
     private String automation(Object recipes, Method lookup, Object iron) throws Exception {
@@ -162,6 +162,54 @@ final class LegacyMinechemSynthesis394 {
         require(same(remove.invoke(machine, 28, 1), journal), "Could not extract original journal");
         for (int slot = 1; slot <= 9; slot++) require(get.invoke(machine, slot) == null, "Original journal extraction left a ghost");
         return "automation: journal on all sides (extract except bottom); storage except ready non-top faces, chemical insert except bottom; bottom result only, paid on take";
+    }
+
+    private String containerClicks(Object recipes, Method lookup, Object stone) throws Exception {
+        Class<?> playerType = mc("entity.player.EntityPlayer"), inventoryType = mc("entity.player.InventoryPlayer");
+        Class<?> profileType = Class.forName("com.mojang.authlib.GameProfile");
+        Constructor<?> profile = profileType.getConstructor(java.util.UUID.class, String.class);
+        Constructor<?> fake = Class.forName("net.minecraftforge.common.util.FakePlayer").getConstructor(mc("world.WorldServer"), profileType);
+        Constructor<?> container = Class.forName("minechem.tileentity.synthesis.SynthesisContainer").getConstructor(inventoryType, tile);
+        Method clicked = mc("inventory.Container").getMethod("func_75144_a", int.class, int.class, int.class, playerType);
+        Method cursor = inventoryType.getMethod("func_70445_o");
+        Method at = inventoryType.getMethod("func_70301_a", int.class), put = inventoryType.getMethod("func_70299_a", int.class, stack);
+        Object rule = lookup.invoke(recipes, stone);
+        require(rule != null, "Missing stone recipe for original click replay");
+        for (int mode = 0; mode < 4; mode++) {
+            Object player = fake.newInstance(world, profile.newInstance(java.util.UUID.randomUUID(), "[Craft]"));
+            Object inventory = playerType.getField("field_71071_by").get(player);
+            Object machine = fresh();
+            choose.invoke(machine, rule);
+            tick.invoke(machine);
+            int index = 10;
+            for (int slot = 1; slot <= 9; slot++) {
+                Object ingredient = get.invoke(machine, slot);
+                if (ingredient != null) set.invoke(machine, index++, makeStack.newInstance(item.invoke(ingredient), 3 * quantity(ingredient), damage.invoke(ingredient)));
+            }
+            charge(machine, 900);
+            tick.invoke(machine);
+            Object menu = container.newInstance(inventory, machine);
+            if (mode == 3) {
+                Object dirt = mc("item.Item").getMethod("func_150899_d", int.class).invoke(null, 3);
+                for (int slot = 0; slot < 36; slot++) put.invoke(inventory, slot, makeStack.newInstance(dirt, 64, 0));
+                put.invoke(inventory, 0, makeStack.newInstance(item.invoke(stone), 48, 0));
+            }
+            clicked.invoke(menu, 0, mode == 1 ? 1 : 0, mode >= 2 ? 1 : 0, player);
+            int energy = (Integer) stored.invoke(machine);
+            if (mode < 2) {
+                Object taken = cursor.invoke(inventory);
+                require(same(taken, stone) && quantity(taken) == 16 && energy == 600, "Original .394 regular click did not take 16 stone for 300 RF (button " + mode + ")");
+            } else {
+                int acquired = 0;
+                for (int slot = 0; slot < 36; slot++) {
+                    Object taken = at.invoke(inventory, slot);
+                    if (same(taken, stone)) acquired += quantity(taken);
+                }
+                require(acquired == (mode == 2 ? 48 : 64) && energy == 0,
+                        "Original .394 shift click: room-limited=" + (mode == 3) + ", total=" + acquired + ", charge=" + energy);
+            }
+        }
+        return ".394 container stone: left/right each yield 16 for 300 RF, shift yields 48 for 900; with room for 16, original still paid 900";
     }
 
     private Object fresh() throws Exception {

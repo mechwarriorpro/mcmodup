@@ -5,9 +5,11 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.core.registries.Registries;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.effect.MobEffectInstance;
@@ -16,6 +18,8 @@ import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.item.alchemy.PotionContents;
+import net.minecraft.world.item.alchemy.Potions;
 import net.minecraft.world.item.crafting.CraftingInput;
 import net.minecraft.world.item.crafting.RecipeType;
 import net.minecraft.world.level.GameType;
@@ -24,6 +28,7 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.material.Fluids;
 import net.neoforged.neoforge.capabilities.Capabilities;
+import net.neoforged.neoforge.common.ModConfigSpec;
 import net.neoforged.neoforge.fluids.FluidStack;
 import net.neoforged.neoforge.fluids.capability.IFluidHandler.FluidAction;
 import net.neoforged.neoforge.gametest.GameTestHolder;
@@ -65,6 +70,26 @@ public final class @CLASS@ {
         player.setItemInHand(InteractionHand.MAIN_HAND, saved);
         pig.hurt(test.getLevel().damageSources().playerAttack(player), 1F);
         speed(test, pig);
+        var strong = craft(test, sword, item("molecule_latropine"));
+        test.assertTrue(strong.is(Items.IRON_SWORD), "Missing original Delirium coating recipe");
+        var delirium = BuiltInRegistries.MOB_EFFECT.getHolderOrThrow(ResourceKey.create(Registries.MOB_EFFECT,
+                ResourceLocation.fromNamespaceAndPath(MOD, "delirium")));
+        var otherPig = test.spawn(EntityType.PIG, new BlockPos(2, 1, 1));
+        player.setItemInHand(InteractionHand.MAIN_HAND, strong);
+        otherPig.hurt(test.getLevel().damageSources().playerAttack(player), 1F);
+        test.assertTrue(otherPig.hasEffect(delirium) && otherPig.getHealth() <= otherPig.getMaxHealth() - 4F,
+                "A coated hit didn't apply the observed chemical damage and Delirium");
+        if (PREPAID) {
+            var option = config("SWORDS");
+            var before = option.get();
+            try {
+                option.set(false);
+                test.assertTrue(craft(test, sword, sugar).isEmpty(), "Sword config didn't disable crafting");
+                var unaffected = test.spawn(EntityType.PIG, new BlockPos(3, 1, 1));
+                unaffected.hurt(test.getLevel().damageSources().playerAttack(player), 1F);
+                test.assertTrue(!unaffected.hasEffect(delirium), "Sword config didn't disable an existing saved coating");
+            } finally { option.set(before); }
+        }
         test.succeed();
     }
 
@@ -86,6 +111,29 @@ public final class @CLASS@ {
         consume(test, other, base.copyWithCount(1));
         test.assertTrue(other.getFoodData().getFoodLevel() == 13 && !other.hasEffect(MobEffects.CONFUSION), "Unmodified food gained a chemical effect");
         test.assertTrue(PREPAID != craft(test, base, item("molecule_water")).isEmpty(), "Food matching didn't respect the original release allowlist");
+        if (PREPAID) {
+            var option = config("FOODS");
+            var before = option.get();
+            try {
+                option.set(false);
+                test.assertTrue(craft(test, base, item("molecule_sucrose")).isEmpty(), "Food config didn't disable crafting");
+                var unaffected = player(test);
+                consume(test, unaffected, first);
+                test.assertTrue(unaffected.getFoodData().getFoodLevel() == 13 && !unaffected.hasEffect(MobEffects.MOVEMENT_SPEED),
+                        "Food config didn't disable an existing dose or broke vanilla hunger");
+            } finally { option.set(before); }
+            var recreational = config("RECREATIONAL");
+            var setting = recreational.get();
+            try {
+                recreational.set(false);
+                var optional = item("molecule_psilocybin");
+                test.assertTrue(craft(test, base, optional).isEmpty(), "Optional .394 treatment still matched with its setting off");
+                var unaffected = player(test);
+                drink(test, unaffected, optional);
+                test.assertTrue(!unaffected.hasEffect(MobEffects.CONFUSION) && unaffected.getHealth() == unaffected.getMaxHealth(),
+                        "Disabling optional profiles did not block their drink effects");
+            } finally { recreational.set(setting); }
+        }
         test.succeed();
     }
 
@@ -102,7 +150,19 @@ public final class @CLASS@ {
         test.assertTrue(input != null && output != null && fe != null && fluid != null, "Missing decomposer capabilities");
         test.assertTrue(!input.isItemValid(0, new ItemStack(Items.BEDROCK)) && input.isItemValid(0, new ItemStack(Items.GOLD_ORE)),
                 "Registry accepts a missing recipe or rejects a measured ore");
+        var potion = new ItemStack(Items.POTION);
+        potion.set(DataComponents.POTION_CONTENTS, new PotionContents(Potions.WATER));
+        test.assertTrue(input.isItemValid(0, potion), "The measured water bottle must have the water potion component");
+        potion.set(DataComponents.POTION_CONTENTS, new PotionContents(Potions.AWKWARD));
+        test.assertTrue(!input.isItemValid(0, potion), "An unrelated potion matched the original water bottle");
         if (PREPAID) {
+            test.assertTrue(fluid.fill(new FluidStack(Fluids.LAVA, 501), FluidAction.EXECUTE) == 501 &&
+                    fluid.fill(new FluidStack(Fluids.WATER, 1), FluidAction.SIMULATE) == 0, "Tank mixed incompatible fluids");
+            var saved = entity.saveWithFullMetadata(level.registryAccess());
+            fluid.drain(501, FluidAction.EXECUTE);
+            entity.loadWithComponents(saved, level.registryAccess());
+            var restored = fluid.drain(501, FluidAction.EXECUTE);
+            test.assertTrue(restored.getFluid() == Fluids.LAVA && restored.getAmount() == 501, "The .394 tank lost its fluid identity on reload");
             var raw = new ItemStack(Items.WHITE_STAINED_GLASS);
             test.assertTrue(input.insertItem(0, raw, false).isEmpty(), "Missing .394 weighted stained-glass rule");
             for (int i = 0; i < 10; i++) fe.receiveEnergy(100, false);
@@ -144,6 +204,16 @@ public final class @CLASS@ {
         }
         test.assertTrue(miss && hit, "Chance batches must be able to produce a result or nothing");
         test.succeed();
+    }
+
+    private static ModConfigSpec.BooleanValue config(String name) {
+        try {
+            var config = Class.forName("mcmodup.generated." + MOD + ".ChemistryEffects").getDeclaredField(name);
+            config.setAccessible(true);
+            return (ModConfigSpec.BooleanValue) config.get(null);
+        } catch (ReflectiveOperationException e) {
+            throw new AssertionError(e);
+        }
     }
 
     private static Player player(GameTestHelper test) {

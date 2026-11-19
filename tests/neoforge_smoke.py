@@ -10,6 +10,7 @@ from mcmodup.audit import ModMetadata
 from mcmodup import minechem_final_synthesis
 from mcmodup.catalogs import RELEASE_394_SHA256, CatalogEntry
 from mcmodup.machines import FINAL_LEGACY_SHA256, DecomposerMode, machine_recipes
+from mcmodup.method_ports import PROVENANCE
 from mcmodup.minechem_pair import FINAL, RELEASE_394, journal_clone_checks, release394_checks, synthesis394_checks
 from mcmodup.port import _build_gradle, _metadata, empty_test_structure, write_workspace
 
@@ -32,8 +33,9 @@ def check_minechem_artifacts(final: Path, release394: Path) -> list[CatalogEntry
         assert sum("atomic_number" in entry for entry in catalog["entries"]) == 113
         assert sum(entry["new_id"].startswith("minechem_chemistry_394:molecule_") for entry in catalog["entries"]) == 173
         entries = [CatalogEntry(row["new_id"].split(":", 1)[1], "", "", (), row) for row in catalog["entries"]]
-        rules = machine_recipes(RELEASE_394.namespace, entries, mode=DecomposerMode.RELEASE_394)
-        assert sum(rule.machine == "decomposer" for rule in rules) == 568
+        linked = PROVENANCE in right.namelist()
+        rules = machine_recipes(RELEASE_394.namespace, entries, mode=DecomposerMode.RELEASE_394, linked=linked)
+        assert sum(rule.machine == "decomposer" for rule in rules) == (575 if linked else 568)
         assert sum(rule.machine == "synthesizer" for rule in rules) == 399
         assert catalog["machine_recipes"] == [rule.describe() for rule in rules]
         assert not (resources(left) & resources(right)), "Minechem releases share bytecode or named assets"
@@ -41,7 +43,13 @@ def check_minechem_artifacts(final: Path, release394: Path) -> list[CatalogEntry
         assert not any("SynthesisFinalChecks" in name for name in left.namelist()), "Production FINAL JAR contains test code"
         assert not any("Release394Checks" in name or "Synthesis394Checks" in name for name in right.namelist()), "Production .394 JAR contains test code"
         for jar, profile in ((left, FINAL), (right, RELEASE_394)):
-            assert not any("JournalCloneChecks" in name for name in jar.namelist())
+            assert not any("JournalCloneChecks" in name or "ChemistryGameplayChecks" in name for name in jar.namelist())
+            effect_data = json.loads(jar.read(f"data/{profile.namespace}/mcmodup/pharmacology.json"))
+            assert len(effect_data) == (52 if profile == RELEASE_394 else 147)
+            assert all(id_.startswith(f"{profile.namespace}:") for id_ in effect_data)
+            for key in ("weapon_coating", "food_spiking"):
+                assert f"data/{profile.namespace}/recipe/{key}.json" in jar.namelist()
+            assert f"assets/{profile.namespace}/textures/item/polytool.png" in jar.namelist()
             assert f"data/{profile.namespace}/recipe/journal_clone.json" in jar.namelist()
         return entries
 
