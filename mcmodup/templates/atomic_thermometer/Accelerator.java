@@ -26,6 +26,7 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.BaseEntityBlock;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.RenderShape;
+import net.minecraft.world.level.block.Rotation;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.BlockEntityTicker;
 import net.minecraft.world.level.block.entity.BlockEntityType;
@@ -256,12 +257,21 @@ public final class Accelerator extends BaseEntityBlock {
 
     public static final class CreativeBuilder extends Block {
         private static final MapCodec<CreativeBuilder> CODEC = simpleCodec(CreativeBuilder::new);
-        CreativeBuilder(Properties properties) { super(properties); }
+        CreativeBuilder(Properties properties) {
+            super(properties);
+            registerDefaultState(stateDefinition.any().setValue(BlockStateProperties.HORIZONTAL_FACING, Direction.WEST));
+        }
         @Override protected MapCodec<CreativeBuilder> codec() { return CODEC; }
+        @Override public BlockState getStateForPlacement(BlockPlaceContext context) {
+            return defaultBlockState().setValue(BlockStateProperties.HORIZONTAL_FACING, context.getHorizontalDirection().getOpposite());
+        }
+        @Override protected void createBlockStateDefinition(StateDefinition.Builder<Block, BlockState> builder) {
+            builder.add(BlockStateProperties.HORIZONTAL_FACING);
+        }
         @Override protected InteractionResult useWithoutItem(BlockState state, Level level, BlockPos pos, Player player, BlockHitResult hit) {
             if (!player.isCreative()) return InteractionResult.PASS;
             if (level instanceof ServerLevel server) {
-                boolean built = build(server, pos.above(2), player.isShiftKeyDown() ? 7 : 5);
+                boolean built = build(server, pos.above(2), player.isShiftKeyDown() ? 7 : 5, state.getValue(BlockStateProperties.HORIZONTAL_FACING));
                 player.displayClientMessage(Component.literal(built ? "Accelerator ring built" : "Need a loaded, empty area above the builder"), true);
             }
             return InteractionResult.sidedSuccess(level.isClientSide());
@@ -269,13 +279,23 @@ public final class Accelerator extends BaseEntityBlock {
 
         /** Original nested ring with a native injector in its outer wall. */
         public static boolean build(ServerLevel level, BlockPos origin, int size) {
-            if (!level.getServer().isSameThread() || size != 5 && size != 7) return false;
+            return build(level, origin, size, Direction.WEST);
+        }
+
+        public static boolean build(ServerLevel level, BlockPos origin, int size, Direction entrance) {
+            if (!level.getServer().isSameThread() || size != 5 && size != 7 || !entrance.getAxis().isHorizontal()) return false;
+            var rotation = switch (entrance) {
+                case NORTH -> Rotation.CLOCKWISE_90;
+                case EAST -> Rotation.CLOCKWISE_180;
+                case SOUTH -> Rotation.COUNTERCLOCKWISE_90;
+                default -> Rotation.NONE;
+            };
             var plan = new java.util.LinkedHashMap<BlockPos, BlockState>();
             for (int radius = size; radius >= size - 2; radius--) {
                 for (int x = -radius; x < radius; x++) for (int z = -radius; z < radius; z++) {
                     if (x != -radius && x != radius - 1 && z != -radius && z != radius - 1) continue;
                     for (int y = -1; y <= 1; y++) {
-                        var pos = origin.offset(x, y, z);
+                        var pos = origin.offset(new BlockPos(x, y, z).rotate(rotation));
                         if (!loaded(level, pos) || !level.getBlockState(pos).isAir()) return false;
                         if (radius == size - 1 && y == 0) continue;
                         var block = radius == size - 1 ? GLASS.get() : MAGNET.get();
@@ -283,7 +303,8 @@ public final class Accelerator extends BaseEntityBlock {
                     }
                 }
             }
-            plan.put(origin.west(size), BLOCK.get().defaultBlockState());
+            plan.put(origin.relative(entrance, size), BLOCK.get().defaultBlockState()
+                .setValue(BlockStateProperties.HORIZONTAL_FACING, entrance.getOpposite()));
             for (var entry : plan.entrySet()) level.setBlock(entry.getKey(), entry.getValue(), Block.UPDATE_CLIENTS);
             return true;
         }

@@ -10,6 +10,7 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.neoforged.neoforge.capabilities.Capabilities;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
@@ -58,5 +59,21 @@ public final class AcceleratorChecks {
         test.assertTrue(ItemStack.matches(made, items.extractItem(2, 1, false)) && items.extractItem(2, 1, false).isEmpty(),
                 "Saved output was lost or duplicated");
         test.succeed();
+    }
+
+    @GameTest(template = "accel_room", timeoutTicks = 60)
+    public static void orientedBuilderAndCreativeSupply(GameTestHelper test) {
+        var level = test.getLevel();
+        var origin = test.absolutePos(new BlockPos(7, 4, 7));
+        test.assertTrue(Accelerator.CreativeBuilder.build(level, origin, 5, Direction.NORTH), "North-facing ring refused an empty site");
+        var injector = origin.north(5);
+        test.assertTrue(level.getBlockState(injector).is(BuiltInRegistries.BLOCK.get(id("particle_accelerator"))) &&
+                level.getBlockState(injector).getValue(BlockStateProperties.HORIZONTAL_FACING) == Direction.SOUTH, "Incorrect rotated injector");
+        level.setBlockAndUpdate(injector.north(), BuiltInRegistries.BLOCK.get(id("creative_fe_supply")).defaultBlockState());
+        test.runAfterDelay(5, () -> {
+            var input = level.getCapability(Capabilities.EnergyStorage.BLOCK, injector, Direction.NORTH);
+            test.assertTrue(input != null && input.getEnergyStored() >= 240_000, "Creative FE source did not reach the actual accelerator sink");
+            test.succeed();
+        });
     }
 }

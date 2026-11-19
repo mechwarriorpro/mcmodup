@@ -9,7 +9,7 @@ import sys
 import traceback
 from zipfile import ZipFile
 
-from mcmodup.atomic_thermometer import ARCHIVE, FEATURES, KERNEL, LEGACY_SHA256, MOD_ID, TEXTURES, steam_checks, turbine_checks
+from mcmodup.atomic_thermometer import ARCHIVE, FEATURES, KERNEL, LEGACY_SHA256, MOD_ID, TEXTURES, accelerator_checks, steam_checks, turbine_checks
 from mcmodup.audit import ModMetadata
 from mcmodup.method_ports import PROVENANCE
 from mcmodup.native_pack import REPORT_NAME
@@ -61,7 +61,7 @@ def modern(root: Path) -> None:
     boot(out, report["instance_runtime"]["launch"]["unix"])
     staged_test(root / "atomic-integration", out)
     assert fingerprints(source, target) == before
-    note("Staged Atomic Science thermal preview passed", "Six source and five staged-JAR GameTests passed. Heated water supplied steam and the funnel held gas across a native reload. The stock server booted with "
+    note("Staged Atomic Science thermal preview passed", f"{len(FEATURES)} source and seven staged-JAR GameTests passed. Heated water supplied steam and the funnel held gas across a native reload. The stock server booted with "
          "only the preview and unchanged native Multipart/CCL. The turbine consumed steam and transferred FE; Multipart read heat grid "
          "and tracked capability signals. Not full Atomic Science.")
 
@@ -104,7 +104,7 @@ neoForge.runs.create('gameTestServer') {{
     })
     shutil.copytree(staged / "mods", project / "run/mods")
     log = run_gradle(project, "runGameTestServer")
-    assert "All 5 required tests passed" in log, log[-2900:]
+    assert "All 7 required tests passed" in log, log[-2900:]
 
 
 if __name__ == "__main__":

@@ -8,6 +8,7 @@ import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.EntityBlock;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.material.Fluids;
@@ -44,7 +45,7 @@ public final class FinalWaterChecks {
             var tile = world.getBlockEntity(pos);
             @SuppressWarnings("unchecked")
             var type = (BlockEntityType<BlockEntity>) tile.getType();
-            var ticker = machine.getTicker(world, world.getBlockState(pos), type);
+            var ticker = ((EntityBlock) machine).getTicker(world, world.getBlockState(pos), type);
             // The compile-time entity type here is BlockEntity; the real ticker validates it.
             ticker.tick(world, pos, world.getBlockState(pos), tile);
             test.assertTrue(tank.getFluidInTank(0).getAmount() == retained[i], "Wrong unpowered intake boundary for " + offered[i]);

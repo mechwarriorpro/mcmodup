@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import re
 from pathlib import Path
 import shutil
 import traceback
@@ -54,7 +55,7 @@ neoForge.runs.create('gameTestServer') {{
     result = run_gradle(root, "runGameTestServer")
     marker = next((line.split("required tests passed", 1)[0].rsplit("All ", 1)[-1].strip()
                    for line in result.splitlines() if "All " in line and "required tests passed" in line), None)
-    assert marker == "14", result[-5400:]
+    assert marker == "15", result[-5400:]
     assert digest(root / "run/mods" / JAR_NAME) == digest(jar), "Staged test mutated the JAR"
     return marker
 
@@ -93,6 +94,9 @@ if __name__ == "__main__":
     parser.add_argument("root", type=Path)
     try:
         check(parser.parse_args().root.resolve())
-    except Exception:
-        note("One-JAR testbed failed", traceback.format_exc()[-9000:], level="error")
+    except Exception as error:
+        details = re.sub(r"\x1b\[[0-9;]*m", "", str(error)).splitlines()
+        key_lines = ["\n".join(details[i:i+5]) for i, line in enumerate(details)
+                     if " error:" in line or "Failed test cases:" in line or "AssertionError:" in line]
+        note("One-JAR testbed failed", ("\n".join(key_lines) if key_lines else traceback.format_exc()[-3500:])[:3500], level="error")
         raise

@@ -53,6 +53,7 @@ public final class ThermometerMod {
         Turbine.register(bus);
         SteamFunnel.register(bus);
         Accelerator.register(bus);
+        CreativeSupply.register(bus);
         bus.addListener((BuildCreativeModeTabContentsEvent event) -> {
             if (event.getTabKey() == CreativeModeTabs.REDSTONE_BLOCKS) event.accept(ITEM);
             if (event.getTabKey() == CreativeModeTabs.FUNCTIONAL_BLOCKS) {
