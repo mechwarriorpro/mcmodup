@@ -52,7 +52,12 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.11'
-      - name: Download pinned Java 7 for both binary probes
+      - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
+        if: matrix.minecraft == '1.7.10'
+        with:
+          distribution: temurin
+          java-version: '8'
+      - name: Download pinned Java 7 for FINAL and the .394 decay replay
         shell: bash
         run: |
           root="$RUNNER_TEMP/minechem"
@@ -95,4 +100,12 @@ jobs:
           # The original release tag builds against 1291; its fluid registration fails on 1360.
           download original/bin/modpack.jar https://maven.minecraftforge.net/net/minecraftforge/forge/1.7.10-10.13.2.1291/forge-1.7.10-10.13.2.1291-universal.jar sha1sum e992c65ece8fd396c6b36ffffa4965c1ebb96ffd 4000000
       - name: Run the original recipe through power, ticks and a buffer save round trip
-        run: python -m minechem_original_smoke "$RUNNER_TEMP/minechem" '${{ matrix.minecraft }}'
+        shell: bash
+        run: |
+          root="$RUNNER_TEMP/minechem"
+          python -m minechem_original_smoke "$root" '${{ matrix.minecraft }}'
+          if [ '${{ matrix.minecraft }}' = '1.7.10' ]; then
+            mkdir "$root/matter"
+            cp -r "$root/original" "$root/CoFHLib-[1.7.10]1.0.1-151.jar" "$root/matter/"
+            python -m minechem_original_smoke "$root/matter" 1.7.10 --matter-only
+          fi

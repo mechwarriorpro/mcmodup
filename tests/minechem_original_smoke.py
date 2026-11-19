@@ -10,7 +10,7 @@ import subprocess
 import traceback
 from zipfile import ZipFile
 
-from legacy_recipe_fixture import prepare, run_server
+from legacy_recipe_fixture import java8, legacy_command, prepare, run_server
 from mixed_legacy_pack_smoke import note
 from mcmodup.minechem_final_synthesis import TRACE
 from mcmodup.minechem_materials import observations
@@ -44,9 +44,10 @@ def compile_probe(root: Path, server: Path, forge: Path, javac: str) -> None:
             jar.write(compiled, compiled.relative_to(probe).as_posix())
 
 
-def original(root: Path, version: str) -> None:
+def original(root: Path, version: str, matter_only: bool = False) -> None:
     source, server = root / "original", root / "server"
-    options = [f"-Dmcmodup.minechem.version={version}"]
+    matter = matter_only or version == "1.6.4"
+    options = [f"-Dmcmodup.minechem.version={version}", f"-Dmcmodup.minechem.matter={str(matter).lower()}"]
     jdk = Path(os.environ["JAVA_HOME"]) / "bin"
     if version == "1.6.4":
         name, checksum = FINAL, FINAL_HASH
@@ -74,9 +75,12 @@ def original(root: Path, version: str) -> None:
         assert file_digest(root / COFH, "sha1") == "20617e7822e0217cd091867db681d940f682235b"
         forge = prepare(server, source, "1.7.10")
         shutil.copyfile(root / COFH, server / "mods" / COFH)
-        compile_probe(root, server, forge, str(jdk / "javac"))
-        # .394's original molecule-decay cache links to sun.misc.Hashing, removed in Java 8.
-        command = [str(jdk / "java"), "-Xmx1G", "-Djava.awt.headless=true", *options, "-jar", forge.name, "nogui"]
+        # .394's molecule decay links to sun.misc.Hashing, removed in Java 8.
+        # Retain Java 8 for the existing integration trace: its Forge recipe order differs from Java 7.
+        compile_probe(root, server, forge, str(jdk / "javac") if matter else java8("javac"))
+        command = legacy_command("1.7.10", options)
+        if matter:
+            command[0] = str(jdk / "java")
     try:
         evidence = run_server(server, command, legacy=True, success_marker="MCMODUP_MINECHEM_ORIGINAL_PASS",
                               failure_marker="MCMODUP_MINECHEM_ORIGINAL_FAIL")
@@ -88,11 +92,13 @@ def original(root: Path, version: str) -> None:
         raise
     assert file_digest(server / "mods" / name) == checksum
     note(f"Original Minechem decomposer on Forge {version}", evidence)
-    verify_chemistry(server, version)
-    for kind in ("fluids", "radiation"):
+    for kind in (("fluids", "radiation") if matter else ()):
         path = server / f"minechem-{kind}.txt"
         if kind == "radiation": note(f"Minechem {version} radiation", path.read_text(encoding="utf-8"))
         capture(path, f"Minechem {version} matter {kind}")
+    if matter_only:
+        return
+    verify_chemistry(server, version)
     polytool = (server / "minechem-polytool.txt").read_text(encoding="utf-8").splitlines()
     expected_tool = [f"{key}={value}" for key, value in observations(trace_name(version == "1.7.10")).items()]
     assert polytool == expected_tool, ("Polytool trace changed: " + str(sorted(set(polytool).symmetric_difference(expected_tool))[:10]))
@@ -186,9 +192,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("root", type=Path)
     parser.add_argument("version", choices=("1.6.4", "1.7.10"))
+    parser.add_argument("--matter-only", action="store_true")
     args = parser.parse_args()
     try:
-        original(args.root.resolve(), args.version)
+        original(args.root.resolve(), args.version, args.matter_only)
     except Exception:
         if os.environ.get("GITHUB_ACTIONS") == "true":
             note(f"Original Minechem {args.version} check failed", traceback.format_exc()[-5500:], level="error")

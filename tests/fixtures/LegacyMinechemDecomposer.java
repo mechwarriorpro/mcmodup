@@ -189,7 +189,7 @@ public final class LegacyMinechemDecomposer {
                     " | " + LegacyMinechemPolytool.survey(world, FINAL_164, x + 24, y + 8, z) +
                     " | " + LegacyMinechemReactors.survey(world, FINAL_164, x, y + 18, z) +
                     " | " + LegacyMinechemChemistry.survey(world, FINAL_164) +
-                    " | " + LegacyMinechemMatter.survey(world, FINAL_164, x + 24, y + 10, z));
+                    (Boolean.getBoolean("mcmodup.minechem.matter") ? " | " + LegacyMinechemMatter.survey(world, FINAL_164, x + 24, y + 10, z) : ""));
         } catch (Throwable failure) {
             Throwable cause = failure.getCause() == null ? failure : failure.getCause();
             System.err.println("MCMODUP_MINECHEM_ORIGINAL_FAIL " + cause + " at " +
