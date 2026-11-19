@@ -164,6 +164,14 @@ def original(root: Path, version: str, matter_only: bool = False, ore_disable: b
     note(f"Pinned Minechem {version} {trace}", f"{len(expected)} original ore interop rows re-observed")
     if ore_disable:
         return
+    if not matter_only:
+        crafting_file = server / "minechem-machine-crafting.txt"
+        actual = dict(line.split("=", 1) for line in crafting_file.read_text(encoding="utf-8").splitlines())
+        expected = observations(f"{'final' if version == '1.6.4' else 'release394'}-machine-crafting.txt")
+        if actual != expected or os.environ.get("MCMODUP_CAPTURE_CHEMISTRY") == "1":
+            note(f"Original Minechem {version} machine crafting", crafting_file.read_text(encoding="utf-8"))
+        assert actual == expected, f"Minechem {version} machine crafting differed: {sorted(actual.keys() ^ expected.keys())}"
+        note(f"Pinned Minechem {version} machine crafting", f"{len(expected)} registered shaped and shapeless controls re-observed")
     if version == "1.7.10" and not matter_only:
         path = server / "minechem-ore-forms.txt"
         actual = dict(line.split("=", 1) for line in path.read_text(encoding="utf-8").splitlines())

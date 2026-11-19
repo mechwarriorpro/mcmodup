@@ -7,9 +7,12 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeMap;
 
 /** Capture registered in-game rules, not guessed formula inversions or modern crafting recipes. */
@@ -94,11 +97,61 @@ final class LegacyMinechemChemistry {
             }
             require(!out.checkError(), "Could not write decomposition evidence");
         }
+        int progression = progression();
         int effects = pharmacology();
         foodAndSword();
         int synthesis = old ? 0 : synthesis();
         return "material survey " + count + " rows (" + registered + " registered inputs, " + derived +
-                " stable FINAL fallback results), " + effects + " effect observations, " + synthesis + " additional synthesis catalogue observations";
+                " stable FINAL fallback results), " + progression + " machine crafts, " + effects + " effect observations, " + synthesis + " additional synthesis catalogue observations";
+    }
+
+    private int progression() throws Exception {
+        Class<?> items = Class.forName(old ? "minechem.MinechemItemsGeneration" : "minechem.MinechemItemsRegistration");
+        Set<Object> own = new HashSet<Object>();
+        for (String key : new String[]{"atomicManipulator", "concaveLens", "convexLens", "microscopeLens", "projectorLens", "blueprint", "journal", "polytool"}) {
+            Object value = items.getField(key).get(null);
+            own.add(stack.isInstance(value) ? itemOf.invoke(value) : value);
+        }
+        Class<?> blocks = Class.forName("minechem.MinechemBlocksGeneration");
+        Constructor<?> blockStack = stack.getConstructor(mc("block.Block"), int.class, int.class);
+        for (String key : new String[]{"microscope", "decomposer", "synthesis", "fusion", "blueprintProjector", old ? "leadedChest" : "leadChest"})
+            own.add(itemOf.invoke(blockStack.newInstance(blocks.getField(key).get(null), 1, 0)));
+        Class<?> registry = mc("item.crafting.CraftingManager");
+        Class<?> shaped = mc("item.crafting.ShapedRecipes"), shapeless = mc("item.crafting.ShapelessRecipes");
+        Method result = mc("item.crafting.IRecipe").getMethod("func_77571_b");
+        List<?> all = (List<?>) registry.getMethod("func_77592_b").invoke(registry.getMethod("func_77594_a").invoke(null));
+        Map<String, List<String>> byItem = new TreeMap<String, List<String>>();
+        for (Object recipe : all) {
+            if (recipe.getClass() != shaped && recipe.getClass() != shapeless) continue;
+            Object output = result.invoke(recipe);
+            if (output == null) continue;
+            Object outputItem = itemOf.invoke(output);
+            if (!own.contains(outputItem) && !(outputItem == elements && ((Integer) damage.invoke(output)) == 0)) continue;
+            List<Object> slots = new ArrayList<Object>();
+            String shape = "shapeless";
+            if (recipe.getClass() == shaped) {
+                shape = field(recipe, "field_77576_b") + "x" + field(recipe, "field_77577_c");
+                Object input = field(recipe, "field_77574_d");
+                for (int pos = 0; pos < Array.getLength(input); pos++) slots.add(Array.get(input, pos));
+            } else slots.addAll((List<?>) field(recipe, "field_77579_b"));
+            StringBuilder cells = new StringBuilder();
+            for (Object value : slots) {
+                if (cells.length() > 0) cells.append(',');
+                cells.append(value == null ? "_" : stackKey(value));
+            }
+            String key = stackKey(output);
+            List<String> values = byItem.get(key);
+            if (values == null) { values = new ArrayList<String>(); byItem.put(key, values); }
+            values.add(size.getInt(output) + ";" + shape + ";" + cells);
+        }
+        Map<String, String> resultRows = new TreeMap<String, String>();
+        for (Map.Entry<String, List<String>> row : byItem.entrySet()) {
+            List<String> values = row.getValue();
+            Collections.sort(values);
+            for (int i = 0; i < values.size(); i++) resultRows.put(row.getKey() + "@" + (i + 1), values.get(i));
+        }
+        output("minechem-machine-crafting.txt", resultRows);
+        return resultRows.size();
     }
 
     private String inputKey(Object rule) throws Exception {

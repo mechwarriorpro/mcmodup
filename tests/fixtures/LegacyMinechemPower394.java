@@ -72,7 +72,8 @@ final class LegacyMinechemPower394 {
         Method receive = machine.getClass().getMethod("receiveEnergy", int.class, boolean.class);
         while (amount > 0) {
             int got = (Integer) receive.invoke(machine, amount, false);
-            if (got <= 0 || got > amount) throw new AssertionError("Configured machine did not accept its test charge");
+            if (got <= 0 || got > amount) throw new AssertionError("Configured " + machine.getClass().getSimpleName() + " accepted " + got + " of " + amount
+                + " (stored/max/packet " + storage(machine) + ")");
             amount -= got;
         }
     }

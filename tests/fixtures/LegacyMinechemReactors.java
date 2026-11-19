@@ -99,18 +99,18 @@ final class LegacyMinechemReactors {
         setBlock(x - 9, y, z + 4, reactorBlock, 0);
         Object unlinked = tile.invoke(world, x - 9, y, z + 4);
         rows.put(profile + "_wall_storage", LegacyMinechemPower394.storage(unlinked));
-        LegacyMinechemPower394.charge(unlinked, packet);
+        Method receive = unlinked.getClass().getMethod("receiveEnergy", int.class, boolean.class);
+        Object accepted = receive.invoke(unlinked, packet, false);
         tick(unlinked);
-        rows.put(profile + "_wall_unlinked", energy(unlinked) + "/" + unlinked.getClass().getMethod("receiveEnergy", int.class, boolean.class)
-            .invoke(unlinked, packet, true));
+        rows.put(profile + "_wall_unlinked", accepted + "/" + energy(unlinked) + "/" + receive.invoke(unlinked, packet, true));
 
         Object wall = tile.invoke(world, x - 6, y, z + 2);
         require(wall != null && wall.getClass().getField("manager").get(wall) == core, "Casing was not linked to the real .394 core");
-        LegacyMinechemPower394.charge(wall, packet);
+        Object wallIntake = receive.invoke(wall, packet, false);
         tick(wall);
         String first = energy(wall) + "/" + energy(core);
         tick(wall);
-        rows.put(profile + "_wall_forward", first + "/" + energy(wall) + "/" + energy(core));
+        rows.put(profile + "_wall_forward", wallIntake + "/" + first + "/" + energy(wall) + "/" + energy(core));
 
         int capacity = (Integer) core.getClass().getMethod("getMaxEnergyStored").invoke(core);
         LegacyMinechemPower394.charge(core, capacity - 5 - energy(core));
@@ -121,11 +121,11 @@ final class LegacyMinechemReactors {
             }
         }
         require(coil != null && coil.getClass().getField("manager").get(coil) == core, "Coil was not linked to the .394 core");
-        LegacyMinechemPower394.charge(coil, packet);
+        Object coilIntake = receive.invoke(coil, packet, false);
         tick(coil);
         String partly = energy(coil) + "/" + energy(core);
         tick(coil);
-        rows.put(profile + "_wall_partial", partly + "/" + energy(coil) + "/" + energy(core));
+        rows.put(profile + "_wall_partial", coilIntake + "/" + partly + "/" + energy(coil) + "/" + energy(core));
     }
 
     private String run(int x, int y, int z) throws Exception {
