@@ -7,7 +7,7 @@ import subprocess
 import zipfile
 
 from mcmodup.audit import ModMetadata
-from mcmodup import minechem_final_synthesis, minechem_polytool
+from mcmodup import minechem_final_synthesis, minechem_matter, minechem_polytool
 from mcmodup.catalogs import RELEASE_394_SHA256, CatalogEntry
 from mcmodup.machines import FINAL_LEGACY_SHA256, DecomposerMode, machine_recipes
 from mcmodup.method_ports import PROVENANCE
@@ -43,6 +43,9 @@ def check_minechem_artifacts(final: Path, release394: Path) -> list[CatalogEntry
         assert not any("SynthesisFinalChecks" in name for name in left.namelist()), "Production FINAL JAR contains test code"
         assert not any("Release394Checks" in name or "Synthesis394Checks" in name for name in right.namelist()), "Production .394 JAR contains test code"
         for jar, profile in ((left, FINAL), (right, RELEASE_394)):
+            assert not any("MatterChecks" in name for name in jar.namelist())
+            assert set(minechem_matter.asset_paths(profile.namespace, profile == RELEASE_394).values()) <= set(jar.namelist())
+            assert f"data/{profile.namespace}/mcmodup/chemical_fluids.json" in jar.namelist()
             assert not any("JournalCloneChecks" in name or "ChemistryGameplayChecks" in name for name in jar.namelist())
             effect_data = json.loads(jar.read(f"data/{profile.namespace}/mcmodup/pharmacology.json"))
             assert len(effect_data) == (52 if profile == RELEASE_394 else 147)
@@ -99,6 +102,8 @@ neoForge.runs.create('gameTestServer') {{
             "mcmodup.test", namespace, minechem_final_synthesis.entries_from_catalog(catalog))
         tests["src/main/java/mcmodup/test/PolytoolChecksFinal.java"] = minechem_polytool.checks(
             "mcmodup.test", namespace, FINAL.namespace, minechem_final_synthesis.entries_from_catalog(catalog), False)
+        tests["src/main/java/mcmodup/test/MatterChecksFinal.java"] = minechem_matter.checks("mcmodup.test", namespace, FINAL.namespace,
+            minechem_final_synthesis.chemical_ids(FINAL.namespace, minechem_final_synthesis.entries_from_catalog(catalog)), False)
         research_rooms[f"src/main/resources/data/{namespace}/structure/synthesis_room.nbt"] = empty_test_structure(5)
     if minechem_394:
         assert buffered, "The paired tests require the actual FINAL-based build"
@@ -111,6 +116,8 @@ neoForge.runs.create('gameTestServer') {{
             "mcmodup.test", namespace, RELEASE_394.namespace, "JournalCloneChecks394")
         tests["src/main/java/mcmodup/test/PolytoolChecks394.java"] = minechem_polytool.checks(
             "mcmodup.test", namespace, RELEASE_394.namespace, entries, True)
+        tests["src/main/java/mcmodup/test/MatterChecks394.java"] = minechem_matter.checks("mcmodup.test", namespace, RELEASE_394.namespace,
+            minechem_final_synthesis.chemical_ids(RELEASE_394.namespace, entries), True)
         research_rooms[f"src/main/resources/data/{namespace}/structure/journal_room.nbt"] = empty_test_structure(5)
     def integrate_fixture(filename, code, package, own_namespace):
         # The standalone fixtures normally own independent test mod IDs.

@@ -44,7 +44,7 @@ def chemistry_gameplay_checks(package: str, test_namespace: str, prepaid: bool) 
             .replace("@CLASS@", name).replace("@PREFIX@", "release394" if prepaid else "final").replace("@PREPAID@", str(prepaid).lower()))
 
 
-FEATURES_394 = FEATURES | gameplay_features(True) | minechem_polytool.features(True) | {"All 198 measured item and molecule decomposition rules": "materialdecompositionmatchestrace",
+FEATURES_394 = FEATURES | gameplay_features(True) | minechem_polytool.features(True) | minechem_matter.features(True) | {"All 198 measured item and molecule decomposition rules": "materialdecompositionmatchestrace",
                            "5,000 mB water tank, shared input priority and buffer save": "watertankroundtripandpriority",
                            "Measured .394 synthesis batches with exact ghost slot counts and extraction cost": "exactsynthesisbatches",
                            "Ghost editing and saved synthesis, no unpaid extraction": "ghosteditingandsavedsynthesis",
@@ -54,7 +54,7 @@ FEATURES_394 = FEATURES | gameplay_features(True) | minechem_polytool.features(T
                            "Sided journal automation and on-extraction payment": "sidedjournalandpaidextraction"}
 
 
-FEATURES_FINAL = FEATURES | gameplay_features(False) | minechem_polytool.features(False) | {"FINAL fluid boundary, volatile remainder and saved converted water": "finalwaterintakeandsave"} | minechem_final_synthesis.FEATURES
+FEATURES_FINAL = FEATURES | gameplay_features(False) | minechem_polytool.features(False) | minechem_matter.features(False) | {"FINAL fluid boundary, volatile remainder and saved converted water": "finalwaterintakeandsave"} | minechem_final_synthesis.FEATURES
 
 
 def final_water_checks(package: str, test_namespace: str) -> str:
@@ -187,6 +187,8 @@ def _recipe(original: Path, profile: Profile, checksum: str, output: Path) -> di
     files[f"src/main/java/{java_root}/{gameplay_name}.java"] = chemistry_gameplay_checks(package, namespace, prepaid)
     suffix = "394" if prepaid else "Final"
     files[f"src/main/java/{java_root}/PolytoolChecks{suffix}.java"] = minechem_polytool.checks(package, namespace, namespace, entries, prepaid)
+    files[f"src/main/java/{java_root}/MatterChecks{suffix}.java"] = minechem_matter.checks(package, namespace, namespace,
+        minechem_final_synthesis.chemical_ids(namespace, entries), prepaid)
     files[f"src/main/java/{java_root}/JournalCloneChecks.java"] = journal_clone_checks(package, namespace, namespace)
     if prepaid:
         files[f"src/main/java/{java_root}/Release394Checks.java"] = release394_checks(package, namespace, entries)
@@ -209,7 +211,7 @@ def _recipe(original: Path, profile: Profile, checksum: str, output: Path) -> di
 tasks.named('compileJava') {{ classpath += files('src/main/resources') }}
 tasks.named('jar') {{
     archiveFileName = '{artifact}'
-    exclude '{tests}.class', '{java_root}/Release394Checks*.class', '{java_root}/Synthesis394Checks*.class', '{java_root}/Sided394Checks*.class', '{java_root}/JournalCloneChecks*.class', '{java_root}/FinalWaterChecks*.class', '{java_root}/SynthesisFinalChecks*.class', '{java_root}/ReactorChecks*.class', '{java_root}/ChemistryGameplayChecks*.class', '{java_root}/PolytoolChecks*.class', 'data/{namespace}/structure/*.nbt'
+    exclude '{tests}.class', '{java_root}/Release394Checks*.class', '{java_root}/Synthesis394Checks*.class', '{java_root}/Sided394Checks*.class', '{java_root}/JournalCloneChecks*.class', '{java_root}/FinalWaterChecks*.class', '{java_root}/SynthesisFinalChecks*.class', '{java_root}/ReactorChecks*.class', '{java_root}/ChemistryGameplayChecks*.class', '{java_root}/PolytoolChecks*.class', '{java_root}/MatterChecks*.class', 'data/{namespace}/structure/*.nbt'
 }}
 neoForge.runs.create('gameTestServer') {{
     type = 'gameTestServer'

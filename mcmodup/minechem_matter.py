@@ -177,9 +177,9 @@ def ore_generation(namespace: str, out, prepaid: bool) -> dict[str, str]:
     # The old feature rolled size 0 through cluster+9. Vanilla 1.21's terrain and
     # vein algorithm differ; use its midpoint size, with the original attempts and absolute Y band.
     result = {
-        f"{RESOURCES}/data/c/tags/block/ores/uranium.json": out({"values": [ore]}),
-        f"{RESOURCES}/data/c/tags/item/ores/uranium.json": out({"values": [ore]}),
-        f"{RESOURCES}/data/minecraft/tags/block/needs_iron_tool.json": out({"values": [ore]}),
+        f"{RESOURCES}/data/c/tags/block/ores/uranium.json": out({"replace": False, "values": [ore]}),
+        f"{RESOURCES}/data/c/tags/item/ores/uranium.json": out({"replace": False, "values": [ore]}),
+        f"{RESOURCES}/data/minecraft/tags/block/needs_iron_tool.json": out({"replace": False, "values": [ore]}),
         f"{data}/worldgen/configured_feature/uranium_ore.json": out({"type": "minecraft:ore", "config": {
             "size": (int(cluster) + 9) // 2, "discard_chance_on_air_exposure": 0,
             "targets": [{"target": {"predicate_type": "minecraft:block_match", "block": "minecraft:stone"}, "state": {"Name": ore}}]}}),
@@ -192,3 +192,22 @@ def ore_generation(namespace: str, out, prepaid: bool) -> dict[str, str]:
         result[f"{data}/neoforge/biome_modifier/uranium_ore.json"] = out({"type": "neoforge:add_features", "biomes": "#minecraft:is_overworld",
             "features": ore, "step": "underground_ores"})
     return result
+
+
+def features(prepaid: bool) -> dict[str, str]:
+    prefix = "release394" if prepaid else "final"
+    return {f"{prefix} fluid registry and release-specific tank behavior": f"{prefix}fluidregistryandtank",
+            f"{prefix} shielded storage, save, and uranium ore yield": f"{prefix}storageandore",
+            f"{prefix} radioactive lifetime boundary and catch-up": f"{prefix}decayboundaryandcatchup",
+            **({".394 crafting, no-loss fluid transfer, and contact effects": "release394tubebucketandcontact"} if prepaid else {})}
+
+
+def checks(package: str, test_namespace: str, namespace: str, ids: dict[str, str], prepaid: bool) -> str:
+    lifetime = observations(trace_name(prepaid, "radiation"))["tier1"].split("/")[0]
+    flows = ",\n".join(f"        {json.dumps(row.fluid.split(':', 1)[1])}" for row in fluid_rows(prepaid, ids))
+    return ((TEMPLATES / "MatterChecks.java").read_text(encoding="utf-8")
+            .replace("@PACKAGE@", package).replace("@NAMESPACE@", namespace).replace("@TEST_NAMESPACE@", test_namespace)
+            .replace("@CLASS@", "MatterChecks394" if prepaid else "MatterChecksFinal")
+            .replace("@PREFIX@", "release394" if prepaid else "final").replace("@RELEASE_394@", str(prepaid).lower())
+            .replace("@LIFETIME@", lifetime).replace("@FLUIDS@", flows)
+            .replace("@BUCKET_CHECKS@", (TEMPLATES / "Matter394Checks.java").read_text(encoding="utf-8") if prepaid else ""))

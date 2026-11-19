@@ -21,7 +21,7 @@ CHECK = "mcmodup_testbed_check"
 
 
 def staged(root: Path, jar: Path) -> str:
-    from mcmodup import atomic_thermometer, geostrata_rocks, icbm_plate, minechem_final_synthesis, minechem_pair, minechem_polytool, minechem_reactors
+    from mcmodup import atomic_thermometer, geostrata_rocks, icbm_plate, minechem_final_synthesis, minechem_matter, minechem_pair, minechem_polytool, minechem_reactors
 
     with ZipFile(jar) as archive:
         entries = minechem_final_synthesis.entries_from_catalog(json.loads(archive.read("data/minechem_chemistry/mcmodup/catalog.json")))
@@ -61,6 +61,10 @@ neoForge.runs.create('gameTestServer') {{
         f"{source}/JournalCloneChecks.java": minechem_pair.journal_clone_checks(package, CHECK, minechem_pair.FINAL.namespace),
         f"{source}/JournalCloneChecks394.java": minechem_pair.journal_clone_checks(package, CHECK, minechem_pair.RELEASE_394.namespace, "JournalCloneChecks394"),
     }
+    for prepaid, rows, profile in ((False, entries, minechem_pair.FINAL), (True, entries394, minechem_pair.RELEASE_394)):
+        suffix = "394" if prepaid else "Final"
+        files[f"{source}/MatterChecks{suffix}.java"] = minechem_matter.checks(package, CHECK, profile.namespace,
+            minechem_final_synthesis.chemical_ids(profile.namespace, rows), prepaid)
     for room, size in {"rock_room": 3, "vein_room": 19, "crystal_room": 9, "water_room": 5, "synthesis_room": 5, "journal_room": 5, "empty": 5, "test_room": 5, "turbine_room": 5, "platform_room": 5, "accel_room": 15, "launch_room": 17, "reactor_room": 29}.items():
         files[f"{resources}/data/{CHECK}/structure/{room}.nbt"] = empty_test_structure(size)
     write_workspace(root, files)
