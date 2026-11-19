@@ -100,22 +100,25 @@ public final class Synthesis394Checks {
         var machine = place(test, BlockPos.ZERO);
         var player = machine.player();
         var inventory = player.getInventory();
-        var template = item(ID + ":element_fe", 16);
-        machine.menu().setCarried(template);
-        machine.menu().clicked(4, 0, ClickType.PICKUP, player);
-        machine.menu().setCarried(ItemStack.EMPTY);
-        test.assertTrue(machine.input().insertItem(0, template.copyWithCount(48), false).isEmpty(), "Missing bulk FE inputs");
-        charge(test, machine, 9000);
+        for (int n = 0; n < TRACE.length && !machine.menu().getSlot(OUTPUT).getItem().is(Items.STONE); ++n) {
+            machine.menu().clickMenuButton(player, NEXT);
+        }
+        test.assertTrue(machine.menu().getSlot(OUTPUT).getItem().is(Items.STONE), "Could not select the measured .394 stone recipe");
+        test.assertTrue(machine.input().insertItem(0, item(ID + ":element_si", 3), false).isEmpty() &&
+                machine.input().insertItem(1, item(ID + ":element_o", 15), false).isEmpty() &&
+                machine.input().insertItem(2, item(ID + ":element_al", 6), false).isEmpty(), "Missing ingredients for three stone batches");
+        charge(test, machine, 900);
         for (int slot = 0; slot < 36; slot++) inventory.setItem(slot, new ItemStack(Items.DIRT, 64));
-        test.assertTrue(machine.menu().quickMoveStack(player, OUTPUT).isEmpty() && machine.power().getEnergyStored() == 9000 &&
-                machine.input().getStackInSlot(0).getCount() == 48, "A full inventory charged the machine");
-        inventory.setItem(0, new ItemStack(Items.IRON_INGOT, 63));
+        inventory.setItem(0, new ItemStack(Items.STONE, 49));
+        test.assertTrue(machine.menu().quickMoveStack(player, OUTPUT).isEmpty() && machine.power().getEnergyStored() == 900 &&
+                machine.input().getStackInSlot(0).getCount() == 3, "Room for less than a batch must not spend anything");
+        inventory.setItem(0, new ItemStack(Items.STONE, 48));
         machine.menu().clicked(OUTPUT, 0, ClickType.QUICK_MOVE, player);
-        test.assertTrue(inventory.getItem(0).getCount() == 64 && machine.power().getEnergyStored() == 6000 &&
-                machine.input().getStackInSlot(0).getCount() == 32, "Limited room must only pay for one batch");
+        test.assertTrue(inventory.getItem(0).getCount() == 64 && machine.power().getEnergyStored() == 600 &&
+                machine.input().getStackInSlot(0).getCount() == 2, "Room for one batch must only pay for one batch");
         inventory.setItem(1, ItemStack.EMPTY);
         machine.menu().clicked(OUTPUT, 0, ClickType.QUICK_MOVE, player);
-        test.assertTrue(inventory.getItem(1).is(Items.IRON_INGOT) && inventory.getItem(1).getCount() == 2 &&
+        test.assertTrue(inventory.getItem(1).is(Items.STONE) && inventory.getItem(1).getCount() == 32 &&
                 machine.power().getEnergyStored() == 0 && machine.input().getStackInSlot(0).isEmpty(), "Shift-click did not craft both affordable batches");
         test.succeed();
     }

@@ -189,19 +189,19 @@ public final class GeoConnectedClientSmoke {
                     var screen = synthesisScreen(client, release394Id("synthesizer"));
                     if (screen == null || menuInt(screen, "energy") != 600 || !screen.getMenu().getCarried().is(Items.STONE)) return;
                     require(screen.getMenu().getCarried().getCount() == 16, "Regular .394 click should deliver exactly one batch");
-                    click(screen, 29);
+                    click(screen, 30);
                     advance(Stage.BATCH_DEPOSITED);
                 }
                 case BATCH_DEPOSITED -> {
                     var screen = synthesisScreen(client, release394Id("synthesizer"));
-                    if (screen == null || !screen.getMenu().getCarried().isEmpty() || screen.getMenu().getSlot(29).getItem().getCount() != 16) return;
+                    if (screen == null || !screen.getMenu().getCarried().isEmpty() || screen.getMenu().getSlot(30).getItem().getCount() != 16) return;
                     // Send the same reachable packet as shift-click. This bypasses GLFW key state, not the container or server.
                     client.gameMode.handleInventoryMouseClick(screen.getMenu().containerId, 9, 0, ClickType.QUICK_MOVE, client.player);
                     advance(Stage.BULK_PAID);
                 }
                 case BULK_PAID -> {
                     var screen = synthesisScreen(client, release394Id("synthesizer"));
-                    if (screen == null || menuInt(screen, "energy") != 0 || screen.getMenu().getSlot(29).getItem().getCount() != 48) return;
+                    if (screen == null || menuInt(screen, "energy") != 0 || screen.getMenu().getSlot(30).getItem().getCount() != 48) return;
                     require(screen.getMenu().slots.subList(10, 28).stream().noneMatch(slot -> slot.hasItem()), "Bulk withdrawal did not spend all three batches");
                     startTreatment(client);
                     advance(Stage.TREATMENT);
