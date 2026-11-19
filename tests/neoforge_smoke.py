@@ -35,7 +35,7 @@ def check_minechem_artifacts(final: Path, release394: Path) -> list[CatalogEntry
         entries = [CatalogEntry(row["new_id"].split(":", 1)[1], "", "", (), row) for row in catalog["entries"]]
         linked = PROVENANCE in right.namelist()
         rules = machine_recipes(RELEASE_394.namespace, entries, mode=DecomposerMode.RELEASE_394, linked=linked)
-        assert sum(rule.machine == "decomposer" for rule in rules) == (862 if linked else 855)
+        assert sum(rule.machine == "decomposer" for rule in rules) == (1146 if linked else 1139)
         assert sum(rule.machine == "synthesizer" for rule in rules) == 399
         assert catalog["machine_recipes"] == [rule.describe() for rule in rules]
         assert not (resources(left) & resources(right)), "Minechem releases share bytecode or named assets"

@@ -209,7 +209,7 @@ class ConvertTests(unittest.TestCase):
                                 ("element_" if key[0] == "e" else "molecule_") + key[1:]),
                                 key, "test.png", (), {"legacy_metadata": int(key[1:])}) for key in symbols]
         files, count = _project_files(profile, entries, {"test.png": PNG}, RELEASE_394_SHA256, {}, [])
-        self.assertEqual(count, 1254)
+        self.assertEqual(count, 1538)
         self.assertEqual(len([key for key in trace if re.fullmatch(r"m\d+", key)]), 173)
         with self.assertRaisesRegex(InputError, "catalog does not match"):
             _project_files(profile, [row for row in entries if row.path != "molecule_water"], {"test.png": PNG}, RELEASE_394_SHA256, {}, [])

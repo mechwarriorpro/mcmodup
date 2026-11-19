@@ -145,12 +145,12 @@ final class ShieldedStorage {
             this.capacity = capacity;
             this.tile = tile;
             var inventory = tile == null ? new ItemStackHandler(capacity) : tile.storage;
-            for (int i = 0; i < capacity; i++) addSlot(new SlotItemHandler(inventory, i,
-                capacity == CHEST_SLOTS ? 62 + i % 3 * 18 : 8 + i % 9 * 18, 19 + i / (capacity == CHEST_SLOTS ? 3 : 9) * 18) {
+            for (int i = 0; i < capacity; i++) addSlot(new SlotItemHandler(inventory, i, 8 + i % 9 * 18, 18 + i / 9 * 18) {
                     @Override public void setChanged() { if (tile != null) tile.setChanged(); }
                 });
-            for (int i = 0; i < 27; i++) addSlot(new Slot(player, i + 9, 8 + i % 9 * 18, 104 + i / 9 * 18));
-            for (int i = 0; i < 9; i++) addSlot(new Slot(player, i, 8 + i * 18, 162));
+            int row = capacity == CHEST_SLOTS ? 50 : 84;
+            for (int i = 0; i < 27; i++) addSlot(new Slot(player, i + 9, 8 + i % 9 * 18, row + i / 9 * 18));
+            for (int i = 0; i < 9; i++) addSlot(new Slot(player, i, 8 + i * 18, row + 58));
         }
         @Override public boolean shieldedRadiationSlot(int slot) { return slot < capacity; }
         @Override public boolean stillValid(Player player) {

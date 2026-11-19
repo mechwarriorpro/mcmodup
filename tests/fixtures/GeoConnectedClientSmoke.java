@@ -56,13 +56,13 @@ public final class GeoConnectedClientSmoke {
     private static final String PREFIX = "block/connected/";
     private static final Set<String> ISOLATED = Set.of("1", "2", "3", "4", "5", "6", "7", "8", "9");
     private Stage stage = Stage.TITLE;
-    private BlockPos center, charger;
+    private BlockPos center, charger, matterMachine, matterChest;
     private int age;
     private CompletableFuture<Void> reload;
     private enum Stage {
         TITLE, JOIN, ISOLATED, JOINED, CHANGE, RELOAD, REACTOR, SYNTHESIS, PAID, DEPOSITED, RETRIEVED,
         BATCH, BATCH_PAID, BATCH_DEPOSITED, BULK_PAID, TREATMENT, FINAL_TOOL, FINAL_TOOL_MENU, FINAL_TOOL_CURSOR,
-        FINAL_ALLOY, FINAL_LITHIUM_CURSOR, FINAL_LITHIUM, FINAL_CHARGE, TOOL_394, TOOL_394_MENU, TOOL_394_SYNC, DONE
+        FINAL_ALLOY, FINAL_LITHIUM_CURSOR, FINAL_LITHIUM, FINAL_CHARGE, TOOL_394, TOOL_394_MENU, TOOL_394_SYNC, FLUID_HAND, FLUID_MENU, LEADED, LEADED_TAKEN, DONE
     }
 
     public GeoConnectedClientSmoke() { NeoForge.EVENT_BUS.addListener(this::tick); }
@@ -135,6 +135,10 @@ public final class GeoConnectedClientSmoke {
                         checkModel(client, "minechem_chemistry", "blueprint_projector");
                         checkModel(client, "minechem_chemistry_394", "ghost_coil");
                         checkModel(client, "minechem_chemistry_394", "fission_core");
+                        checkModel(client, "minechem_chemistry", "uranium_ore");
+                        checkModel(client, "minechem_chemistry", "chemical_storage");
+                        checkModel(client, "minechem_chemistry_394", "leaded_chest");
+                        checkModel(client, "minechem_chemistry_394", "fluid_element_fe");
                         openProjector(client);
                         advance(Stage.REACTOR);
                     } else finish(client, "");
@@ -292,7 +296,48 @@ public final class GeoConnectedClientSmoke {
                         tool.getDestroySpeed(Blocks.OAK_LOG.defaultBlockState()) != 16) return;
                     require(tool.getCapability(Capabilities.EnergyStorage.ITEM) == null && hasTooltip(tool, client, "rank 1"),
                         ".394 tool gained an FE capability or didn't sync the rank tooltip");
-                    finish(client, " The .394 projector synced its blueprint; FINAL paid for a 144-tube ghost recipe and cleared its journal. .394 paid for regular and bulk stone batches and synced its coating tooltip and Delirium effect. FINAL's Polytool paid for aluminium and Lithium and charged from the Creative FE Supply. .394 infused by shift-click and synced its own mining speed and rank without an FE capability.");
+                    prepareMatter(client);
+                    advance(Stage.FLUID_HAND);
+                }
+                case FLUID_HAND -> {
+                    if (client.screen != null || client.player.isCreative() ||
+                        !client.level.getBlockState(matterMachine).is(BuiltInRegistries.BLOCK.get(release394Id("decomposer")))) return;
+                    var vial = client.player.getMainHandItem();
+                    if (vial.is(BuiltInRegistries.ITEM.get(release394Id("test_tube")))) {
+                        // Opening with the offhand avoids immediately extracting the just-filled vial.
+                        client.gameMode.useItemOn(client.player, InteractionHand.OFF_HAND, hit(matterMachine));
+                        advance(Stage.FLUID_MENU);
+                    } else if (age % 20 == 0 && vial.is(BuiltInRegistries.ITEM.get(release394Id("element_fe")))) {
+                        client.gameMode.useItemOn(client.player, InteractionHand.MAIN_HAND, hit(matterMachine));
+                    }
+                }
+                case FLUID_MENU -> {
+                    var screen = synthesisScreen(client, release394Id("chemical_machine"));
+                    if (screen == null || menuInt(screen, "fluidVolume") != 125) return;
+                    var label = screen.getMenu().getClass().getDeclaredMethod("fluidLabel");
+                    label.setAccessible(true);
+                    require(((net.minecraft.network.chat.Component) label.invoke(screen.getMenu())).getString().contains("Iron"),
+                        "Chemical tank showed the wrong fluid name");
+                    client.player.closeContainer();
+                    advance(Stage.LEADED);
+                }
+                case LEADED -> {
+                    var screen = synthesisScreen(client, release394Id("leaded_chest"));
+                    if (screen == null) {
+                        if (client.screen == null && age % 20 == 0) client.gameMode.useItemOn(client.player, InteractionHand.OFF_HAND, hit(matterChest));
+                        return;
+                    }
+                    var stored = screen.getMenu().getSlot(0).getItem();
+                    if (stored.getCount() != 3) return;
+                    require(screen.getMenu().slots.size() == 45 && hasTooltip(stored, client, "Radioactivity 1"),
+                        "Leaded storage didn't sync its inventory or the uranium clock");
+                    click(screen, 0);
+                    advance(Stage.LEADED_TAKEN);
+                }
+                case LEADED_TAKEN -> {
+                    var screen = synthesisScreen(client, release394Id("leaded_chest"));
+                    if (screen == null || screen.getMenu().getCarried().getCount() != 3 || !screen.getMenu().getSlot(0).getItem().isEmpty()) return;
+                    finish(client, " The .394 projector synced its blueprint; FINAL paid for a 144-tube ghost recipe and cleared its journal. .394 paid for regular and bulk stone batches and synced its coating and Delirium. FINAL infused aluminium and Lithium and charged its tool; .394 shift-infused without an FE capability. A survival iron vial filled the .394 machine, returned an empty tube, and synced the 125 mB and fluid name. The leaded chest synced its uranium and a regular withdrawal.");
                 }
                 default -> { }
             }
@@ -426,6 +471,30 @@ public final class GeoConnectedClientSmoke {
                 player.serverLevel().setBlockAndUpdate(charger, supply.defaultBlockState());
             }
             player.setItemInHand(InteractionHand.MAIN_HAND, new ItemStack(registry.get(toolId(newer, "polytool"))));
+        });
+    }
+
+    private static BlockHitResult hit(BlockPos pos) {
+        return new BlockHitResult(Vec3.atCenterOf(pos), Direction.UP, pos, false);
+    }
+
+    private void prepareMatter(Minecraft client) {
+        var server = client.getSingleplayerServer();
+        var playerId = client.player.getUUID();
+        matterMachine = client.player.blockPosition().south(2);
+        matterChest = client.player.blockPosition().north(2);
+        server.execute(() -> {
+            var player = server.getPlayerList().getPlayer(playerId);
+            var level = player.serverLevel();
+            player.closeContainer();
+            player.setGameMode(GameType.SURVIVAL);
+            player.setItemInHand(InteractionHand.MAIN_HAND, new ItemStack(BuiltInRegistries.ITEM.get(release394Id("element_fe"))));
+            player.setItemInHand(InteractionHand.OFF_HAND, ItemStack.EMPTY);
+            level.setBlockAndUpdate(matterMachine, BuiltInRegistries.BLOCK.get(release394Id("decomposer")).defaultBlockState());
+            level.setBlockAndUpdate(matterChest, BuiltInRegistries.BLOCK.get(release394Id("leaded_chest")).defaultBlockState());
+            var storage = level.getCapability(Capabilities.ItemHandler.BLOCK, matterChest, Direction.UP);
+            require(storage.insertItem(0, new ItemStack(BuiltInRegistries.ITEM.get(release394Id("element_u")), 3), false).isEmpty(),
+                "Client fixture could not stock the leaded chest");
         });
     }
 

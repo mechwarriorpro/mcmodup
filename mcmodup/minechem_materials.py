@@ -130,8 +130,9 @@ def release(namespace: str, ids: dict[str, str], *, prepaid: bool, paired: bool 
             key = legacy if legacy not in native_fluids else f"f{fluid.key}:125"
             rows[key] = matter.get(f"alias_{fluid.key}", rows[legacy])
             native_fluids[key] = fluid.fluid
-            if f"b{fluid.key}" in matter:
-                rows[f"b{fluid.key}"] = matter[f"b{fluid.key}"]
+            if f"b{fluid.key}" not in matter:
+                raise InputError(f"Missing .394 bucket recipe observation for {fluid.key}")
+            rows[f"b{fluid.key}"] = matter[f"b{fluid.key}"]
     else:
         ore_key, ore_yield = observations(f"{prefix}-radiation.txt")["ore"].split("/", 1)
         rows[f"c{ore_key}:0"] = ore_yield

@@ -153,7 +153,7 @@ public final class @CLASS@ {
         // FINAL's original player scheduler updates every second; align this manual tick with it.
         long clock = test.getLevel().getGameTime();
         int delay = (int)(20 - (clock % 20));
-        test.runAfterDelayTicks(delay, () -> {
+        test.runAfterDelay(delay, () -> {
             var level = test.getLevel();
             var actor = player(test, test.absolutePos(new BlockPos(1, 1, 1)));
             for (long age : new long[]{LIFE - 1, LIFE, LIFE + 1, LIFE * 2 + 1}) {

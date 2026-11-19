@@ -14,6 +14,7 @@ from legacy_recipe_fixture import java8, legacy_command, prepare, run_server
 from mixed_legacy_pack_smoke import note
 from mcmodup.minechem_final_synthesis import TRACE
 from mcmodup.minechem_materials import observations
+from mcmodup.minechem_matter import trace_name as matter_trace_name
 from mcmodup.minechem_polytool import trace_name
 from mcmodup.machines import SYNTHESIS_394_COLLISION, release394_synthesis_trace, release394_trace
 from mcmodup.runtime import file_digest
@@ -94,8 +95,13 @@ def original(root: Path, version: str, matter_only: bool = False) -> None:
     note(f"Original Minechem decomposer on Forge {version}", evidence)
     for kind in (("fluids", "radiation") if matter else ()):
         path = server / f"minechem-{kind}.txt"
-        if kind == "radiation": note(f"Minechem {version} radiation", path.read_text(encoding="utf-8"))
-        capture(path, f"Minechem {version} matter {kind}")
+        actual = dict(line.split("=", 1) for line in path.read_text(encoding="utf-8").splitlines())
+        expected = observations(matter_trace_name(version == "1.7.10", kind))
+        mismatch = [key for key in sorted(expected.keys() | actual.keys()) if expected.get(key) != actual.get(key)]
+        if os.environ.get("MCMODUP_CAPTURE_CHEMISTRY") == "1" or mismatch:
+            capture(path, f"Minechem {version} matter {kind}")
+        assert not mismatch, f"{version} {kind} differs at {[(key, expected.get(key), actual.get(key)) for key in mismatch[:12]]}"
+        note(f"Pinned Minechem {version} {kind}", f"{len(expected)} original rows re-observed")
     if matter_only:
         return
     verify_chemistry(server, version)

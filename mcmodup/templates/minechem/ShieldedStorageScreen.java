@@ -11,21 +11,23 @@ import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.client.event.RegisterMenuScreensEvent;
 
 @EventBusSubscriber(modid = CatalogPort.MOD_ID, bus = EventBusSubscriber.Bus.MOD, value = Dist.CLIENT)
-final class ShieldedStorageScreen extends AbstractContainerScreen<ShieldedStorage.StorageMenu> {
+public final class ShieldedStorageScreen extends AbstractContainerScreen<ShieldedStorage.StorageMenu> {
     private static final ResourceLocation LEAD = ResourceLocation.fromNamespaceAndPath(CatalogPort.MOD_ID, "textures/gui/leaded_chest.png");
     ShieldedStorageScreen(ShieldedStorage.StorageMenu menu, Inventory player, Component title) {
         super(menu, player, title);
-        imageHeight = 187;
-        inventoryLabelY = 92;
+        imageHeight = menu.capacity == ShieldedStorage.CHEST_SLOTS ? 132 : 166;
+        inventoryLabelY = imageHeight - 94;
     }
-    @SubscribeEvent static void register(RegisterMenuScreensEvent event) {
+    @SubscribeEvent public static void register(RegisterMenuScreensEvent event) {
         event.register(ShieldedStorage.CHEST_MENU.get(), ShieldedStorageScreen::new);
         if (ShieldedStorage.FINAL) event.register(ShieldedStorage.CABINET_MENU.get(), ShieldedStorageScreen::new);
     }
     @Override protected void renderBg(GuiGraphics graphics, float delta, int mx, int my) {
         graphics.fill(leftPos, topPos, leftPos + imageWidth, topPos + imageHeight, 0xffc6c6c6);
-        if (menu.capacity == ShieldedStorage.CHEST_SLOTS)
+        if (menu.capacity == ShieldedStorage.CHEST_SLOTS) {
             graphics.blit(LEAD, leftPos, topPos, 0, 0, imageWidth, imageHeight);
+            return;
+        }
         for (var slot : menu.slots) {
             int x = leftPos + slot.x, y = topPos + slot.y;
             graphics.fill(x - 1, y - 1, x + 17, y + 17, 0xffeeeeee);
