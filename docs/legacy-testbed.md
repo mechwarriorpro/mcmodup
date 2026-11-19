@@ -39,6 +39,12 @@ Do not install the old mods or the separate native previews alongside this JAR. 
 
 The Creative FE Supply has no survival recipe and is for testing. Ordinary FE suppliers from other NeoForge mods can feed supported machines; legacy RF/UE integrations are not provided.
 
+## Verified build
+
+[Run 44484066723](https://github.com/mechwarriorpro/mcmodup/actions/runs/44484066723/job/135423057286) passed **33 component tests and 16 staged GameTests** on NeoForge 21.1.267. The produced JAR booted on a clean dedicated server without other mods. A separate staged client check entered a fresh world, checked the connected-wall rendering and selected models from all five components, and reloaded resources. These are gameplay and loading checks, not original-client visual parity.
+
+The SHA-256 of the JAR tested in that run was `932d1234f66d60a421dd3e53c0bf5ef306dd8cba2b65d5b8320c639cb7a40da5`. This identifies that runner's artifact; use the report next to your local output for its own hash.
+
 ## What is still missing
 
 | System | Current boundary |
