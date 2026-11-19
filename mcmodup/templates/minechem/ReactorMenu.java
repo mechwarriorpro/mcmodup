@@ -51,14 +51,15 @@ final class ReactorMenu extends AbstractContainerMenu implements ChemistryRadiat
         int row = mode == Mode.FUSION ? 105 : 84;
         for (int i = 0; i < 27; i++) addSlot(new Slot(player, i + 9, 8 + (i % 9) * 18, row + (i / 9) * 18));
         for (int i = 0; i < 9; i++) addSlot(new Slot(player, i, 8 + i * 18, row + 58));
-        data = station == null ? new SimpleContainerData(2) : new ContainerData() {
+        int dataSize = mode == Mode.PROJECT ? 2 : 4;
+        data = station == null ? new SimpleContainerData(dataSize) : new ContainerData() {
             @Override public int get(int i) {
                 if (mode == Mode.PROJECT) return station.status(i);
-                int energy = station.status(0);
-                return i == 0 ? energy & 65535 : energy >>> 16;
+                int value = station.status(i / 2);
+                return (i & 1) == 0 ? value & 65535 : value >>> 16;
             }
             @Override public void set(int i, int value) {}
-            @Override public int getCount() { return 2; }
+            @Override public int getCount() { return dataSize; }
         };
         addDataSlots(data);
     }
@@ -70,6 +71,7 @@ final class ReactorMenu extends AbstractContainerMenu implements ChemistryRadiat
     }
 
     int energy() { return (data.get(0) & 65535) | (data.get(1) << 16); }
+    int capacity() { return (data.get(2) & 65535) | (data.get(3) << 16); }
     int activeSlice() { return data.get(0); }
     boolean formed() { return data.get(1) == 1; }
     ReactorBlueprints.Plan blueprint() { return ReactorMachines.blueprint(getSlot(0).getItem()); }

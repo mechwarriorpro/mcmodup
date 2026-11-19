@@ -81,7 +81,12 @@ def add_project(files: dict[str, str | bytes], namespace: str, package: str, ent
     java = f"src/main/java/{package.replace('.', '/')}"
     for name in ("ReactorBlueprints", "ReactorMachines", "ReactorMenu", "ReactorScreens"):
         files[f"{java}/{name}.java"] = _render(name, PACKAGE=package, RELEASE394=str(release_394).lower(),
-                 ELEMENTS=", ".join(json.dumps(e.path) for e in elements), **_blueprint_replacements())
+                 ELEMENTS=", ".join(json.dumps(e.path) for e in elements),
+                 PACKET="PowerConfig394.packet()" if release_394 else "100",
+                 CORE_CAPACITY="state.is(FUSE.get()) ? PowerConfig394.fusionStorage() : PowerConfig394.fissionStorage()" if release_394 else "100_000",
+                 FUSION_GATE="PowerConfig394.fusionGate(product)" if release_394 else "0",
+                 FUSION_PAYMENT="PowerConfig394.payment(cost)" if release_394 else "0",
+                 FISSION_COST="PowerConfig394.fissionCost(input)" if release_394 else "0", **_blueprint_replacements())
 
     assets, data = f"{RESOURCE}assets/{namespace}", f"{RESOURCE}data/{namespace}"
     lang = f"{assets}/lang/en_us.json"

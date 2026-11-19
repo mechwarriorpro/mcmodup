@@ -39,10 +39,10 @@ public final class ReactorScreens {
         @Override protected void renderBg(GuiGraphics gui, float delta, int mouseX, int mouseY) {
             gui.blit(background, leftPos, topPos, 0, 0, imageWidth, imageHeight);
             if (menu.mode != Mode.PROJECT) {
-                if (RF) {
+                if (RF && menu.capacity() > 0) {
                     int y = topPos + (menu.mode == Mode.FUSION ? 39 : 51);
                     gui.fill(leftPos + 8, y, leftPos + 168, y + 3, 0xff333333);
-                    gui.fill(leftPos + 8, y, leftPos + 8 + 160 * menu.energy() / CAPACITY, y + 3, 0xffdf971f);
+                    gui.fill(leftPos + 8, y, leftPos + 8 + 160 * menu.energy() / menu.capacity(), y + 3, 0xffdf971f);
                 }
                 return;
             }
@@ -68,7 +68,7 @@ public final class ReactorScreens {
                         Component.translatable(GUI + "reactor_waiting") : Component.translatable(GUI + "reactor_slice", menu.activeSlice() + 1, plan.width());
                 gui.drawString(font, text, 74, 60, 0x404040, false);
             } else if (RF) {
-                gui.drawString(font, Component.translatable(GUI + "reactor_energy", menu.energy(), CAPACITY), 8, menu.mode == Mode.FUSION ? 45 : 39, 0x404040, false);
+                gui.drawString(font, Component.translatable(GUI + "reactor_energy", menu.energy(), menu.capacity()), 8, menu.mode == Mode.FUSION ? 45 : 39, 0x404040, false);
             }
         }
     }

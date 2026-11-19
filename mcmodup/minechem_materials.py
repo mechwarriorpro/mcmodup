@@ -203,7 +203,7 @@ def synthesis394(namespace: str, ids: dict[str, str]):
                 raise InputError(f"Invalid .394 synthesis pattern: {key}={row}")
             parts.append((chemical_id(part[1], ids), int(part[2])))
         count, cost = int(count), int(cost)
-        if shape not in {"shaped", "shapeless"} or not 1 <= count <= 64 or not 1 <= cost <= 100_000 or not 1 <= len(parts) <= 9 or not any(parts):
+        if shape not in {"shaped", "shapeless"} or not 1 <= count <= 64 or not 1 <= cost <= 100_000 or cost % 10 != 0 or not 1 <= len(parts) <= 9 or not any(parts):
             raise InputError(f"Invalid .394 synthesis row {key}={row}")
         output = item_id(key, namespace, ids)
         if not output or any(part and part[1] > 9 * 64 for part in parts):

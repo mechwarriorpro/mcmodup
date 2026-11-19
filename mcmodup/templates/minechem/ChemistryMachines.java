@@ -174,14 +174,14 @@ public final class ChemistryMachines {
         private final Power power;
 
         private final class Power extends EnergyStorage {
-            Power(int maxReceive) { super(CAPACITY, maxReceive, 0); }
+            Power(int capacity, int maxReceive) { super(capacity, maxReceive, 0); }
             @Override public int receiveEnergy(int amount, boolean simulate) {
                 if (amount <= 0) return 0;
                 int received = super.receiveEnergy(amount, simulate);
                 if (!simulate && received > 0) setChanged();
                 return received;
             }
-            void restore(int amount) { this.energy = Math.clamp(amount, 0, CAPACITY); }
+            void restore(int amount) { this.energy = Math.clamp(amount, 0, capacity); }
         }
 
         Machine(BlockPos pos, BlockState state) {
@@ -189,7 +189,7 @@ public final class ChemistryMachines {
             boolean buffered = bufferedDecomposer();
             inputs = new RangedWrapper(inventory, 0, buffered ? 1 : FIRST_OUTPUT);
             outputs = new RangedWrapper(inventory, FIRST_OUTPUT, buffered ? FIRST_OUTPUT + BUFFERED_OUTPUTS : JOURNAL);
-            power = new Power(PREPAID_DECOMPOSER ? 100 : buffered ? 20 : 200);
+            power = new Power(@BUFFER_STORAGE@, @BUFFER_INTAKE@);
         }
         boolean synthesis() { return SYNTHESIZER != null && getBlockState().is(SYNTHESIZER.get()); }
         boolean bufferedDecomposer() { return ORIGINAL_DECOMPOSER && !synthesis(); }
@@ -216,17 +216,18 @@ public final class ChemistryMachines {
                     return switch (index) {
                         case 0 -> synthesis() ? 1 : 0;
                         case 1 -> selected;
-                        case 2 -> power.getEnergyStored();
+                        case 2 -> power.getEnergyStored() & 0xffff;
                         case 3 -> status;
                         case 4 -> bufferedDecomposer() ? decompositionBuffer.stream().mapToInt(ItemStack::getCount).sum() : remaining;
                         case 5 -> (bufferedDecomposer() || automatic) ? 1 : 0;
                         case 6 -> waterTank != null ? waterTank.getFluidAmount() : 0;
                         case 7 -> @TANK_DISPLAY@;
+                        case 8 -> power.getEnergyStored() >>> 16;
                         default -> 0;
                     };
                 }
                 @Override public void set(int index, int value) {} // Server is authoritative.
-                @Override public int getCount() { return PREPAID_DECOMPOSER ? 8 : 6; }
+                @Override public int getCount() { return PREPAID_DECOMPOSER ? 9 : 6; }
             };
         }
 
@@ -323,7 +324,8 @@ public final class ChemistryMachines {
                     }
                 }
                 var recipe = currentDecomposition();
-                if (recipe == null || energy < (PREPAID_DECOMPOSER ? recipe.energy() : 1)) {
+                int intakeCost = @BUFFER_COST@;
+                if (recipe == null || energy < intakeCost) {
                     if (status != IDLE) { status = IDLE; setChanged(); }
                     return;
                 }
@@ -339,7 +341,7 @@ public final class ChemistryMachines {
                 else if (recipe.fluidAmount() > 0) waterTank.drain(recipe.fluidAmount(), FluidAction.EXECUTE);
                 else inventory.extractItem(0, 1, false);
                 if (PREPAID_DECOMPOSER) {
-                    power.restore(energy - recipe.energy());
+                    power.restore(energy - intakeCost);
                     @COMPACT_PREPAID@;
                 }
                 status = WORKING;

@@ -20,7 +20,7 @@ final class ChemistryMenu extends AbstractContainerMenu@RADIATION_MENU@ {
     private final ContainerData values;
 
     ChemistryMenu(int id, Inventory player) {
-        this(id, player, null, new ItemStackHandler(SLOTS), new SimpleContainerData(PREPAID_DECOMPOSER ? 8 : 6));
+        this(id, player, null, new ItemStackHandler(SLOTS), new SimpleContainerData(PREPAID_DECOMPOSER ? 9 : 6));
     }
 
     ChemistryMenu(int id, Inventory player, ChemistryMachines.Machine machine) {
@@ -62,7 +62,7 @@ final class ChemistryMenu extends AbstractContainerMenu@RADIATION_MENU@ {
     boolean synthesis() { return values.get(0) != 0; }
     boolean bufferedDecomposer() { return ORIGINAL_DECOMPOSER && !synthesis(); }
     int selected() { return values.get(1); }
-    int energy() { return values.get(2); }
+    int energy() { return (values.get(2) & 0xffff) | (PREPAID_DECOMPOSER ? values.get(8) << 16 : 0); }
     int status() { return values.get(3); }
     int remaining() { return values.get(4); }
     boolean automatic() { return values.get(5) != 0; }

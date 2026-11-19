@@ -23,7 +23,8 @@ SETTINGS = "mcmodup_testbed_settings"
 
 
 def staged(root: Path, jar: Path) -> tuple[int, int]:
-    from mcmodup import atomic_thermometer, geostrata_rocks, icbm_plate, minechem_final_synthesis, minechem_matter, minechem_ore, minechem_pair, minechem_polytool, minechem_reactors
+    from mcmodup import (atomic_thermometer, geostrata_rocks, icbm_plate, minechem_final_synthesis, minechem_materials,
+                        minechem_matter, minechem_ore, minechem_pair, minechem_polytool, minechem_reactors)
 
     with ZipFile(jar) as archive:
         entries = minechem_final_synthesis.entries_from_catalog(json.loads(archive.read("data/minechem_chemistry/mcmodup/catalog.json")))
@@ -31,6 +32,14 @@ def staged(root: Path, jar: Path) -> tuple[int, int]:
     package = "mcmodup.testbedcheck"
     source = f"src/main/java/{package.replace('.', '/')}"
     resources = "src/main/resources"
+    variants = {"Settings": "run-settings", "SettingsPaid": "run-settings-paid"}
+    settings_runs = "\n".join(f"""neoForge.runs.create('gameTestServer{suffix}') {{
+    type = 'gameTestServer'
+    gameDirectory = project.file('{directory}')
+    systemProperty 'neoforge.enabledGameTestNamespaces', '{SETTINGS}'
+    systemProperty 'mcmodup.testbed.paid', '{str(suffix.endswith("Paid")).lower()}'
+}}""" for suffix, directory in variants.items())
+    jar_data = jar.read_bytes()
     files = {
         "settings.gradle": "rootProject.name = 'legacy-testbed-check'\n",
         "gradle.properties": "org.gradle.jvmargs=-Xmx2G\n",
@@ -41,17 +50,11 @@ neoForge.runs.create('gameTestServer') {{
     gameDirectory = project.file('run')
     systemProperty 'neoforge.enabledGameTestNamespaces', '{CHECK}'
 }}
-neoForge.runs.create('gameTestServerSettings') {{
-    type = 'gameTestServer'
-    gameDirectory = project.file('run-settings')
-    systemProperty 'neoforge.enabledGameTestNamespaces', '{SETTINGS}'
-}}
+{settings_runs}
 """,
-        f"{resources}/META-INF/neoforge.mods.toml": _metadata(ModMetadata(""), CHECK, "Staged JAR test probe", "1.0.0", "Unlicense"),
-        f"run/mods/{JAR_NAME}": jar.read_bytes(),
-        f"run-settings/mods/{JAR_NAME}": jar.read_bytes(),
-        "run-settings/config/minechem_chemistry-crafting.toml": "uraniumOreCraftable = false\n",
+        f"run/mods/{JAR_NAME}": jar_data,
         f"{resources}/data/{SETTINGS}/structure/empty.nbt": empty_test_structure(5),
+        f"{resources}/data/{SETTINGS}/structure/reactor_room.nbt": empty_test_structure(29),
         **terrain_fixtures(package, CHECK),
         **minechem_ore.verification_tags(),
         f"{source}/GeoCrystalChecks.java": geostrata_rocks.crystal_checks(package, CHECK),
@@ -80,21 +83,36 @@ neoForge.runs.create('gameTestServerSettings') {{
         files[f"{source}/{minechem_ore.check_name(prepaid)}.java"] = minechem_ore.checks(package, CHECK, profile.namespace, prepaid)
     for room, size in {"rock_room": 3, "vein_room": 19, "crystal_room": 9, "water_room": 5, "synthesis_room": 5, "journal_room": 5, "fluid_room": 15, "empty": 5, "test_room": 5, "polytool_room": 11, "turbine_room": 5, "platform_room": 5, "accel_room": 15, "launch_room": 17, "reactor_room": 29}.items():
         files[f"{resources}/data/{CHECK}/structure/{room}.nbt"] = empty_test_structure(size)
-    config_fixture = Path(__file__).with_name("fixtures") / "MinechemConfigSmoke.java"
-    source_text = config_fixture.read_text(encoding="utf-8")
-    expected_settings = source_text.count("@GameTest(")
-    files[f"{source}/{config_fixture.name}"] = source_text
+    power = minechem_materials.observations("release394-power-config.txt")
+    keys = {"costDecomposition": "costDecomposition", "synthesisMultiplier": "costSythesisMultiplier",
+            "fissionMultiplier": "costFissionMultiplier", "fusionMultiplier": "costFusionMultiplier",
+            **{key: key for key in ("energyPacketSize", "maxDecomposerStorage", "maxSynthesizerStorage", "maxFissionStorage", "maxFusionStorage")}}
+    values = "".join(f"{name} = {int(power[key])}\n" for key, name in keys.items())
+    for suffix, directory in variants.items():
+        enabled = "true" if suffix.endswith("Paid") else power["boot_enabled"]
+        files[f"{directory}/mods/{JAR_NAME}"] = jar_data
+        files[f"{directory}/config/minechem_chemistry-crafting.toml"] = "uraniumOreCraftable = false\n"
+        files[f"{directory}/config/minechem_chemistry_394-power.toml"] = f"enable = {enabled}\n" + values
+    expected_settings = 0
+    for name in ("MinechemConfigSmoke", "MinechemPowerConfigSmoke"):
+        text = (Path(__file__).with_name("fixtures") / f"{name}.java").read_text(encoding="utf-8")
+        for key, value in minechem_reactors._blueprint_replacements().items():
+            text = text.replace(f"@{key}@", value)
+        text = text.replace("@ROWS@", ",\n".join(f"        Map.entry({json.dumps(key)}, {json.dumps(value)})" for key, value in power.items()))
+        expected_settings += text.count("@GameTest(")
+        files[f"{source}/{name}.java"] = text
     write_workspace(root, files)
     result = run_gradle(root, "runGameTestServer")
     marker = next((line.split("required tests passed", 1)[0].rsplit("All ", 1)[-1].strip()
                    for line in result.splitlines() if "All " in line and "required tests passed" in line), None)
     expected = sum(content.count("@GameTest(") for name, content in files.items() if name.endswith(".java")) - expected_settings
     assert marker == str(expected), result[-5400:]
-    config_result = run_gradle(root, "runGameTestServerSettings")
-    assert f"All {expected_settings} required tests passed" in config_result, config_result[-5400:]
-    for profile in ("run", "run-settings"):
+    for suffix in variants:
+        config_result = run_gradle(root, f"runGameTestServer{suffix}")
+        assert f"All {expected_settings} required tests passed" in config_result, config_result[-5400:]
+    for profile in ("run", *variants.values()):
         assert digest(root / profile / "mods" / JAR_NAME) == digest(jar), "Staged test mutated the JAR"
-    return expected, expected_settings
+    return expected, expected_settings * len(variants)
 
 
 def check(root: Path, *, fetch: bool = False, client: bool = False) -> None:

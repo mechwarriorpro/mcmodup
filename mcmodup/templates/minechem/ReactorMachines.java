@@ -56,7 +56,7 @@ import static @PACKAGE@.ReactorBlueprints.*;
 /** Original projector geometry and the two historical reaction profiles on native blocks. */
 final class ReactorMachines {
     static final boolean RF = @RELEASE394@;
-    static final int CAPACITY = 100_000, PACKET = 100;
+    private static int packet() { return @PACKET@; }
     private static final List<ResourceLocation> ELEMENTS = List.of(@ELEMENTS@).stream().map(ReactorMachines::id).toList();
     private static final DeferredRegister.Blocks BLOCKS = DeferredRegister.createBlocks(CatalogPort.MOD_ID);
     private static final DeferredRegister<BlockEntityType<?>> TILES = DeferredRegister.create(Registries.BLOCK_ENTITY_TYPE, CatalogPort.MOD_ID);
@@ -343,7 +343,7 @@ final class ReactorMachines {
 
     private static final class Wall extends BlockEntity {
         private BlockPos manager;
-        private final Charge power = new Charge(this, PACKET);
+        private final Charge power = new Charge(this, packet());
         Wall(BlockPos pos, BlockState state) { super(WALL_TILE.get(), pos, state); }
         void bind(BlockPos target) {
             if (!java.util.Objects.equals(manager, target)) { manager = target; setChanged(); }
@@ -370,7 +370,7 @@ final class ReactorMachines {
 
     private static final class Charge extends EnergyStorage {
         private final BlockEntity tile;
-        Charge(BlockEntity tile, int capacity) { super(capacity, PACKET, 0); this.tile = tile; }
+        Charge(BlockEntity tile, int capacity) { super(capacity, packet(), 0); this.tile = tile; }
         @Override public int receiveEnergy(int maxReceive, boolean simulate) {
             int accepted = super.receiveEnergy(Math.max(maxReceive, 0), simulate);
             if (accepted != 0 && !simulate) tile.setChanged();
@@ -381,12 +381,15 @@ final class ReactorMachines {
     }
 
     private static final class Core extends Station {
-        private final Charge power = new Charge(this, CAPACITY);
+        private final Charge power;
         private long lastCheck = Long.MIN_VALUE;
         private boolean complete;
-        Core(BlockPos pos, BlockState state) { super(CORE_TILE.get(), pos, state, state.is(FUSE.get()) ? Mode.FUSION : Mode.FISSION); }
+        Core(BlockPos pos, BlockState state) {
+            super(CORE_TILE.get(), pos, state, state.is(FUSE.get()) ? Mode.FUSION : Mode.FISSION);
+            power = new Charge(this, @CORE_CAPACITY@);
+        }
         @Override boolean ready() { return complete; }
-        @Override int status(int index) { return index == 0 ? power.getEnergyStored() : 0; }
+        @Override int status(int index) { return index == 0 ? power.getEnergyStored() : power.getMaxEnergyStored(); }
         void tick() {
             long now = level.getGameTime();
             if (lastCheck == Long.MIN_VALUE || now < lastCheck || now - lastCheck >= 40) {
@@ -426,9 +429,9 @@ final class ReactorMachines {
             if (a == 0 || b == 0 || product > (RF ? ELEMENTS.size() : 113)) return;
             ItemStack result = element(product, 1);
             if (RF) {
-                int cost = 100 * product;
+                int cost = @FUSION_GATE@;
                 if (power.getEnergyStored() <= cost || !fits(result)) return;
-                power.spend(cost);
+                power.spend(@FUSION_PAYMENT@);
             } else {
                 if (!(fuel.is(Items.NETHER_STAR) || fuel.is(fusionStar.get()))) return;
                 // The original uses/wears the fuel even when a different result blocks the output.
@@ -444,12 +447,13 @@ final class ReactorMachines {
             int input = number(inventory.getStackInSlot(0));
             if (input == 0) return;
             int product = input / 2;
+            int cost = @FISSION_COST@;
             if (RF) {
-                if (product == 0 || power.getEnergyStored() < 100 * input) return;
+                if (product == 0 || power.getEnergyStored() < cost) return;
             } else if (number(inventory.getStackInSlot(1)) != 92) return;
             ItemStack result = product > (RF ? 0 : 1) ? element(product, 2) : ItemStack.EMPTY;
             if (result.isEmpty() ? !inventory.getStackInSlot(2).isEmpty() : !fits(result)) return;
-            if (RF) power.spend(100 * input);
+            if (RF) power.spend(cost);
             else inventory.extractItem(1, 1, false);
             inventory.extractItem(0, 1, false);
             if (!result.isEmpty()) produce(result);

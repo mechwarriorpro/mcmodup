@@ -17,6 +17,7 @@ on:
       - 'tests/minechem_terrain.py'
       - 'tests/fixtures/MinechemTerrainSmoke.java'
       - 'tests/fixtures/MinechemConfigSmoke.java'
+      - 'tests/fixtures/MinechemPowerConfigSmoke.java'
       - 'mcmodup/convert.py'
       - 'mcmodup/minechem_reactors.py'
       - 'mcmodup/machines.py'

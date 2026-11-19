@@ -86,7 +86,7 @@ public final class ResearchScreens {
             if (!inspected.isEmpty()) {
                 label(gui, ResearchMenus.name(inspected), 43);
                 label(gui, recipe == null ? Component.translatable(GUI + "no_recipe")
-                    : Component.translatable(GUI + (synthesis ? "inspect_inputs" : ChemistryRecipes.variable(recipe) ? "inspect_example" : "inspect_outputs"), recipe.energy()), 55);
+                    : Component.translatable(GUI + (synthesis ? "inspect_inputs" : ChemistryRecipes.variable(recipe) ? "inspect_example" : "inspect_outputs"), ChemistryRecipes.displayEnergy(recipe, synthesis)), 55);
             }
         }
 

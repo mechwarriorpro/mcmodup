@@ -29,7 +29,8 @@ class DecomposerMode(StrEnum):
 
 def machine_classes(mode: DecomposerMode) -> tuple[str, ...]:
     research = () if mode == DecomposerMode.BATCH else ("JournalClone", "MaterialRules", *minechem_effects.JAVA, *minechem_polytool.JAVA)
-    synthesis = {DecomposerMode.FINAL: SYNTHESIS_FINAL_CLASSES, DecomposerMode.RELEASE_394: SYNTHESIS_394_CLASSES}.get(mode, ())
+    synthesis = {DecomposerMode.FINAL: SYNTHESIS_FINAL_CLASSES,
+                 DecomposerMode.RELEASE_394: (*SYNTHESIS_394_CLASSES, "PowerConfig394")}.get(mode, ())
     matter = tuple(name for name in minechem_matter.GENERATED_CLASSES if (name not in minechem_matter.FINAL_ONLY or mode == DecomposerMode.FINAL)
                    and (name not in minechem_matter.RELEASE_394_ONLY or mode == DecomposerMode.RELEASE_394)) if research else ()
     return JAVA_CLASSES + research + synthesis + matter
@@ -223,6 +224,8 @@ def _java_recipes(package: str, namespace: str, entries: list[CatalogEntry], rec
     key = "MaterialRules.validInput(stack)" if mode != DecomposerMode.BATCH else "true"
     fallback = "OreDictionary394.lookup(stack, id)" if mode == DecomposerMode.RELEASE_394 else "null"
     chemical_ids = ",\n".join(f'        "{namespace}:{entry.path}"' for entry in entries)
+    display_energy = ("synthesis ? PowerConfig394.synthesisCost(recipe.energy()) : PowerConfig394.decompositionCost()"
+                      if mode == DecomposerMode.RELEASE_394 else "recipe.energy()")
     return f'''package {package};
 
 import java.util.List;
@@ -267,6 +270,7 @@ final class ChemistryRecipes {{
     }}
 
     static boolean variable(Recipe recipe) {{ return {variable}; }}
+    static int displayEnergy(Recipe recipe, boolean synthesis) {{ return {display_energy}; }}
 
     static List<Part> roll(Recipe recipe, RandomSource random) {{ return {roll}; }}
 
@@ -326,6 +330,9 @@ def machine_project(namespace: str, package: str, entries: list[CatalogEntry], r
              .replace("@REGISTER_CLONING@", "        JournalClone.register(bus);" if clone_journal else "")
              .replace("@JOURNAL_LIMIT@", "64" if clone_journal else "1")
              .replace("@PREPAID_DECOMPOSER@", str(prepaid).lower())
+             .replace("@BUFFER_STORAGE@", "PowerConfig394.decomposerStorage()" if prepaid else "CAPACITY")
+             .replace("@BUFFER_INTAKE@", "PowerConfig394.packet()" if prepaid else "buffered ? 20 : 200")
+             .replace("@BUFFER_COST@", "PowerConfig394.decompositionCost()" if prepaid else "1")
              .replace("@REGISTER_MACHINES@", ("List.of(decomposer, Synthesizer394.register(bus, items))" if prepaid else
                                                "SynthesizerFinal.register(bus, items, decomposer)" if final else
                                                "List.of(items.registerSimpleBlockItem(SYNTHESIZER), decomposer)"))

@@ -44,7 +44,7 @@ final class Synthesizer394 extends BaseEntityBlock {
     private static final DeferredRegister.Blocks BLOCKS = DeferredRegister.createBlocks(CatalogPort.MOD_ID);
     private static final DeferredRegister<BlockEntityType<?>> ENTITIES = DeferredRegister.create(Registries.BLOCK_ENTITY_TYPE, CatalogPort.MOD_ID);
     private static final DeferredRegister<MenuType<?>> MENUS = DeferredRegister.create(Registries.MENU, CatalogPort.MOD_ID);
-    static final int STORAGE_SLOTS = 18, GHOST_SLOTS = 9, CAPACITY = 100_000;
+    static final int STORAGE_SLOTS = 18, GHOST_SLOTS = 9;
     private static final int MAX_TEMPLATE_COUNT = GHOST_SLOTS * 64;
 
     private static final DeferredBlock<Synthesizer394> BLOCK =
@@ -224,7 +224,7 @@ final class Synthesizer394 extends BaseEntityBlock {
         private ItemStack ghostStack(int slot) { return display.getStackInSlot(slot).copyWithCount(ghostCounts[slot]); }
         int ghostCount(int slot) { return ghostCounts[slot]; }
 
-        int cost() { return selected == null ? 0 : selected.cost(); }
+        int cost() { return selected == null ? 0 : PowerConfig394.synthesisCost(selected.cost()); }
         boolean ready() { return plan() != null; }
         private ItemStack preview() { return selected == null ? ItemStack.EMPTY : selected.result().stack(); }
 
@@ -249,7 +249,7 @@ final class Synthesizer394 extends BaseEntityBlock {
 
         /** Plan against a snapshot of counts. A failed check never consumes a partial batch. */
         private int[] plan() {
-            if (selected == null || power.getEnergyStored() < selected.cost()) return null;
+            if (selected == null || power.getEnergyStored() < cost()) return null;
             int[] taken = new int[STORAGE_SLOTS];
             for (var part : selected.pattern()) {
                 int missing = part.count();
@@ -326,13 +326,13 @@ final class Synthesizer394 extends BaseEntityBlock {
         }
 
         final class Power extends EnergyStorage {
-            Power() { super(CAPACITY, 100, 0); }
+            Power() { super(PowerConfig394.synthesizerStorage(), PowerConfig394.packet(), 0); }
             @Override public int receiveEnergy(int amount, boolean simulate) {
                 int received = super.receiveEnergy(Math.max(0, amount), simulate);
                 if (!simulate && received > 0) setChanged();
                 return received;
             }
-            void restore(int amount) { energy = Math.clamp(amount, 0, CAPACITY); }
+            void restore(int amount) { energy = Math.clamp(amount, 0, capacity); }
             void spend(int amount) { energy -= amount; }
         }
     }
