@@ -235,7 +235,11 @@ final class SynthesizerFinal extends BaseEntityBlock {
                 int unpaid = batches * part.count();
                 var item = part.item();
                 for (int i = 0; i < GRID && unpaid > 0; ++i) {
-                    if (storage.getStackInSlot(i).is(item)) unpaid -= storage.extractItem(i, unpaid, false).getCount();
+                    var stack = storage.getStackInSlot(i);
+                    if (!stack.is(item)) continue;
+                    int taken = Math.min(stack.getCount(), unpaid);
+                    storage.setStackInSlot(i, stack.copyWithCount(stack.getCount() - taken));
+                    unpaid -= taken;
                 }
             }
             power.spend(cost() * batches);

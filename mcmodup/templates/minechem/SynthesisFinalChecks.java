@@ -56,6 +56,14 @@ public final class SynthesisFinalChecks {
         var menu = m.menu();
         test.assertTrue(menu.slots.size() == 56 && menu.getSlot(OUT).x == 134 && menu.getSlot(1).x == 62 &&
             menu.getSlot(STORE).y == 84 && menu.getSlot(JOURNAL).x == 26, "Wrong FINAL slot order or original coordinates");
+        var foreignIron = ResourceLocation.parse("minechem_chemistry_394:element_fe");
+        if (BuiltInRegistries.ITEM.containsKey(foreignIron)) {
+            var foreign = stack(foreignIron, 16);
+            edit(m, 1, foreign, 0);
+            test.assertTrue(menu.getSlot(1).getItem().isEmpty() && !menu.getSlot(STORE).mayPlace(foreign), "FINAL accepted .394's iron into its pattern/menu");
+            test.assertTrue(!menu.getSlot(JOURNAL).mayPlace(stack(ResourceLocation.parse("minechem_chemistry_394:chemist_journal"), 1)),
+                "FINAL accepted a .394 journal");
+        }
         var silicon = item("element_si", 2);
         edit(m, 1, silicon, 0);
         var oxygen = item("element_o", 2);
@@ -117,7 +125,7 @@ public final class SynthesisFinalChecks {
         test.assertTrue(m.result().isEmpty(), "Unselected journal set a recipe");
         book = m.menu().getSlot(JOURNAL).remove(1);
         learnSelection(test, microscope.getBlockPos(), book);
-        m.player().getInventory().setItem(0, book);
+        m.player().getInventory().setItem(0, book.copy());
         m.menu().quickMoveStack(m.player(), PLAYER + 27);
         test.assertTrue(m.player().getInventory().getItem(0).isEmpty() && m.result().is(Items.IRON_BLOCK),
             "The selected journal did not move to slot 19 or fill 144 iron ghosts");
@@ -130,8 +138,9 @@ public final class SynthesisFinalChecks {
             "The exact 144-tube ghost was truncated to a physical stack limit");
         var replica = place(test, new BlockPos(1, 1, 3));
         replica.block().loadWithComponents(snapshot, registry);
-        test.assertTrue(replica.result().is(Items.IRON_BLOCK) && replica.power().getEnergyStored() == 1000 &&
-            ItemStack.matches(replica.menu().getSlot(JOURNAL).getItem(), book), "FINAL recipe, charge or journal did not reload");
+        test.assertTrue(replica.result().is(Items.IRON_BLOCK) && replica.power().getEnergyStored() == 1000,
+            "FINAL recipe or charge did not reload: " + replica.result() + "/" + replica.power().getEnergyStored());
+        test.assertTrue(ItemStack.matches(replica.menu().getSlot(JOURNAL).getItem(), book), "FINAL journal components did not reload");
         replica.menu().clicked(OUT, 0, ClickType.PICKUP, replica.player());
         test.assertTrue(replica.menu().getCarried().is(Items.IRON_BLOCK) && replica.power().getEnergyStored() == 0 &&
             replica.input().getStackInSlot(0).isEmpty() && replica.input().getStackInSlot(1).isEmpty() &&
