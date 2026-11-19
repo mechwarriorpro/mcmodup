@@ -48,6 +48,22 @@ The Creative FE Supply has no survival recipe and is for testing. Ordinary FE su
 
 Sided item insertion can reach storage while idle; once ready, non-top faces show the result and the top still shows storage. Withdrawal automation defaults to off. To allow it, set `allowAutomation = true` in the configuration file `minechem_chemistry-synthesis.toml` for the world, then reload the world. This option is independent of .394. The journal and ghosts are never automation slots. Keep a backup and empty any earlier preview Synthesizers before upgrading; the timed-preview block entity data is not migrated.
 
+## Minechem chemical gameplay
+
+| | 5.0.5 FINAL · `minechem_chemistry` | 5.0.5.394 · `minechem_chemistry_394` |
+|---|---|---|
+| Recovered tubes | 113 elements, 147 molecules | 113 elements, 173 molecules |
+| Decomposer | 346 mapped rules. Includes per-item chance rolls and the original buffered emission. Plain water conversion retains the strict 144 mB boundary. | 575 mapped rules. Includes chance, alternatives and weighted recursion. Pays 1,000 FE on intake; the saved 5,000 mB tank accepts water or lava. |
+| Synthesizer | 301 ordered registrations, including a recipe above the original capacity. Regular and bulk withdrawal have distinct costs. | 399 recipes, including both sides of the leucine/isoleucine tie. A regular click takes one batch; bulk only pays for batches that fit. |
+| In-game effects | 147 original drink outcomes; 36 coating and 23 food-matching profiles. A new food dose replaces the old one. | 52 effect profiles, also eligible to coat and spike with settings enabled. A new food dose appends. |
+
+- **Drink:** Hold a molecule tube and use it to drink. Sucrose gives Speed II for 50 seconds in FINAL and 20 seconds in .394. The molecule named Asprin in the original clears eligible effects and adds Regeneration. These are effects from the game, not real-world chemical properties.
+- **Coat a sword:** Craft a sword with one eligible tube. The resulting sword preserves its damage and existing components; its tooltip lists the coating. Direct melee hits apply the same release's effects to the target. Throwing a projectile while holding a coated sword does not apply the coating.
+- **Spike food:** Craft a piece of food with one eligible tube. The item keeps its normal food properties. Eating it applies the saved dose or doses when the eating animation finishes. Extra crafting ingredients and mixing treatments across releases are rejected. Coatings and .394 food store up to 16 doses per item.
+- **Settings:** For .394, `minechem_chemistry_394-effects.toml` in the server config has `swordEffects`, `foodSpiking` and `recreationalChemicalEffects`. They default to `true` and don't change FINAL. Edit with the world stopped and reload it.
+- **Stochastic materials:** Try gravel in FINAL or white stained glass in .394. The microscope's example yield is not a promise. In .394, 1,000 mB water yields two hydrogen and one oxygen, while 250 mB lava can produce different pairs or no output. Chance misses consume their input; .394 also pays its normal charge.
+- **Polytool:** Both original shaped recipes now synthesize the related release's base Polytool. In these previews it works as an iron-tier pickaxe; the original modules, infusion and energy mechanics are not included.
+
 ## Minechem blueprint projectors and reactors
 
 These are separate builds of the same in-game machines, not cross-compatible inventories. Use a projector, blueprint and reactor blocks from the **same release**. In survival, concave and convex lenses make the projector and microscope lenses. Paper plus a diamond makes a Fission Blueprint; paper plus a diamond block makes a Fusion Blueprint. If both releases are loaded, use a blank map instead of paper and glass panes instead of glass blocks for the **.394** blueprint and basic lens recipes. The recipe inputs are otherwise identical in the two originals, and the crafting grid cannot select between identical recipes by mod ID.
@@ -60,15 +76,15 @@ These are separate builds of the same in-game machines, not cross-compatible inv
 
 ## Verified build
 
-[Run 44492694048](https://github.com/mechwarriorpro/mcmodup/actions/runs/44492694048/job/135452042383) passed **43 component GameTests and 26 tests against the assembled JAR** on NeoForge 21.1.267. The packed FINAL tests replayed 277 paid canonical patterns, 22 earlier winners, and two unavailable outcomes. The same JAR booted and shut down on a clean dedicated server without other mods. In a fresh world, the graphical client checked models from all five components, reloaded resources, synced an actual .394 projector blueprint, and used FINAL's Synthesizer to take a paid output and retrieve its journal. That screen correctly synced a 144-tube ghost and the full stored charge without treating the ghost as a real stack.
+The [pinned Forge jobs](https://github.com/mechwarriorpro/mcmodup/actions/runs/44500388181) re-observed the material/effect registries, food allowlists, and original extraction behavior. In .394, regular left and right clicks each took 16 stone for 300 RF; shift-click took 48 for 900 RF. With room for only 16 stone, the old menu still spent 900 RF. The native menu fixes that loss rather than reproducing it.
 
-That runner's JAR had SHA-256 `43eb53e462ea0fb737fa8d1b625b870a6b6b9d062d7e50bbd833724e828e3660`. Use the report next to your local output for its own hash. This is not an original-client visual comparison or evidence of full parity.
+The [chemistry refresh one-JAR run](https://github.com/mechwarriorpro/mcmodup/actions/runs/44499781277/job/135476186184) passed **51 component GameTests and 37 tests against the assembled JAR** on NeoForge 21.1.267. The JAR booted cleanly as the only mod on a stock dedicated server. The graphical run checked models, resource reload, .394 blueprint sync, and FINAL journal selection and paid withdrawal with a 144-tube ghost. Its SHA-256 was `353e1fa1587c8f115a9cdf19d1ec044ff5beb5f922fbad1f6d83a4efa2a51841`. Use the report next to your own local output for its hash. These runs do not establish full parity, old-save compatibility, or an original-client visual match.
 
 ## What is still missing
 
 | System | Current boundary |
 |---|---|
-| Minechem FINAL and .394 | Catalog chemistry, release-specific synthesis, journals, water intake, the two projector blueprints and release-specific fusion/fission. **Not all Minechem features.** Other fluid chemistry, radiation, the remaining machines, and the full recipe, item-effect, worldgen and integration chains are incomplete. |
+| Minechem FINAL and .394 | Mapped material and molecule recipes, release-local treatments and synthesis, journals, water and .394 lava, projectors, fusion and fission. **Not all Minechem features.** Chemical/third-party fluids, radiation and decay, full Polytool upgrades, remaining machines, world generation and integrations are incomplete. Modern items, the Delirium HUD and effects use native adaptations. |
 | ICBM | Three tier capacities and range limits, two missile types, and AA/gun/laser turrets. No modular missile assembler, full payload catalog, mounted railgun, legacy networking/GUI, or original flight physics. Recipes, models, loaded-area flight and Sentry combat are adapted. |
 | Atomic Science | Planar electromagnet loop, redstone/FE gates, visible beam and saved antimatter output; also the earlier heat, thermometer, funnel and turbine preview. No particle collisions, dark matter, legacy antimatter weapons, or reactors. |
 | GeoStrata | Sixteen colors of cave crystals, shards, lamps and potion crystals, plus the rock preview. Recreated models and cave placement, partial Nether effects; no brewery, blooms, pendants, crystal clusters or guardian. |
