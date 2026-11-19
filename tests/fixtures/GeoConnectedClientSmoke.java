@@ -17,6 +17,7 @@ import net.minecraft.core.Direction;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.StringTag;
 import net.minecraft.resources.ResourceKey;
@@ -45,6 +46,7 @@ import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.neoforge.capabilities.Capabilities;
+import net.neoforged.neoforge.client.event.ClientChatReceivedEvent;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
 import net.neoforged.neoforge.client.model.data.ModelData;
 import net.neoforged.neoforge.common.NeoForge;
@@ -59,13 +61,23 @@ public final class GeoConnectedClientSmoke {
     private BlockPos center, charger, matterMachine, matterChest;
     private int age, emptyHandSlot;
     private CompletableFuture<Void> reload;
+    private String decayWarning;
     private enum Stage {
         TITLE, JOIN, ISOLATED, JOINED, CHANGE, RELOAD, REACTOR, SYNTHESIS, PAID, DEPOSITED, RETRIEVED,
         BATCH, BATCH_PAID, BATCH_DEPOSITED, BULK_PAID, TREATMENT, FINAL_TOOL, FINAL_TOOL_MENU, FINAL_TOOL_CURSOR,
-        FINAL_ALLOY, FINAL_LITHIUM_CURSOR, FINAL_LITHIUM, FINAL_CHARGE, TOOL_394, TOOL_394_MENU, TOOL_394_SYNC, FLUID_HAND, FLUID_MENU, LEADED, LEADED_TAKEN, DONE
+        FINAL_ALLOY, FINAL_LITHIUM_CURSOR, FINAL_LITHIUM, FINAL_CHARGE, TOOL_394, TOOL_394_MENU, TOOL_394_SYNC, FLUID_HAND, FLUID_MENU, LEADED, LEADED_TAKEN, RADIATION, DONE
     }
 
-    public GeoConnectedClientSmoke() { NeoForge.EVENT_BUS.addListener(this::tick); }
+    public GeoConnectedClientSmoke() {
+        NeoForge.EVENT_BUS.addListener(this::tick);
+        NeoForge.EVENT_BUS.addListener(this::chat);
+    }
+
+    private void chat(ClientChatReceivedEvent.System event) {
+        if ((stage != Stage.LEADED_TAKEN && stage != Stage.RADIATION) || event.isOverlay()) return;
+        String message = event.getMessage().getString();
+        if (message.startsWith("Radiation Warning:")) decayWarning = message;
+    }
 
     private void tick(ClientTickEvent.Post event) {
         if (stage == Stage.DONE) return;
@@ -346,7 +358,18 @@ public final class GeoConnectedClientSmoke {
                 case LEADED_TAKEN -> {
                     var screen = synthesisScreen(client, release394Id("leaded_chest"));
                     if (screen == null || screen.getMenu().getCarried().getCount() != 3 || !screen.getMenu().getSlot(0).getItem().isEmpty()) return;
-                    finish(client, " The .394 projector synced its blueprint; FINAL paid for a 144-tube ghost recipe and cleared its journal. .394 paid for regular and bulk stone batches and synced its coating and Delirium. FINAL infused aluminium and Lithium and charged its tool; .394 shift-infused without an FE capability. A survival iron vial filled the .394 machine, returned an empty tube, and synced the 125 mB and fluid name. The leaded chest synced its uranium and a regular withdrawal.");
+                    if (age < 8) return;
+                    require(screen.getMenu().getCarried().is(BuiltInRegistries.ITEM.get(release394Id("element_u"))) && decayWarning == null,
+                        "An overdue sample decayed before it left the cursor");
+                    click(screen, screen.getMenu().slots.size() - 9 + emptyHandSlot);
+                    advance(Stage.RADIATION);
+                }
+                case RADIATION -> {
+                    var slot = client.player.getInventory().getItem(emptyHandSlot);
+                    if (decayWarning == null || !slot.is(BuiltInRegistries.ITEM.get(release394Id("element_pa")))) return;
+                    require(slot.getCount() == 3 && decayWarning.startsWith("Radiation Warning: Element Uranium decayed into Protactinium after "),
+                        "Wrong localized .394 decay warning or daughter count: " + decayWarning);
+                    finish(client, " The .394 projector synced its blueprint; FINAL paid for a 144-tube ghost recipe and cleared its journal. .394 paid for regular and bulk stone batches and synced its coating and Delirium. FINAL infused aluminium and Lithium and charged its tool; .394 shift-infused without an FE capability. A survival iron vial filled the .394 machine, returned an empty tube, and synced the 125 mB and fluid name. The leaded chest synced an overdue sample; it stayed uranium on the cursor and became three protactinium tubes in the hotbar. Received: " + decayWarning);
                 }
                 default -> { }
             }
@@ -504,7 +527,16 @@ public final class GeoConnectedClientSmoke {
             level.setBlockAndUpdate(matterMachine, BuiltInRegistries.BLOCK.get(release394Id("decomposer")).defaultBlockState());
             level.setBlockAndUpdate(matterChest, BuiltInRegistries.BLOCK.get(release394Id("leaded_chest")).defaultBlockState());
             var storage = level.getCapability(Capabilities.ItemHandler.BLOCK, matterChest, Direction.UP);
-            require(storage.insertItem(0, new ItemStack(BuiltInRegistries.ITEM.get(release394Id("element_u")), 3), false).isEmpty(),
+            var specimen = new ItemStack(BuiltInRegistries.ITEM.get(release394Id("element_u")), 3);
+            var encoded = (CompoundTag) specimen.save(level.registryAccess());
+            var components = encoded.getCompound("components");
+            var clock = new CompoundTag();
+            clock.putLong("age", 345_600 + 1_201);
+            clock.putLong("tick", level.getGameTime());
+            clock.putString("dimension", level.dimension().location().toString());
+            components.put(release394Id("decay_clock").toString(), clock);
+            encoded.put("components", components);
+            require(storage.insertItem(0, ItemStack.parse(level.registryAccess(), encoded).orElseThrow(), false).isEmpty(),
                 "Client fixture could not stock the leaded chest");
         });
     }
