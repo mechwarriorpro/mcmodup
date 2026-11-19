@@ -183,7 +183,7 @@ public final class LegacyVoltzInfrastructure {
 
     private static String platformInventory() throws Exception {
         Class<?> sentry = Class.forName("icbm.sentry.ICBMSentry");
-        Object block = sentry.getField("blockTurretPlatform").get(null);
+        Object block = sentry.getField("blockPlatform").get(null);
         int px = x + 12;
         Object platform = place(block, px, y, z, 0);
         Object restored = place(block, px + 2, y, z, 0);
@@ -214,7 +214,7 @@ public final class LegacyVoltzInfrastructure {
         require(result != null && stack.getField("field_77993_c").getInt(result) == 4 &&
                 stack.getField("field_77994_a").getInt(result) == 37, "Platform lost inert inventory on NBT reload");
         Class<?> blockType = mc("block.Block");
-        float hardness = (Float) blockType.getMethod("func_71934_p", worldType, int.class, int.class, int.class).invoke(block, world, px, y, z);
+        float hardness = (Float) blockType.getMethod("func_71934_m", worldType, int.class, int.class, int.class).invoke(block, world, px, y, z);
         float blast = (Float) blockType.getMethod("getExplosionResistance", mc("entity.Entity"), worldType, int.class, int.class, int.class,
                 double.class, double.class, double.class).invoke(block, null, world, px, y, z, 0D, 0D, 0D);
         return "Sentry placed inventory=" + slots + "×" + stackLimit + "; all six sides; saved cobblestone x37 at slot 19; hardness=" + hardness +
