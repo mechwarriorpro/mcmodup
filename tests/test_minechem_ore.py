@@ -28,7 +28,7 @@ class UraniumOreTests(unittest.TestCase):
         for prepaid in (False, True):
             with self.subTest(prepaid=prepaid):
                 ns = "minechem_chemistry_394" if prepaid else "minechem_chemistry"
-                rows = observations("release394-ore-interop.txt")
+                rows = observations(minechem_ore.ORE_MATRIX)
                 ids = {part[1]: f"{ns}:chemical_{part[1]}" for row in rows.values() for part in PRODUCT.finditer(row)}
                 files = minechem_ore.project(ns, "test.port", prepaid, ids)
                 data = f"src/main/resources/data/{ns}"
@@ -49,6 +49,26 @@ class UraniumOreTests(unittest.TestCase):
                 self.assertNotRegex(checks, r"@[A-Z_]+@")
                 self.assertEqual(checks.count("new Sample("), len(minechem_ore.CASES))
 
+    def test_full_default_handler_matrix_and_unported_synthesis_observations(self):
+        matrix = observations(minechem_ore.ORE_MATRIX)
+        rules = minechem_ore.ore_rules()
+        self.assertEqual(len(matrix), 466)
+        self.assertEqual(len(rules), 371)
+        self.assertEqual(rules["oreNetherCopper"], ("c:ores/copper", "c:ores_in_ground/netherrack", [("e29", 96)]))
+        self.assertLess(list(rules).index("oreNetherCopper"), list(rules).index("oreCopper"))
+        self.assertEqual(rules["dustDirtySalpeter"][2], [("e8", 2)])
+        self.assertEqual(rules["oreArdite"][2], [("e18", 48)])
+        self.assertEqual(rules["oreSaphire"][0], "c:ores/sapphire")
+        for unsupported in ("blockCopper", "oreChromium", "oreNetherQuartz", "dustSmallSalpeter", "xychoriumBlue", "cropBlueberry"):
+            self.assertNotIn(unsupported, rules)
+        self.assertEqual(matrix["synth_ingot_after_dust"], matrix["synth_ingot_first"])
+        self.assertEqual(matrix["synth_ingot_second"], "1;3000;shaped;_,e90x16,_,_,_,_,_,_,_")
+        self.assertEqual(matrix["synth_ingot_late"], "-")
+        self.assertEqual(matrix["synth_small_dust"], "1;750;shaped;e90x4,_,_,_,_,_,_,_,_")
+        ids = {part[1]: f"test:chemical_{part[1]}" for row in matrix.values() for part in PRODUCT.finditer(row)}
+        code = minechem_ore.checks("test.checks", "check", "test", True, ids)
+        self.assertIn('new OreInput("minecraft:jigsaw", Map.of("test:chemical_m68", 3, "test:chemical_e24", 3))', code)
+
     def test_crafting_gate_and_tag_fallback_keep_release_identity(self):
         final = observations("final-ore-interop.txt")
         disabled = observations("final-ore-disabled.txt")
@@ -65,11 +85,12 @@ class UraniumOreTests(unittest.TestCase):
         self.assertEqual(recipe["neoforge:conditions"], [{"type": f"{ns}:uranium_ore_craftable"}])
         self.assertEqual(recipe["ingredients"][0]["base"], {"tag": "c:ores/uranium"})
         self.assertEqual(recipe["result"], {"id": f"{ns}:uranium_ore", "count": 1})
-        ids = {part[1]: f"minechem_chemistry_394:chemical_{part[1]}" for row in other.values() for part in PRODUCT.finditer(row)}
+        matrix = observations(minechem_ore.ORE_MATRIX)
+        ids = {part[1]: f"minechem_chemistry_394:chemical_{part[1]}" for row in matrix.values() for part in PRODUCT.finditer(row)}
         newer_files = minechem_ore.project(ns + "_394", "test.newer", True, ids)
         self.assertFalse(any(path.endswith("uranium_ore_conversion.json") for path in newer_files))
         code = newer_files["src/main/java/test/newer/OreDictionary394.java"]
-        self.assertEqual(code.count("new Rule("), len(minechem_ore.ORE_FORMS))
+        self.assertEqual(code.count("new Rule("), 371)
         self.assertIn('tag("c:ores_in_ground/netherrack"), List.of(new Part("minechem_chemistry_394:chemical_e92", 96))', code)
         self.assertFalse(set(minechem_ore.verification_tags().values()) & set(newer_files.values()))
         fixtures = minechem_ore.verification_tags()

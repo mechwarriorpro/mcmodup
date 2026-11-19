@@ -22,6 +22,20 @@ CHECK = "mcmodup_testbed_check"
 SETTINGS = "mcmodup_testbed_settings"
 
 
+def _run_case(root: Path, task: str, expected: int) -> None:
+    try:
+        report = run_gradle(root, task)
+    except AssertionError as error:
+        report = str(error)
+    if f"All {expected} required tests passed" not in report:
+        lines = report.splitlines()
+        hints = [line for line in lines if any(key in line for key in (
+            " failed at ", "Caused by:", "ModLoadingException:", "Exception:", "Failure message:", "Mod File:",
+            "Missing or unsupported", "Mod ID:", "ERROR]", "error:", "Failed test cases:")) and not line.lstrip().startswith("at ")]
+        # NeoForge's dev launcher can exit successfully despite a loading error and has a long stack trace.
+        raise AssertionError(f"{task}: expected {expected} passed cases\n" + "\n".join(hints[-22:])[:4600] + "\n" + report[-6500:])
+
+
 def staged(root: Path, jar: Path) -> tuple[int, int]:
     from mcmodup import (atomic_thermometer, geostrata_rocks, icbm_plate, minechem_final_synthesis, minechem_materials,
                         minechem_matter, minechem_ore, minechem_pair, minechem_polytool, minechem_reactors)
@@ -78,9 +92,9 @@ neoForge.runs.create('gameTestServer') {{
     }
     for prepaid, rows, profile in ((False, entries, minechem_pair.FINAL), (True, entries394, minechem_pair.RELEASE_394)):
         suffix = "394" if prepaid else "Final"
-        files[f"{source}/MatterChecks{suffix}.java"] = minechem_matter.checks(package, CHECK, profile.namespace,
-            minechem_final_synthesis.chemical_ids(profile.namespace, rows), prepaid)
-        files[f"{source}/{minechem_ore.check_name(prepaid)}.java"] = minechem_ore.checks(package, CHECK, profile.namespace, prepaid)
+        ids = minechem_final_synthesis.chemical_ids(profile.namespace, rows)
+        files[f"{source}/MatterChecks{suffix}.java"] = minechem_matter.checks(package, CHECK, profile.namespace, ids, prepaid)
+        files[f"{source}/{minechem_ore.check_name(prepaid)}.java"] = minechem_ore.checks(package, CHECK, profile.namespace, prepaid, ids)
     for room, size in {"rock_room": 3, "vein_room": 19, "crystal_room": 9, "water_room": 5, "synthesis_room": 5, "journal_room": 5, "fluid_room": 15, "empty": 5, "test_room": 5, "polytool_room": 11, "turbine_room": 5, "platform_room": 5, "accel_room": 15, "launch_room": 17, "reactor_room": 29}.items():
         files[f"{resources}/data/{CHECK}/structure/{room}.nbt"] = empty_test_structure(size)
     power = minechem_materials.observations("release394-power-config.txt")
@@ -102,14 +116,10 @@ neoForge.runs.create('gameTestServer') {{
         expected_settings += text.count("@GameTest(")
         files[f"{source}/{name}.java"] = text
     write_workspace(root, files)
-    result = run_gradle(root, "runGameTestServer")
-    marker = next((line.split("required tests passed", 1)[0].rsplit("All ", 1)[-1].strip()
-                   for line in result.splitlines() if "All " in line and "required tests passed" in line), None)
     expected = sum(content.count("@GameTest(") for name, content in files.items() if name.endswith(".java")) - expected_settings
-    assert marker == str(expected), result[-5400:]
+    _run_case(root, "runGameTestServer", expected)
     for suffix in variants:
-        config_result = run_gradle(root, f"runGameTestServer{suffix}")
-        assert f"All {expected_settings} required tests passed" in config_result, config_result[-5400:]
+        _run_case(root, f"runGameTestServer{suffix}", expected_settings)
     for profile in ("run", *variants.values()):
         assert digest(root / profile / "mods" / JAR_NAME) == digest(jar), "Staged test mutated the JAR"
     return expected, expected_settings * len(variants)
@@ -172,5 +182,7 @@ if __name__ == "__main__":
         details = re.sub(r"\x1b\[[0-9;]*m", "", str(error)).splitlines()
         key_lines = ["\n".join(details[i:i+5]) for i, line in enumerate(details)
                      if " error:" in line or "Failed test cases:" in line or "AssertionError:" in line]
-        note("One-JAR testbed failed", ("\n".join(key_lines) if key_lines else traceback.format_exc()[-3500:])[:3500], level="error")
+        marker = next((line for line in details if "expected " in line and "passed cases" in line), "")
+        diagnosis = "\n".join([marker, *key_lines]) if key_lines else "\n".join(details[:22])
+        note("One-JAR testbed failed", (diagnosis or traceback.format_exc()[-3500:])[:3800], level="error")
         raise

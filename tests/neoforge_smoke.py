@@ -131,7 +131,8 @@ neoForge.runs.create('gameTestServer') {{
             paired_394 = PROVENANCE in jar.namelist()
         tests["src/main/java/mcmodup/test/MatterChecks394.java"] = minechem_matter.checks("mcmodup.test", namespace, RELEASE_394.namespace,
             minechem_final_synthesis.chemical_ids(RELEASE_394.namespace, entries), True, reactors=paired_394)
-        tests["src/main/java/mcmodup/test/UraniumOreChecks394.java"] = minechem_ore.checks("mcmodup.test", namespace, RELEASE_394.namespace, True)
+        tests["src/main/java/mcmodup/test/UraniumOreChecks394.java"] = minechem_ore.checks("mcmodup.test", namespace, RELEASE_394.namespace, True,
+            minechem_final_synthesis.chemical_ids(RELEASE_394.namespace, entries))
         research_rooms[f"src/main/resources/data/{namespace}/structure/journal_room.nbt"] = empty_test_structure(5)
         research_rooms[f"src/main/resources/data/{namespace}/structure/fluid_room.nbt"] = empty_test_structure(15)
     def integrate_fixture(filename, code, package, own_namespace):

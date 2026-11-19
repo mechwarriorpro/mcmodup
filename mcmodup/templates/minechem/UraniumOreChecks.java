@@ -3,8 +3,11 @@ package @PACKAGE@;
 import com.google.gson.JsonObject;
 import com.mojang.serialization.JsonOps;
 import java.lang.reflect.Proxy;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -52,6 +55,13 @@ public final class @CLASS@ {
     private static final Sample[] SAMPLES = {
 @SAMPLES@
     };
+
+    private record OreInput(String item, Map<String, Integer> products) {
+        ItemStack input() { return new ItemStack(BuiltInRegistries.ITEM.get(ResourceLocation.parse(item))); }
+    }
+    private static final List<OreInput> EXTRA_ORES = List.of(
+@TAGGED_SAMPLES@
+    );
 
     @GameTest(template = "test_room")
     public static void @PREFIX@UraniumVeins(GameTestHelper test) throws ReflectiveOperationException {
@@ -138,40 +148,45 @@ public final class @CLASS@ {
         }
         test.assertTrue(recipe.isEmpty(), ".394 acquired FINAL's crafting conversion");
         var machine = BuiltInRegistries.BLOCK.get(ResourceLocation.fromNamespaceAndPath(ORE.getNamespace(), "decomposer"));
-        var positions = List.of(new BlockPos(1, 1, 1), new BlockPos(2, 1, 1), new BlockPos(3, 1, 1), new BlockPos(1, 1, 2));
-        var cases = @STAGED@ ? List.of(nativeOre, conversionSample, new ItemStack(Items.BARRIER), new ItemStack(Items.IRON_ORE)) : List.of(nativeOre);
+        String ns = ORE.getNamespace();
+        String uranium = ns + ":element_u", iron = ns + ":element_fe";
+        var cases = new ArrayList<OreInput>();
+        cases.add(new OreInput(ORE.toString(), Map.of(uranium, 48)));
+        if (@STAGED@) cases.addAll(List.of(new OreInput("minecraft:light", Map.of(uranium, 48)),
+            new OreInput("minecraft:barrier", Map.of(uranium, 96)), new OreInput("minecraft:iron_ore", Map.of(iron, 48))));
+        cases.addAll(EXTRA_ORES);
         var itemCapability = Capabilities.ItemHandler.BLOCK;
         for (int i = 0; i < cases.size(); i++) {
-            var pos = test.absolutePos(positions.get(i));
+            var pos = test.absolutePos(orePosition(i));
             level.setBlockAndUpdate(pos, machine.defaultBlockState());
             var input = level.getCapability(itemCapability, pos, Direction.UP);
             test.assertTrue(input != null && input.getSlots() == 1, "Missing .394 sided ore input");
             if (!foreign.isEmpty()) test.assertTrue(!input.insertItem(0, foreign, true).isEmpty(), ".394 accepted FINAL uranium by shared tag");
             test.assertTrue(!input.insertItem(0, new ItemStack(Items.STRUCTURE_VOID), true).isEmpty(), ".394 accepted an unsupported storage-block form");
-            test.assertTrue(input.insertItem(0, cases.get(i), false).isEmpty(), "Missing .394 recipe for " + cases.get(i));
+            if (@STAGED@) test.assertTrue(!input.insertItem(0, new ItemStack(Items.DEBUG_STICK), true).isEmpty(), "A zero-product small dust unexpectedly registered");
+            var sample = cases.get(i).input();
+            test.assertTrue(!sample.isEmpty() && input.insertItem(0, sample, false).isEmpty(), "Missing .394 recipe for " + cases.get(i).item());
             var power = level.getCapability(Capabilities.EnergyStorage.BLOCK, pos, Direction.NORTH);
             for (int fill = 0; fill < 10; fill++) test.assertTrue(power.receiveEnergy(100, false) == 100, "Could not prepay the ore batch");
         }
-        var uranium = BuiltInRegistries.ITEM.get(ResourceLocation.fromNamespaceAndPath(ORE.getNamespace(), "element_u"));
-        var iron = BuiltInRegistries.ITEM.get(ResourceLocation.fromNamespaceAndPath(ORE.getNamespace(), "element_fe"));
         test.startSequence().thenWaitUntil(() -> {
             for (int i = 0; i < cases.size(); i++) {
-                var pos = test.absolutePos(positions.get(i));
+                var pos = test.absolutePos(orePosition(i));
                 var output = level.getCapability(itemCapability, pos, Direction.DOWN);
-                int count = 0;
+                var observed = new HashMap<String, Integer>();
                 for (int slot = 0; slot < output.getSlots(); slot++) {
                     var stack = output.getStackInSlot(slot);
-                    if (!stack.isEmpty()) {
-                        test.assertTrue(stack.is(i == 3 ? iron : uranium), "Tag recipe shadowed an explicit recipe or crossed the output identity");
-                        count += stack.getCount();
-                    }
+                    if (!stack.isEmpty()) observed.merge(BuiltInRegistries.ITEM.getKey(stack.getItem()).toString(), stack.getCount(), Integer::sum);
                 }
-                test.assertTrue(count == (i == 2 ? 96 : 48), "Waiting for all .394 ore products, have " + count);
+                var sample = cases.get(i);
+                test.assertTrue(observed.equals(sample.products()), "Products from " + sample.item() + ": " + observed + ", expected " + sample.products());
                 test.assertTrue(level.getCapability(Capabilities.EnergyStorage.BLOCK, pos, Direction.NORTH).getEnergyStored() == 0,
-                    "The .394 ore conversion must prepay 1000 FE exactly once");
+                    "The .394 ore conversion must prepay 1000 FE exactly once at default settings");
             }
         }).thenSucceed();
     }
+
+    private static BlockPos orePosition(int index) { return new BlockPos(1 + index % 3, 1, 1 + index / 3); }
 
     private static void craftSample(GameTestHelper test, CraftingRecipe recipe, ItemStack sample, ItemStack result, boolean matches) {
         var input = CraftingInput.of(2, 2, List.of(ItemStack.EMPTY, ItemStack.EMPTY, sample.copyWithCount(64), ItemStack.EMPTY));

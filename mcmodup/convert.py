@@ -194,7 +194,7 @@ def _project_files(profile: Profile, entries: list[CatalogEntry], textures: dict
     package = f"mcmodup.generated.{namespace}"
     mode = _decomposer_mode(profile, digest)
     version = project_version or {DecomposerMode.FINAL: "1.3.12-partial", DecomposerMode.BATCH: "1.2.0-partial",
-                                  DecomposerMode.RELEASE_394: "1.3.14-partial"}.get(mode, "1.0.0-partial")
+                                  DecomposerMode.RELEASE_394: "1.3.15-partial"}.get(mode, "1.0.0-partial")
     machine_rules = machine_recipes(namespace, entries, mode=mode, linked=linked_decomposer) if mode else []
     if mode:
         recipe_files, extra_locales = machine_project(namespace, package, entries, machine_rules, mode=mode,
