@@ -36,7 +36,7 @@ jobs:
           download() {
             curl --proto '=https' --proto-redir '=https' --fail --location --silent --show-error \
               --retry 2 --max-time 120 --max-filesize "$4" --output "$1" "$2"
-            printf '%s  %s\n' "$3" "$1" | "${5:-sha256sum}" --check
+            printf '%s  %s\n' "$3" "$1" | sha256sum --check
           }
           jdk=zulu7.56.0.11-ca-jdk7.0.352-linux_x64
           download "$jdk.tar.gz" "https://cdn.azul.com/zulu/bin/$jdk.tar.gz" 8a7387c1ed151474301b6553c6046f865dc6c1e1890bcf106acc2780c55727c8 68604442
@@ -45,6 +45,6 @@ jobs:
           download voltz.zip https://raw.githubusercontent.com/TechnicPack/Technic/8c4e20f9225bcd6612fca4cb29c53366317d3e13/servers/voltz/Voltz_Server_v3.0.0c.zip 2eda607746a22edbf45612243adce37a876251e36d46c692a48344fe98eec84e 76658094
           # Matched originals from FTB Monster 1.1.2, not a newer Curse release.
           download 'GeoStrata 1.6 v23b.zip' https://dist.modpacks.ch/Reika/GeoStrata/Gamma/a4c4318549d1ac6de878c5dce95ac9fa3f55dbb6 afd68aa6ca1222a0f53ee25323c18bd3c2473c346a15345b216c9ef1042a0414 1138465
-          download 'DragonAPI 1.6 v23b.zip' https://dist.modpacks.ch/Reika/DragonAPI/release/2dbd889f480fe39c094575c8045b4f4652a33aa3 2dbd889f480fe39c094575c8045b4f4652a33aa3 1209419 sha1sum
-      - name: Exercise the original rock blocks, crafts and smelts
+          download 'DragonAPI 1.6 v23b.zip' https://dist.modpacks.ch/Reika/DragonAPI/release/2dbd889f480fe39c094575c8045b4f4652a33aa3 bf30330e9ada3efa3810747ac3ed096cd7ada35371dd8554a357a36c8703c86f 1209419
+      - name: Exercise the original rock blocks, crafts, smelts and vein generation
         run: python -m geostrata_original_smoke "$RUNNER_TEMP/geostrata-original"

@@ -3,27 +3,31 @@
 import argparse
 from pathlib import Path
 import traceback
+from zipfile import ZipFile
 
-from mcmodup.runtime import file_digest
 from mixed_legacy_pack_smoke import ORIGINALS, note
 from voltz_legacy import probe
 
 
 GEOSTRATA = next(entry for entry in ORIGINALS if entry.ids == ("geostrata",))
 DRAGONAPI = "DragonAPI 1.6 v23b.zip"
-DRAGONAPI_SHA1 = "2dbd889f480fe39c094575c8045b4f4652a33aa3"  # FTB Monster 1.1.2
+DRAGONAPI_SHA256 = "bf30330e9ada3efa3810747ac3ed096cd7ada35371dd8554a357a36c8703c86f"  # FTB Monster 1.1.2
 
 
 def run(root: Path) -> None:
-    dragon = root / DRAGONAPI
-    assert file_digest(dragon, "sha1") == DRAGONAPI_SHA1, "Use the matched original DragonAPI v23b"
-    dragon_sha256 = file_digest(dragon)
+    original = root / GEOSTRATA.filename
     evidence = probe(root, "LegacyGeoRockSurvey", {}, (), "MCMODUP_GEO", providers=(), supplied={
-        f"mods/{GEOSTRATA.filename}": (root / GEOSTRATA.filename, GEOSTRATA.sha256),
-        f"mods/{DRAGONAPI}": (dragon, dragon_sha256),
+        f"mods/{GEOSTRATA.filename}": (original, GEOSTRATA.sha256),
+        f"mods/{DRAGONAPI}": (root / DRAGONAPI, DRAGONAPI_SHA256),
     })
-    note("Exact GeoStrata v23b rock survey on Forge", evidence)
-    note("Matched DragonAPI v23b SHA-256", dragon_sha256)
+    cases, properties, generated = evidence.split(" | ")
+    note("Exact GeoStrata v23b rock survey on Forge", cases)
+    note("Original hardness, blast resistance, pickaxe tier, height bounds and rarity", properties)
+    note("Exact GeoStrata controlled stone replacement", generated)
+    with ZipFile(original) as archive:
+        textures = sorted(path for path in archive.namelist()
+                          if path.lower().endswith(".png") and any(name in path.lower() for name in ("granite", "opal", "/connected/")))
+    note("Original rock texture paths (names only)", "; ".join(textures[:45]))
 
 
 if __name__ == "__main__":
