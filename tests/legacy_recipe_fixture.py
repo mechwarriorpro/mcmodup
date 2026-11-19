@@ -103,12 +103,14 @@ def prepare(root: Path, source: Path, version: str) -> Path:
 
 
 def run_server(root: Path, command: list[str], *, marker: bool = True, legacy: bool = False,
-               success_marker: str = SUCCESS, failure_marker: str = FAILURE) -> str:
+               success_marker: str = SUCCESS, failure_marker: str = FAILURE,
+               level_seed: int | None = None) -> str:
     # All test servers are scratch instances and listen only inside the runner.
     (root / "eula.txt").write_text("eula=true\n")
     (root / "server.properties").write_text("server-ip=127.0.0.1\nserver-port=0\nonline-mode=false\nview-distance=3\n"
                                             f"level-type={'FLAT' if legacy else 'minecraft:flat'}\n"
-                                            "simulation-distance=3\ngenerate-structures=false\nspawn-npcs=false\n")
+                                            "simulation-distance=3\ngenerate-structures=false\nspawn-npcs=false\n"
+                                            + (f"level-seed={level_seed}\n" if level_seed is not None else ""))
     recent = deque(maxlen=100)
     ready, verified, result_summary, failure_line = False, not marker, "", ""
     causes = []
