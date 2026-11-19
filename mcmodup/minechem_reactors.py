@@ -19,7 +19,7 @@ FEATURES = {
 LIMITS = (
     "Unmeasured material and synthesis recipes, non-water fluid chemistry, radiation, original power/configuration and other machines remain incomplete.",
     "Reactor projector, menus and electrical proxies are native adapters. Original projector model animation, GUI tabs and cross-mod integration are not verified.",
-    "Only the paired installation changes .394 blank blueprint and glass lens ingredients to avoid recipe collisions. Native cores refuse occupied manager positions; outputs and durability use native limits.",
+    "When both releases are loaded, .394 uses a blank map and glass panes for otherwise identical blueprint and lens recipes. Native cores refuse occupied manager positions; outputs and durability use native limits.",
 )
 
 

@@ -24,6 +24,7 @@ on:
       - 'tests/geostrata_client_smoke.py'
       - 'tests/fixtures/GeoConnectedClientSmoke.java'
       - 'tests/test_legacy_testbed.py'
+      - 'tests/test_minechem_reactors.py'
 
 permissions:
   contents: read
@@ -44,7 +45,9 @@ jobs:
           distribution: temurin
           java-version: '21'
       - name: Check the flat JAR contract
-        run: python -m unittest discover -s tests -p 'test_legacy_testbed.py' -v
+        run: |
+          python -m unittest discover -s tests -p 'test_legacy_testbed.py' -v
+          python -m unittest discover -s tests -p 'test_minechem_reactors.py' -v
       - name: Build and boot the combined production JAR on server and client
         env:
           PYTHONPATH: .:tests

@@ -9,6 +9,7 @@ import java.util.stream.Collectors;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.AccessibilityOnboardingScreen;
 import net.minecraft.client.gui.screens.TitleScreen;
+import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.block.model.BakedQuad;
 import net.minecraft.core.BlockPos;
@@ -18,6 +19,7 @@ import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.Difficulty;
+import net.minecraft.world.MenuProvider;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.GameRules;
 import net.minecraft.world.level.GameType;
@@ -42,7 +44,7 @@ public final class GeoConnectedClientSmoke {
     private BlockPos center;
     private int age;
     private CompletableFuture<Void> reload;
-    private enum Stage { TITLE, JOIN, ISOLATED, JOINED, CHANGE, RELOAD, DONE }
+    private enum Stage { TITLE, JOIN, ISOLATED, JOINED, CHANGE, RELOAD, REACTOR, DONE }
 
     public GeoConnectedClientSmoke() { NeoForge.EVENT_BUS.addListener(this::tick); }
 
@@ -110,11 +112,19 @@ public final class GeoConnectedClientSmoke {
                         checkModel(client, "atomic_thermometer", "creative_fe_supply");
                         checkModel(client, "minechem_chemistry", "decomposer");
                         checkModel(client, "minechem_chemistry_394", "synthesizer");
-                    }
-                    Files.writeString(Path.of(System.getProperty("mcmodup.geoEvidence")),
-                        "Actual staged client: isolated borders, same-rock smooth/brick neighbors, different-rock diagonal, inventory border, additional block models and resource reload verified.\n");
-                    advance(Stage.DONE);
-                    client.stop();
+                        checkModel(client, "minechem_chemistry", "blueprint_projector");
+                        checkModel(client, "minechem_chemistry_394", "ghost_coil");
+                        checkModel(client, "minechem_chemistry_394", "fission_core");
+                        openProjector(client);
+                        advance(Stage.REACTOR);
+                    } else finish(client, "");
+                }
+                case REACTOR -> {
+                    if (!(client.screen instanceof AbstractContainerScreen<?> screen)) return;
+                    var paper = ResourceLocation.fromNamespaceAndPath("minechem_chemistry_394", "fission_blueprint");
+                    if (!screen.getMenu().getSlot(0).getItem().is(BuiltInRegistries.ITEM.get(paper))) return;
+                    require(screen.getTitle().getString().equals("Blueprint Projector"), "Wrong client menu opened");
+                    finish(client, " The .394 projector screen opened with its actual blueprint synced from the integrated server.");
                 }
                 default -> { }
             }
@@ -125,6 +135,31 @@ public final class GeoConnectedClientSmoke {
             advance(Stage.DONE);
             client.stop();
         }
+    }
+
+    private void finish(Minecraft client, String extra) throws Exception {
+        Files.writeString(Path.of(System.getProperty("mcmodup.geoEvidence")),
+            "Actual staged client: isolated borders, same-rock smooth/brick neighbors, different-rock diagonal, inventory border, additional block models and resource reload verified." + extra + "\n");
+        advance(Stage.DONE);
+        client.stop();
+    }
+
+    private void openProjector(Minecraft client) {
+        var server = client.getSingleplayerServer();
+        var playerId = client.player.getUUID();
+        var pos = client.player.blockPosition().above(2);
+        var block = ResourceLocation.fromNamespaceAndPath("minechem_chemistry_394", "blueprint_projector");
+        var paper = ResourceLocation.fromNamespaceAndPath("minechem_chemistry_394", "fission_blueprint");
+        server.execute(() -> {
+            var player = server.getPlayerList().getPlayer(playerId);
+            var level = player.serverLevel();
+            level.setBlockAndUpdate(pos, BuiltInRegistries.BLOCK.get(block).defaultBlockState());
+            if (level.getBlockEntity(pos) instanceof MenuProvider projector) {
+                var menu = projector.createMenu(0, player.getInventory(), player);
+                menu.getSlot(0).set(new ItemStack(BuiltInRegistries.ITEM.get(paper)));
+                player.openMenu(projector);
+            }
+        });
     }
 
     private void advance(Stage next) { stage = next; age = 0; }

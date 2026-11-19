@@ -349,7 +349,7 @@ final class ReactorMachines {
             if (!java.util.Objects.equals(manager, target)) { manager = target; setChanged(); }
         }
         Core core() {
-            return manager != null && available(level, manager) && level.getBlockEntity(manager) instanceof Core found && found.ready() ? found : null;
+            return manager != null && available(level, manager) && level.getBlockEntity(manager) instanceof Core found && found.ready() && found.includes(this) ? found : null;
         }
         void tick() {
             if (power.getEnergyStored() == 0) return;
@@ -396,6 +396,10 @@ final class ReactorMachines {
             if (!complete) return;
             if (mode == Mode.FUSION) fuse();
             else if (RF || now % 50 == 0) split();
+        }
+        private boolean includes(Wall wall) {
+            char cell = mode.plan().at(worldPosition, facing(getBlockState()), wall.getBlockPos());
+            return (cell == 'A' || cell == 'C') && wall.getBlockState().is(material(cell));
         }
         private void checkStructure() {
             Plan plan = mode.plan();

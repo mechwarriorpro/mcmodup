@@ -39,6 +39,16 @@ Do not install the old mods or the separate native previews alongside this JAR. 
 
 The Creative FE Supply has no survival recipe and is for testing. Ordinary FE suppliers from other NeoForge mods can feed supported machines; legacy RF/UE integrations are not provided.
 
+## Minechem blueprint projectors and reactors
+
+These are separate builds of the same in-game machines, not cross-compatible inventories. Use a projector, blueprint and reactor blocks from the **same release**. In survival, concave and convex lenses make the projector and microscope lenses. Paper plus a diamond makes a Fission Blueprint; paper plus a diamond block makes a Fusion Blueprint. If both releases are loaded, use a blank map instead of paper and glass panes instead of glass blocks for the **.394** blueprint and basic lens recipes. The recipe inputs are otherwise identical in the two originals, and the crafting grid cannot select between identical recipes by mod ID.
+
+1. Place the Blueprint Projector while looking toward a clear site, then insert a blueprint. The first unfinished vertical slice appears as replaceable ghost blocks. Fill the ghosts with matching Reactor Casings and Coils one slice at a time. The **5×5×5 fission** shell uses 98 coils; the **13×5×13 fusion** structure uses 181 casings and 241 coils. Leave required air cells and the core location empty. Retrieving the blueprint clears its ghosts, not placed blocks. When the structure is ready, the projector forms the core. Use the core or a linked wall to open it.
+2. **FINAL:** For fission, put fluorine in the input and a uranium tube in the fuel slot. On an eligible tick it consumes one of each and yields two beryllium tubes. For fusion, place hydrogen in both input slots and a Nether Star in the fuel slot. The first successful batch yields helium and changes the fuel into a Fusion Star; repeat use adds wear. Neither core takes FE in this release.
+3. **.394:** Supply FE to a core or linked reactor wall. The buffer holds 100,000 FE at up to 100 FE per receive call. Fluorine fission costs 900 FE, payable at exactly 900. Hydrogen plus hydrogen fusion costs 200 FE but starts only **above** 200. With an open output, lithium yields two hydrogen tubes in .394; FINAL consumes the lithium and uranium without producing a tube.
+
+[Exact-runtime comparison](https://github.com/mechwarriorpro/mcmodup/actions/runs/44486851624): the Forge probes matched both full blueprint grids, measured the fission ghost slices (25 then 16), removed the blueprint, built a core, and exercised each release’s distinct reaction and cost rules. The native build uses these shapes and rules but deliberately doesn't overwrite an occupied core location, load remote chunks, or overflow a native item stack. It imports original menu textures and sound, not the original animated projector renderer or menu tabs.
+
 ## Verified build
 
 [Run 44484066723](https://github.com/mechwarriorpro/mcmodup/actions/runs/44484066723/job/135423057286) passed **33 component tests and 16 staged GameTests** on NeoForge 21.1.267. The produced JAR booted on a clean dedicated server without other mods. A separate staged client check entered a fresh world, checked the connected-wall rendering and selected models from all five components, and reloaded resources. These are gameplay and loading checks, not original-client visual parity.
@@ -49,7 +59,7 @@ The SHA-256 of the JAR tested in that run was `932d1234f66d60a421dd3e53c0bf5ef30
 
 | System | Current boundary |
 |---|---|
-| Minechem FINAL and .394 | Catalog chemistry, a subset of the material and synthesis rules, research and journaling, separately modeled water intake and machine behavior. **Not all Minechem features.** Other fluid chemistry, radiation, fusion and fission multiblocks, blueprint projector, and the full recipe and integration chains are not implemented. |
+| Minechem FINAL and .394 | Catalog chemistry, journals, water intake, the two projector blueprints and release-specific fusion/fission. **Not all Minechem features.** Other fluid chemistry, radiation, the remaining machines, and the full recipe, item-effect, worldgen and integration chains are incomplete. |
 | ICBM | Three tier capacities and range limits, two missile types, and AA/gun/laser turrets. No modular missile assembler, full payload catalog, mounted railgun, legacy networking/GUI, or original flight physics. Recipes, models, loaded-area flight and Sentry combat are adapted. |
 | Atomic Science | Planar electromagnet loop, redstone/FE gates, visible beam and saved antimatter output; also the earlier heat, thermometer, funnel and turbine preview. No particle collisions, dark matter, legacy antimatter weapons, or reactors. |
 | GeoStrata | Sixteen colors of cave crystals, shards, lamps and potion crystals, plus the rock preview. Recreated models and cave placement, partial Nether effects; no brewery, blooms, pendants, crystal clusters or guardian. |

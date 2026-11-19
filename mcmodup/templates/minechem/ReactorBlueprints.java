@@ -16,6 +16,15 @@ final class ReactorBlueprints {
             return projector.relative(facing, depth + 1 - x).relative(facing.getClockWise(), z - depth / 2).above(y);
         }
 
+        char at(BlockPos core, Direction face, BlockPos target) {
+            var offset = target.subtract(core);
+            int x = cx - offset.getX() * face.getStepX() - offset.getZ() * face.getStepZ();
+            var right = face.getClockWise();
+            int z = cz + offset.getX() * right.getStepX() + offset.getZ() * right.getStepZ();
+            int y = cy + offset.getY();
+            return x < 0 || x >= width || y < 0 || y >= height || z < 0 || z >= depth || manager(x, y, z) ? '.' : cell(x, y, z);
+        }
+
         BlockPos around(BlockPos core, Direction facing, int x, int y, int z) {
             return core.relative(facing, cx - x).relative(facing.getClockWise(), z - cz).above(y - cy);
         }
