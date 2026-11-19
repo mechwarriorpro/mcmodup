@@ -60,7 +60,8 @@ final class LegacyMinechemCombat {
     }
 
     static void survey(Object world, boolean old, int x, int y, int z) throws Exception {
-        LegacyMinechemCombat test = new LegacyMinechemCombat(world, old, x, y, z == 0 ? z + 16 : z);
+        // The literal-Z Francium control must be outside the other blast's radius, not just a different block.
+        LegacyMinechemCombat test = new LegacyMinechemCombat(world, old, x, y, Math.abs(z) < 16 ? z + 32 : z);
         test.measure();
     }
 
