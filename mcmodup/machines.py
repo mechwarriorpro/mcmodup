@@ -183,6 +183,10 @@ def machine_recipes(namespace: str, entries: list[CatalogEntry], *,
             if vanilla != "water_bucket":
                 recipes.append(MachineRecipe("synthesizer", original, ((chemical, amount),), ((original, 1),),
                                              10_000, 20, "MinechemRecipes (reviewed starter mapping)"))
+    if mode == DecomposerMode.FINAL and {"element_h", "element_o"} <= catalog:
+        recipes.append(MachineRecipe("decomposer", "minecraft:water", (),
+                       ((f"{namespace}:element_h", 2), (f"{namespace}:element_o", 1)), 1, 3,
+                       "5.0.5 FINAL observed water intake (strict boundaries at 144 and 10000)", ("minecraft:water", 144)))
     return recipes
 
 

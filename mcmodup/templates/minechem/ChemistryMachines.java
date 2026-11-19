@@ -79,8 +79,8 @@ public final class ChemistryMachines {
             if (machine.bufferedDecomposer()) return side == null || side == Direction.UP ? machine.inputs : machine.outputs;
             return side == Direction.DOWN ? machine.outputs : machine.inputs;
         });
-        if (Machine.PREPAID_DECOMPOSER) {
-            event.registerBlockEntity(Capabilities.FluidHandler.BLOCK, MACHINE.get(), (machine, side) -> machine.waterTank);
+        if (Machine.ORIGINAL_DECOMPOSER) {
+            event.registerBlockEntity(Capabilities.FluidHandler.BLOCK, MACHINE.get(), (machine, side) -> machine.bufferedDecomposer() ? machine.waterTank : null);
         }
     }
 
@@ -118,9 +118,10 @@ public final class ChemistryMachines {
 
     static final class Machine extends BlockEntity implements MenuProvider {
         static final int CHARGE = 18, FIRST_OUTPUT = 19, JOURNAL = 37, SLOTS = JOURNAL + 1;
-        static final int CAPACITY = 10_000, DUST_FE = 500, WATER_CAPACITY = 5_000;
+        static final int CAPACITY = 10_000, DUST_FE = 500;
         static final boolean ORIGINAL_DECOMPOSER = @BUFFERED_DECOMPOSER@;
         static final boolean PREPAID_DECOMPOSER = @PREPAID_DECOMPOSER@;
+        static final int WATER_CAPACITY = PREPAID_DECOMPOSER ? 5_000 : 100_000;
         static final int BUFFERED_OUTPUTS = PREPAID_DECOMPOSER ? 18 : 9;
         static final int IDLE = 0, WORKING = 1, NEED_INPUT = 2, NEED_POWER = 3, OUTPUT_FULL = 4, DONE = 5;
 
@@ -130,9 +131,16 @@ public final class ChemistryMachines {
         private boolean automatic;
         private String job = "";
         private final Deque<ItemStack> decompositionBuffer = new ArrayDeque<>();
-        private final FluidTank waterTank = PREPAID_DECOMPOSER ? new FluidTank(WATER_CAPACITY,
+        private boolean finalWaterInput;
+        private final FluidTank waterTank = ORIGINAL_DECOMPOSER ? new FluidTank(WATER_CAPACITY,
                 stack -> FluidStack.isSameFluidSameComponents(stack, new FluidStack(Fluids.WATER, 1))) {
             @Override protected void onContentsChanged() { setChanged(); }
+            @Override public FluidStack drain(int volume, FluidAction action) {
+                return PREPAID_DECOMPOSER ? super.drain(volume, action) : FluidStack.EMPTY;
+            }
+            @Override public FluidStack drain(FluidStack volume, FluidAction action) {
+                return PREPAID_DECOMPOSER ? super.drain(volume, action) : FluidStack.EMPTY;
+            }
         } : null;
 
         final ItemStackHandler inventory = new ItemStackHandler(SLOTS) {
@@ -153,7 +161,7 @@ public final class ChemistryMachines {
                 if (slot >= FIRST_OUTPUT) return false;
                 if (slot == CHARGE) return !bufferedDecomposer() && stack.is(Items.REDSTONE);
                 String key = BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
-                return synthesis() ? ChemistryRecipes.CHEMICALS.contains(key) : slot == 0 && ChemistryRecipes.DECOMPOSE.containsKey(key);
+                return synthesis() ? ChemistryRecipes.CHEMICALS.contains(key) : slot == 0 && !finalWaterInput && ChemistryRecipes.DECOMPOSE.containsKey(key);
             }
         };
         final RangedWrapper inputs;
@@ -185,7 +193,8 @@ public final class ChemistryMachines {
             ItemStack input = inventory.getStackInSlot(0);
             // An item in the input prevents fluid intake, even if it has no recipe.
             if (!input.isEmpty()) return ChemistryRecipes.DECOMPOSE.get(BuiltInRegistries.ITEM.getKey(input.getItem()).toString());
-            if (waterTank != null && waterTank.getFluidAmount() > 0) {
+            if (finalWaterInput) return ChemistryRecipes.DECOMPOSE_FLUID.get("minecraft:water");
+            if (PREPAID_DECOMPOSER && waterTank != null && waterTank.getFluidAmount() > 0) {
                 String fluid = BuiltInRegistries.FLUID.getKey(waterTank.getFluid().getFluid()).toString();
                 var recipe = ChemistryRecipes.DECOMPOSE_FLUID.get(fluid);
                 if (recipe != null && waterTank.getFluidAmount() >= recipe.fluidAmount()) return recipe;
@@ -295,6 +304,18 @@ public final class ChemistryMachines {
         private void tickBufferedDecomposer() {
             int energy = power.getEnergyStored();
             if (decompositionBuffer.isEmpty()) {
+                if (!PREPAID_DECOMPOSER && !finalWaterInput && inventory.getStackInSlot(0).isEmpty() && waterTank != null) {
+                    // FINAL converts pipe water to a virtual water input even without power.
+                    // The large rule runs first; both strict thresholds can consume volume on the same tick.
+                    int before = waterTank.getFluidAmount(), left = before;
+                    if (left > 10_000) left -= 10_000;
+                    if (left > 144) left -= 144;
+                    if (left != before) {
+                        finalWaterInput = true;
+                        waterTank.setFluid(new FluidStack(Fluids.WATER, left));
+                        setChanged();
+                    }
+                }
                 var recipe = currentDecomposition();
                 if (recipe == null || energy < (PREPAID_DECOMPOSER ? recipe.energy() : 1)) {
                     if (status != IDLE) { status = IDLE; setChanged(); }
@@ -308,7 +329,8 @@ public final class ChemistryMachines {
                         count -= batch;
                     }
                 }
-                if (recipe.fluidAmount() > 0) waterTank.drain(recipe.fluidAmount(), FluidAction.EXECUTE);
+                if (finalWaterInput) finalWaterInput = false;
+                else if (recipe.fluidAmount() > 0) waterTank.drain(recipe.fluidAmount(), FluidAction.EXECUTE);
                 else inventory.extractItem(0, 1, false);
                 if (PREPAID_DECOMPOSER) {
                     power.restore(energy - recipe.energy());
@@ -417,7 +439,8 @@ public final class ChemistryMachines {
                 for (ItemStack stack : decompositionBuffer) queue.add(stack.save(registries));
                 tag.put("DecompositionBuffer", queue);
                 tag.putBoolean("DecomposerJammed", status == OUTPUT_FULL);
-                if (waterTank != null) tag.putInt("WaterMillibuckets", waterTank.getFluidAmount());
+                if (PREPAID_DECOMPOSER && waterTank != null) tag.putInt("WaterMillibuckets", waterTank.getFluidAmount());
+                if (finalWaterInput) tag.putBoolean("FinalWaterInput", true);
                 return;
             }
             tag.putString("Selected", ChemistryRecipes.SYNTHESIZE.get(selected).id());
@@ -441,7 +464,8 @@ public final class ChemistryMachines {
                 }
                 status = decompositionBuffer.isEmpty() ? IDLE : tag.getBoolean("DecomposerJammed") ? OUTPUT_FULL : WORKING;
                 if (waterTank != null) {
-                    int volume = Math.clamp(tag.getInt("WaterMillibuckets"), 0, WATER_CAPACITY);
+                    int volume = PREPAID_DECOMPOSER ? Math.clamp(tag.getInt("WaterMillibuckets"), 0, WATER_CAPACITY) : 0;
+                    finalWaterInput = !PREPAID_DECOMPOSER && tag.getBoolean("FinalWaterInput") && inventory.getStackInSlot(0).isEmpty();
                     waterTank.setFluid(volume == 0 ? FluidStack.EMPTY : new FluidStack(Fluids.WATER, volume));
                 }
                 return;

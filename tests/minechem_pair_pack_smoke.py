@@ -19,7 +19,7 @@ from mcmodup.icbm_plate import ARCHIVE as PLATE, prepare as prepare_plate
 from mcmodup.method_ports import PROVENANCE
 from mcmodup.mimicry_catalyst import ARCHIVE as CATALYST, LEGACY_TEXTURE as CATALYST_ICON, MOD_ID as CATALYST_ID
 from mcmodup.mimicry_catalyst import TEXTURE as PORTED_ICON, prepare as prepare_mimicry
-from mcmodup.minechem_pair import FEATURES, FEATURES_394, FINAL, RELEASE_394, VERSIONS
+from mcmodup.minechem_pair import FEATURES_FINAL, FEATURES_394, FINAL, RELEASE_394, VERSIONS
 from mcmodup.native_pack import REPORT_NAME
 from mcmodup.runtime import file_digest
 from mixed_legacy_pack_smoke import ORIGINALS, PACK_MODS, fingerprints, note, summary
@@ -92,7 +92,7 @@ def check(root: Path) -> None:
     assert set((out / "mods").iterdir()) == {*artifacts, *controls, plate, sensor, catalyst, rocks}
     for split_row, path, label, method in zip(split["archives"], artifacts, labels, ("canUnjam()Z", "pushQueue()V")):
         evidence = report["native_builds"][path.name]
-        tests_passed = len(FEATURES_394 if method == "pushQueue()V" else FEATURES)
+        tests_passed = len(FEATURES_394 if method == "pushQueue()V" else FEATURES_FINAL)
         assert evidence["status"] == "preview" and evidence["gametests"]["passed"] == tests_passed, evidence
         assert evidence["original_sha256"] == split_row["sha256"] == before[source / label], split_row
         assert evidence["legacy_ids"] == {"minechem": split_row["native_id"]}, evidence
