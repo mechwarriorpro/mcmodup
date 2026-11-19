@@ -24,9 +24,9 @@ COFH = "CoFHLib-[1.7.10]1.0.1-151.jar"
 def compile_probe(root: Path, server: Path, forge: Path, javac: str) -> None:
     probe = root / "probe"
     probe.mkdir()
-    fixture = Path(__file__).with_name("fixtures") / "LegacyMinechemDecomposer.java"
-    subprocess.run([javac, "-proc:none", "-encoding", "UTF-8", "-classpath", str(forge),
-                    "-d", str(probe), str(fixture)], check=True, timeout=60)
+    fixtures = Path(__file__).with_name("fixtures")
+    subprocess.run([javac, "-proc:none", "-encoding", "UTF-8", "-classpath", str(forge), "-d", str(probe),
+                    str(fixtures / "LegacyMinechemDecomposer.java"), str(fixtures / "LegacyMinechemMaterials.java")], check=True, timeout=60)
     with ZipFile(server / "mods/mcmodup-minechemoracle.jar", "x") as jar:
         for compiled in probe.rglob("*.class"):
             jar.write(compiled, compiled.relative_to(probe).as_posix())
@@ -75,6 +75,11 @@ def original(root: Path, version: str) -> None:
         raise
     assert file_digest(server / "mods" / name) == checksum
     note(f"Original Minechem decomposer on Forge {version}", evidence)
+    if version == "1.7.10":
+        observations = (server / "minechem-materials.txt").read_text(encoding="utf-8").splitlines()
+        assert len(observations) > 125 and len({row.partition("=")[0] for row in observations}) == len(observations)
+        for start in range(0, len(observations), 40):
+            note(f"Exact .394 material trace {start // 40 + 1}", "\n".join(observations[start:start + 40]))
 
 
 if __name__ == "__main__":

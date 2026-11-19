@@ -7,6 +7,7 @@ on:
       - '.github/workflows/minechem-original-parity.yml'
       - 'tests/minechem_original_smoke.py'
       - 'tests/fixtures/LegacyMinechemDecomposer.java'
+      - 'tests/fixtures/LegacyMinechemMaterials.java'
       - 'tests/legacy_recipe_fixture.py'
 
 permissions:
