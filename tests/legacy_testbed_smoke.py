@@ -39,19 +39,20 @@ neoForge.runs.create('gameTestServer') {{
         f"{resources}/META-INF/neoforge.mods.toml": _metadata(ModMetadata(""), CHECK, "Staged JAR test probe", "1.0.0", "Unlicense"),
         f"run/mods/{JAR_NAME}": jar.read_bytes(),
         f"{source}/GeoRockChecks.java": geostrata_rocks.checks(package, CHECK),
+        f"{source}/LaunchChecks.java": icbm_plate.launch_checks(package, CHECK),
         f"{source}/BuildingChecks.java": icbm_plate.building_checks(package, CHECK),
         f"{source}/AcceleratorChecks.java": atomic_thermometer.accelerator_checks(package, CHECK),
         f"{source}/SteamChecks.java": atomic_thermometer.steam_checks(package, CHECK),
         f"{source}/JournalCloneChecks.java": minechem_pair.journal_clone_checks(package, CHECK, minechem_pair.FINAL.namespace),
         f"{source}/JournalCloneChecks394.java": minechem_pair.journal_clone_checks(package, CHECK, minechem_pair.RELEASE_394.namespace, "JournalCloneChecks394"),
     }
-    for room, size in {"rock_room": 3, "vein_room": 19, "empty": 5, "test_room": 5, "turbine_room": 5, "platform_room": 5, "accel_room": 15}.items():
+    for room, size in {"rock_room": 3, "vein_room": 19, "empty": 5, "test_room": 5, "turbine_room": 5, "platform_room": 5, "accel_room": 15, "launch_room": 17}.items():
         files[f"{resources}/data/{CHECK}/structure/{room}.nbt"] = empty_test_structure(size)
     write_workspace(root, files)
     result = run_gradle(root, "runGameTestServer")
     marker = next((line.split("required tests passed", 1)[0].rsplit("All ", 1)[-1].strip()
                    for line in result.splitlines() if "All " in line and "required tests passed" in line), None)
-    assert marker == "10", result[-5400:]
+    assert marker == "11", result[-5400:]
     assert digest(root / "run/mods" / JAR_NAME) == digest(jar), "Staged test mutated the JAR"
     return marker
 

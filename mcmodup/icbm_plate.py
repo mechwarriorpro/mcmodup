@@ -15,7 +15,7 @@ from .source_ports import digest
 
 LEGACY_SHA256 = "34a0efec6a1d078d2d0f1b7681c1040d4d68cb096330f4db79bf569a00f75130"
 MOD_ID = "icbm_glass_plate"
-VERSION = "1.4.1.344-preview.4"
+VERSION = "1.4.1.344-preview.5"
 ARCHIVE = f"{MOD_ID}-{VERSION}.jar"
 PACKAGE = "mcmodup.icbmplate"
 KERNEL = f"mcmodup_kernel/{MOD_ID}"
@@ -39,12 +39,18 @@ BUILDING = (
 )
 TEXTURES = {TEXTURE: f"assets/{MOD_ID}/textures/block/glass_pressure_plate.png", **PLATFORM_TEXTURES,
             **{f"assets/icbm/textures/blocks/{old}.png": f"assets/{MOD_ID}/textures/block/{name}.png" for name, old, _, _ in BUILDING}}
+LAUNCH_BLOCKS = {"launcher_base": "iron_block", "launcher_frame": "iron_bars", "launcher_screen": "observer_front", "anti_air_turret": "dispenser_front"}
+LAUNCH_ITEMS = {"training_missile": f"{MOD_ID}:item/training_missile", "condensed_missile": "minecraft:item/firework_rocket",
+                "target_designator": "minecraft:item/compass"}
+TEXTURES["assets/icbm/textures/items/missileModule.png"] = f"assets/{MOD_ID}/textures/item/training_missile.png"
+
 FEATURES = {
     "Glass plate recipe and break behavior": "craftinganddrop",
     "Original pressure-plate redstone updates and release timing": "contactandrelease",
     "Passive platform forwarding, direction order, simulation and no extraction": "passivesentrytransfer",
     "Platform GUI storage, sided extraction and save/load": "storedsentryinventory",
     "Four building blocks with exact recipes, drops and physical properties": "measuredbuildingblocks",
+    "Saved tier-one launcher, practice missile flight and active Sentry interception": "savedlauncherandsentry",
 }
 
 
@@ -115,6 +121,37 @@ def _building_resources(assets: str, data: str) -> dict[str, str]:
     return files
 
 
+def launch_checks(package: str, namespace: str) -> str:
+    return ((TEMPLATES / "icbm_plate/LaunchChecks.java").read_text(encoding="utf-8")
+            .replace("@PACKAGE@", package).replace("@TEST_NAMESPACE@", namespace))
+
+
+def _launch_resources(assets: str, data: str) -> dict[str, str]:
+    files = {}
+    for name, texture in LAUNCH_BLOCKS.items():
+        model = f"{MOD_ID}:block/{name}"
+        files[f"{assets}/blockstates/{name}.json"] = _json({"variants": {"": {"model": model}}})
+        files[f"{assets}/models/block/{name}.json"] = _json({"parent": "minecraft:block/cube_all", "textures": {"all": f"minecraft:block/{texture}"},
+            **({"render_type": "minecraft:cutout"} if name == "launcher_frame" else {})})
+        files[f"{assets}/models/item/{name}.json"] = _json({"parent": model})
+        files[f"{data}/loot_table/blocks/{name}.json"] = _json({"type": "minecraft:block", "pools": [{"rolls": 1,
+            "conditions": [{"condition": "minecraft:survives_explosion"}], "entries": [{"type": "minecraft:item", "name": f"{MOD_ID}:{name}"}]}]})
+    for name, texture in LAUNCH_ITEMS.items():
+        files[f"{assets}/models/item/{name}.json"] = _json({"parent": "minecraft:item/generated", "textures": {"layer0": texture}})
+    for name, pattern, materials in (
+        ("launcher_base", ["IRI", "CCC", "IRI"], {"I": "minecraft:iron_ingot", "R": "minecraft:redstone", "C": f"{MOD_ID}:reinforced_concrete"}),
+        ("launcher_screen", ["IGI", "CRC", "III"], {"I": "minecraft:iron_ingot", "G": "minecraft:glass_pane", "C": "minecraft:copper_ingot", "R": "minecraft:redstone"}),
+        ("launcher_frame", ["I I", "IBI", "I I"], {"I": "minecraft:iron_ingot", "B": "minecraft:iron_bars"}),
+        ("anti_air_turret", [" I ", "RDR", "CCC"], {"I": "minecraft:iron_ingot", "D": "minecraft:dispenser", "C": "minecraft:copper_ingot", "R": "minecraft:redstone"}),
+        ("training_missile", [" P ", " I ", " R "], {"P": "minecraft:paper", "I": "minecraft:iron_ingot", "R": "minecraft:redstone"}),
+        ("condensed_missile", [" M ", " T "], {"M": f"{MOD_ID}:training_missile", "T": "minecraft:tnt"}),
+        ("target_designator", [" C ", " R "], {"C": "minecraft:compass", "R": "minecraft:redstone"}),
+    ):
+        files[f"{data}/recipe/{name}.json"] = _json({"type": "minecraft:crafting_shaped", "pattern": pattern,
+            "key": {symbol: {"item": item} for symbol, item in materials.items()}, "result": {"id": f"{MOD_ID}:{name}"}})
+    return files
+
+
 def _project(workspace: Path) -> None:
     item, platform = "glass_pressure_plate", "sentry_platform"
     assets, java = f"src/main/resources/assets/{MOD_ID}", "src/main/java"
@@ -125,7 +162,7 @@ def _project(workspace: Path) -> None:
                                                         "textures": {"texture": prefix}})
               for name, parent in ((item, "pressure_plate_up"), (item + "_down", "pressure_plate_down"))}
     title = "ICBM Utilities and Building Blocks (Preview)"
-    desc = "Building blocks, glass plate and passive Sentry platform from Voltz ICBM 1.4.1.344. Not a replacement for ICBM or its add-ons."
+    desc = "Building blocks, glass plate, native first-tier missile launcher and active anti-air Sentry preview. Not a replacement for the exact ICBM add-ons."
     meta = _metadata(ModMetadata("", description=desc), MOD_ID, title, VERSION, "Original ICBM license applies (local conversion)")
     write_workspace(workspace, {
         "settings.gradle": f"rootProject.name = '{MOD_ID}'\n",
@@ -147,14 +184,16 @@ neoForge.runs.create('gameTestServer') {{
 """,
         "src/main/resources/META-INF/neoforge.mods.toml": meta.replace(f"[{NEOFORGE_VERSION},21.2)", f"[{NEOFORGE_VERSION}]"),
         **{f"{java}/{KERNEL}/{name}.java": (TEMPLATES / f"icbm_plate/{name}.java").read_bytes()
-           for name in ("GlassPlate", "SentryBridge", "SentryMenu", "SentryPlatform", "SentryScreen")},
+           for name in ("GlassPlate", "SentryBridge", "SentryMenu", "SentryPlatform", "SentryScreen", "LaunchSystem", "LaunchClient")},
         **{f"{java}/mcmodup/icbmplate/{name}.java": (TEMPLATES / f"icbm_plate/{name}.java").read_bytes()
            for name in ("GlassPlateMod", "BuildingBlocks")},
+        f"{java}/mcmodup/icbmplate/LaunchChecks.java": launch_checks(PACKAGE, MOD_ID),
         f"{java}/mcmodup/icbmplate/BuildingChecks.java": building_checks(PACKAGE, MOD_ID),
         f"{java}/mcmodup/icbmplate/PlateChecks.java": checks(MOD_ID),
         f"{java}/mcmodup/icbmplate/PlatformChecks.java": platform_checks(PACKAGE, MOD_ID),
         f"src/main/resources/data/{MOD_ID}/structure/empty.nbt": empty_test_structure(4),
         f"src/main/resources/data/{MOD_ID}/structure/platform_room.nbt": empty_test_structure(5),
+        f"src/main/resources/data/{MOD_ID}/structure/launch_room.nbt": empty_test_structure(17),
         f"src/main/resources/data/{MOD_ID}/loot_table/blocks/{platform}.json": _json({"type": "minecraft:block", "pools": [
             {"rolls": 1, "entries": [{"type": "minecraft:item", "name": f"{MOD_ID}:{platform}",
                 "conditions": [{"condition": "minecraft:survives_explosion"}]}]}],
@@ -164,6 +203,8 @@ neoForge.runs.create('gameTestServer') {{
                 "pattern": ["##"], "key": {"#": {"item": "minecraft:glass"}}, "result": {"id": f"{MOD_ID}:{item}", "count": 1}}),
         f"{assets}/lang/en_us.json": _json({f"block.{MOD_ID}.{item}": "Glass Pressure Plate",
                                              f"block.{MOD_ID}.{platform}": "Sentry Platform",
+                                             **{f"block.{MOD_ID}.{name}": name.replace("_", " ").title() for name in LAUNCH_BLOCKS},
+                                             **{f"item.{MOD_ID}.{name}": name.replace("_", " ").title() for name in LAUNCH_ITEMS},
                                              **{f"block.{MOD_ID}.{name}": name.replace("_", " ").title() for name, _, _, _ in BUILDING}}),
         f"{assets}/blockstates/{item}.json": _json({"variants": {"powered=false": {"model": prefix},
                                                               "powered=true": {"model": prefix + "_down"}}}),
@@ -174,6 +215,7 @@ neoForge.runs.create('gameTestServer') {{
         f"{assets}/models/item/{platform}.json": _json({"parent": f"{MOD_ID}:block/{platform}"}),
         **models,
         **_building_resources(assets, f"src/main/resources/data/{MOD_ID}"),
+        **_launch_resources(assets, f"src/main/resources/data/{MOD_ID}"),
     })
 
 
@@ -200,7 +242,8 @@ def prepare(output: Path) -> Path:
                   "neoforge": f"[{NEOFORGE_VERSION}]", "artifact": f"build/libs/{ARCHIVE}", "tasks": ["jar", "runGameTestServer"],
                   "game_report": "build/gametest.xml", "minimum_tests": len(FEATURES), "features": FEATURES,
                   "status": "preview", "limitations": [
-                      "Only Core building blocks, the glass plate and the passive Sentry platform are implemented. No radiation shielding, other Core features, Explosion or active Sentry.",
+                      "First-tier launcher and anti-air Sentry are native adaptations; only practice and small condensed missile payloads. No other missile tiers, assemblers, station interfaces, payloads, or other turret types.",
+                      "Direct target designator, adjacent frame required, bounded loaded-chunk flight and new recipes/models differ from the original GUI, spread and forced chunks. No original missile physics parity.",
                       "The creative-only platform forwards FE only to native receivers advertising the dedicated Sentry capability. The legacy crafting prerequisites and receivers are not included.",
                       "Separate registry IDs for fresh worlds. Old saves and add-ons expecting ICBM are not supported.",
                       "No graphical client comparison; modern material, collision and redstone APIs are used at the boundary."],

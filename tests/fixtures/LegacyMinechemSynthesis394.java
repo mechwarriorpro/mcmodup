@@ -144,8 +144,10 @@ final class LegacyMinechemSynthesis394 {
         }
         set.invoke(machine, 28, journal);
         choose.invoke(machine, rule);
+        tick.invoke(machine);
         set.invoke(machine, 10, tubes);
         charge(machine, (Integer) recipe.getMethod("energyCost").invoke(rule));
+        tick.invoke(machine);
         for (int side = 0; side < 6; side++) {
             int[] active = (int[]) sided.invoke(machine, side);
             require(active[active.length - 1] == 28 && active.length == (side == 1 ? 19 : 2) && active[0] == (side == 1 ? 10 : 0),
