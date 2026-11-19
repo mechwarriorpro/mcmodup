@@ -139,6 +139,8 @@ public final class GeoConnectedClientSmoke {
                         checkModel(client, "minechem_chemistry", "chemical_storage");
                         checkModel(client, "minechem_chemistry_394", "leaded_chest");
                         checkModel(client, "minechem_chemistry_394", "fluid_element_fe");
+                        require(client.getResourceManager().getResource(release394Id("textures/block/fluid_still.png")).isPresent(),
+                            "Missing .394 animated chemical-fluid texture");
                         openProjector(client);
                         advance(Stage.REACTOR);
                     } else finish(client, "");
@@ -329,7 +331,8 @@ public final class GeoConnectedClientSmoke {
                     }
                     var stored = screen.getMenu().getSlot(0).getItem();
                     if (stored.getCount() != 3) return;
-                    require(screen.getMenu().slots.size() == 45 && hasTooltip(stored, client, "Radioactivity 1"),
+                    require(screen.getMenu().slots.size() == 45 && screen.getXSize() == 176 && screen.getYSize() == 132 &&
+                        hasTooltip(stored, client, "Radioactivity 1"),
                         "Leaded storage didn't sync its inventory or the uranium clock");
                     click(screen, 0);
                     advance(Stage.LEADED_TAKEN);

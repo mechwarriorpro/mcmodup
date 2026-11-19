@@ -137,6 +137,7 @@ public final class ChemistryMachines {
         private final FluidTank waterTank = ORIGINAL_DECOMPOSER ? new FluidTank(WATER_CAPACITY,
                 stack -> ChemistryRecipes.DECOMPOSE_FLUID.containsKey(BuiltInRegistries.FLUID.getKey(stack.getFluid()).toString())) {
             @Override protected void onContentsChanged() { setChanged(); }
+@MIX_RADIOACTIVE@
             @Override public FluidStack drain(int volume, FluidAction action) {
                 return PREPAID_DECOMPOSER ? super.drain(volume, action) : FluidStack.EMPTY;
             }

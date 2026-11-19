@@ -42,7 +42,9 @@ import net.neoforged.neoforge.common.SoundActions;
 import net.neoforged.neoforge.fluids.BaseFlowingFluid;
 import net.neoforged.neoforge.fluids.FluidStack;
 import net.neoforged.neoforge.fluids.FluidType;
+import net.neoforged.neoforge.fluids.capability.IFluidHandler.FluidAction;
 import net.neoforged.neoforge.fluids.capability.IFluidHandlerItem;
+import net.neoforged.neoforge.fluids.capability.templates.FluidTank;
 import net.neoforged.neoforge.fluids.capability.wrappers.FluidBucketWrapper;
 import net.neoforged.neoforge.registries.DeferredHolder;
 import net.neoforged.neoforge.registries.DeferredRegister;
@@ -117,7 +119,14 @@ final class ChemistryFluids {
             var type = TYPES.register(spec.path(), () -> new FluidType(FluidType.Properties.create()
                 .density(spec.density()).viscosity(spec.viscosity()).canConvertToSource(false)
                 .canDrown(spec.density() > 0).sound(SoundActions.BUCKET_FILL, SoundEvents.BUCKET_FILL)
-                .sound(SoundActions.BUCKET_EMPTY, SoundEvents.BUCKET_EMPTY)));
+                .sound(SoundActions.BUCKET_EMPTY, SoundEvents.BUCKET_EMPTY)) {
+                @Override public ItemStack getBucket(FluidStack contents) {
+                    var bucket = super.getBucket(contents);
+                    var clock = contents.get(ChemistryRadiation.CLOCK.get());
+                    if (!bucket.isEmpty() && clock != null) bucket.set(ChemistryRadiation.CLOCK.get(), clock);
+                    return bucket;
+                }
+            });
             var properties = new BaseFlowingFluid.Properties(type,
                 () -> spec.source(), () -> BuiltInRegistries.FLUID.get(id("flowing_" + spec.path())))
                 .tickRate(Math.max(1, spec.viscosity() / 200)).levelDecreasePerBlock(spec.density() == 0 ? 8 : 1);
@@ -200,17 +209,32 @@ final class ChemistryFluids {
 
     private static final class BucketContents extends FluidBucketWrapper {
         BucketContents(ItemStack bucket) { super(bucket); }
-        @Override protected void setFluid(FluidStack fluid) {
-            super.setFluid(fluid);
-            var clock = fluid.get(ChemistryRadiation.CLOCK.get());
-            if (!fluid.isEmpty() && clock != null) getContainer().set(ChemistryRadiation.CLOCK.get(), clock);
-        }
         @Override public FluidStack getFluid() {
             var contents = super.getFluid();
             var clock = getContainer().get(ChemistryRadiation.CLOCK.get());
             if (!contents.isEmpty() && clock != null) contents.set(ChemistryRadiation.CLOCK.get(), clock);
             return contents;
         }
+    }
+
+    static int mergeClock(FluidTank tank, FluidStack offered, FluidAction action) {
+        var current = tank.getFluid();
+        if (!tank.isFluidValid(offered) || current.isEmpty() || offered.isEmpty() || !FluidStack.isSameFluid(current, offered)) return 0;
+        var component = ChemistryRadiation.CLOCK.get();
+        var a = current.copy();
+        var b = offered.copy();
+        var currentClock = a.remove(component);
+        var offeredClock = b.remove(component);
+        if (!FluidStack.isSameFluidSameComponents(a, b)) return 0;
+        int accepted = Math.min(tank.getSpace(), offered.getAmount());
+        if (accepted > 0 && action.execute()) {
+            // Keep the older sample when two amounts of the same fluid coalesce.
+            var merged = ChemistryRadiation.olderThan(offeredClock, currentClock) ? offeredClock : currentClock;
+            var contents = current.copyWithAmount(current.getAmount() + accepted);
+            if (merged != null) contents.set(component, merged);
+            tank.setFluid(contents);
+        }
+        return accepted;
     }
 
     private static class ChemicalBlock extends LiquidBlock {

@@ -89,7 +89,8 @@ def asset_paths(namespace: str, prepaid: bool) -> dict[str, str]:
                ("gui/LeadedChestGUI", "gui/leaded_chest")]
     if prepaid:
         mapping.extend((("items/TestTube", "item/test_tube"), ("items/bucketEmpty", "item/bucket_empty"),
-                        ("items/bucketContent", "item/bucket_content")))
+                        ("items/bucketContent", "item/bucket_content"), ("blocks/fluid_still", "block/fluid_still"),
+                        ("blocks/fluid_flow", "block/fluid_flow")))
     return {f"assets/minechem/textures/{old}.png": f"assets/{namespace}/textures/{new}.png" for old, new in mapping}
 
 
@@ -120,6 +121,8 @@ def project(namespace: str, package: str, ids: dict[str, str], names: dict[str, 
             .replace("@PACKAGE@", package).replace("@NAMESPACE@", namespace).replace("@RELEASE_394@", str(prepaid).lower())
             .replace("@FLUID_ROWS@", ",\n".join(fluid_java)).replace("@RADIATION_ROWS@", ",\n".join(rad_java))
             .replace("@HALF_LIFE@", percent).replace("@DECAY_SAFE@", safe).replace("@FLUID_EFFECTS@", contact)
+            .replace("@STILL_TEXTURE@", f"{namespace}:block/fluid_still" if prepaid else "minecraft:block/water_still")
+            .replace("@FLOW_TEXTURE@", f"{namespace}:block/fluid_flow" if prepaid else "minecraft:block/water_flow")
             .replace("@REGISTER_EMPTY_TUBE@", '        buckets.add(items.registerItem("test_tube", p -> new TubeWorldUse.TubeItem(p, true)));' if prepaid else "")
             .replace("@WATER_BUCKET_CRAFT@", observations(trace_name(True, "fluids")).get("water", "false").split("/", 1)[0]))
     locales = {f"gui.{namespace}.tank_empty": "Empty", f"item.{namespace}.radioactive": "Radioactivity %s · %s s to decay"}
@@ -161,7 +164,10 @@ def project(namespace: str, package: str, ids: dict[str, str], names: dict[str, 
         files[f"{assets}/models/item/{bucket}.json"] = out({"parent": "minecraft:item/generated",
             "textures": {"layer0": f"{namespace}:item/bucket_empty", "layer1": f"{namespace}:item/bucket_content"}})
     if prepaid:
-        files[f"{assets}/models/block/chemical_fluid.json"] = out({"textures": {"particle": "minecraft:block/water_still"}})
+        files[f"{assets}/models/block/chemical_fluid.json"] = out({"textures": {"particle": f"{namespace}:block/fluid_still"}})
+        # Keep the original PNG frame layout, without the comment lines in Forge's old metadata.
+        files[f"{assets}/textures/block/fluid_still.png.mcmeta"] = out({"animation": {"frames": [{"index": 0, "time": 20}, *range(1, 7)]}})
+        files[f"{assets}/textures/block/fluid_flow.png.mcmeta"] = out({"animation": {}})
     files[f"{data}/mcmodup/chemical_fluids.json"] = out({row.fluid: {"legacy_name": row.legacy_name, "chemical": row.chemical,
         "density": row.density, "viscosity": row.viscosity, "tint": row.tint, "placeable": row.placeable,
         **({"bucket": row.bucket, "tube_volume": 125} if row.placeable else {})} for row in fluids})
@@ -200,7 +206,8 @@ def features(prepaid: bool) -> dict[str, str]:
     return {f"{prefix} fluid registry and release-specific tank behavior": f"{prefix}fluidregistryandtank",
             f"{prefix} shielded storage, save, and uranium ore yield": f"{prefix}storageandore",
             f"{prefix} radioactive lifetime boundary and catch-up": f"{prefix}decayboundaryandcatchup",
-            **({".394 crafting, no-loss fluid transfer, and contact effects": "release394tubebucketandcontact"} if prepaid else {})}
+            **({".394 crafting, no-loss fluid transfer, and contact effects": "release394tubebucketandcontact",
+                ".394 split tube payment and radioactive source reload": "release394radioactivetubesource"} if prepaid else {})}
 
 
 def checks(package: str, test_namespace: str, namespace: str, ids: dict[str, str], prepaid: bool) -> str:

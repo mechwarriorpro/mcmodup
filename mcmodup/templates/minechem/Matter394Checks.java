@@ -78,6 +78,21 @@
         var filled = tubeUse("collect", level, actor, hand, sourceHit).getObject();
         test.assertTrue(filled.is(item("element_u", 1).getItem()) && filled.getCount() == 8 && oldest.equals(clock(test, filled)) && level.isEmptyBlock(pos),
             "Source pickup didn't restore eight tubes and their oldest persisted clock");
+        var fluidCarrier = filled.copyWithCount(1).getCapability(Capabilities.FluidHandler.ITEM);
+        var oldFluid = fluidCarrier.getFluidInTank(0).copyWithAmount(750);
+        var youngFluid = new FluidStack(oldFluid.getFluid(), 250);
+        var tankPos = place(test, "decomposer", new BlockPos(1, 1, 1));
+        var tank = level.getCapability(Capabilities.FluidHandler.BLOCK, tankPos, Direction.UP);
+        test.assertTrue(tank.fill(youngFluid, FluidAction.EXECUTE) == 250 && tank.fill(oldFluid, FluidAction.SIMULATE) == 750 &&
+            tank.getFluidInTank(0).getAmount() == 250, "Tank could not simulate blending two ages of the same fluid");
+        test.assertTrue(tank.fill(oldFluid, FluidAction.EXECUTE) == 750 && oldFluid.getAmount() == 750,
+            "Tank refused two ages of the same fluid or mutated its caller");
+        reload(test, tankPos, "decomposer");
+        tank = level.getCapability(Capabilities.FluidHandler.BLOCK, tankPos, Direction.DOWN);
+        var bucket = FluidUtil.tryFillContainer(new ItemStack(Items.BUCKET), tank, 1000, null, true);
+        test.assertTrue(bucket.isSuccess() && bucket.getResult().is(item("bucket_element_u", 1).getItem()) &&
+            oldest.equals(clock(test, bucket.getResult())) && tank.getFluidInTank(0).isEmpty(),
+            "Filling a vanilla bucket from the saved tank lost the oldest clock");
         test.succeed();
     }
 

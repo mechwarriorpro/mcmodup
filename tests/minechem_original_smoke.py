@@ -105,7 +105,14 @@ def original(root: Path, version: str, matter_only: bool = False) -> None:
                               if key.startswith("m") and key[1:].isdigit() and key != "m1" else value)
                         for key, value in rows.items()}
             expected, actual = map(without_molecule_tints, (expected, actual))
-        mismatch = [key for key in sorted(expected.keys() | actual.keys()) if expected.get(key) != actual.get(key)]
+        observed_variants = {}
+        if version == "1.7.10" and kind == "fluids":
+            # Both declarations have the legacy name `mt`. The decomposer keys bucket
+            # inputs by hash, and either recipe can win at boot. Keep the measured
+            # element recipe for the native bucket and check the two observed outcomes.
+            observed_variants["be109"] = {"e26x48,m88x8"}
+        mismatch = [key for key in sorted(expected.keys() | actual.keys())
+                    if expected.get(key) != actual.get(key) and actual.get(key) not in observed_variants.get(key, ())]
         if os.environ.get("MCMODUP_CAPTURE_CHEMISTRY") == "1" or mismatch:
             capture(path, f"Minechem {version} matter {kind}")
         assert not mismatch, f"{version} {kind} differs at {[(key, expected.get(key), actual.get(key)) for key in mismatch[:12]]}"

@@ -37,6 +37,10 @@ class MatterTests(unittest.TestCase):
         self.assertEqual(len(buckets), 284)
         self.assertNotIn(ns + ":bucket_molecule_88", buckets)
         self.assertEqual(buckets[ns + ":bucket_element_fe"].representative, ((ids["e26"], 56),))
+        for state in ("still", "flow"):
+            png = f"assets/{ns}/textures/block/fluid_{state}.png"
+            self.assertIn(png, asset_paths(ns, True).values())
+            self.assertIn("animation", json.loads(files[f"src/main/resources/{png}.mcmeta"]))
         self.assertIn('return false ? Items.WATER_BUCKET', files['src/main/java/mcmodup/example/ChemistryFluids.java'])
         with self.assertRaisesRegex(InputError, 'does not match'):
             fluid_rows(True, {key: item for key, item in ids.items() if key != 'e26'})

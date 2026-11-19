@@ -297,6 +297,12 @@ def machine_project(namespace: str, package: str, entries: list[CatalogEntry], r
             }
             return net.minecraft.world.ItemInteractionResult.PASS_TO_DEFAULT_BLOCK_INTERACTION;
         }''' if prepaid else ""
+    mix_radioactive = """            @Override public int fill(FluidStack offered, FluidAction action) {
+                if (isEmpty() || FluidStack.isSameFluidSameComponents(getFluid(), offered)) return super.fill(offered, action);
+                int accepted = ChemistryFluids.mergeClock(this, offered, action);
+                if (accepted > 0 && action.execute()) onContentsChanged();
+                return accepted;
+            }""" if prepaid else ""
     radiation_menu = " implements ChemistryRadiation.MenuRules" if clone_journal else ""
     shield = ("    @Override public boolean shieldedRadiationSlot(int slot) { return slot < SLOTS && ChemistryRadiation.shieldDecomposer(); }\n"
               "    @Override public float radiationReduction() { return 0.4F; }") if clone_journal else ""
@@ -313,7 +319,7 @@ def machine_project(namespace: str, package: str, entries: list[CatalogEntry], r
              .replace("@FINAL_CAN_UNJAM@", jam_test).replace("@COMPACT_PREPAID@", compact)
              .replace("@EXPOSED_TANK@", "new FinalFluidCollector(waterTank)" if final else "waterTank")
              .replace("@RESET_TANK@", "                        ((FinalFluidCollector) fluidHandler).reset();" if final else "")
-             .replace("@USE_FLUID_CONTAINER@", use_container)
+             .replace("@USE_FLUID_CONTAINER@", use_container).replace("@MIX_RADIOACTIVE@", mix_radioactive)
              .replace("@TANK_DISPLAY@", "waterTank == null || waterTank.getFluid().isEmpty() ? 0 : "
                       + ("ChemistryFluids.displayId(waterTank.getFluid().getFluid())" if prepaid else "1"))
              .replace("@RADIATION_MENU@", radiation_menu).replace("@MACHINE_SHIELD@", shield)

@@ -10,8 +10,8 @@ import net.neoforged.neoforge.client.extensions.common.IClientFluidTypeExtension
 
 @EventBusSubscriber(modid = CatalogPort.MOD_ID, bus = EventBusSubscriber.Bus.MOD, value = Dist.CLIENT)
 public final class FluidPresentation {
-    private static final ResourceLocation STILL = ResourceLocation.withDefaultNamespace("block/water_still");
-    private static final ResourceLocation FLOW = ResourceLocation.withDefaultNamespace("block/water_flow");
+    private static final ResourceLocation STILL = ResourceLocation.parse("@STILL_TEXTURE@");
+    private static final ResourceLocation FLOW = ResourceLocation.parse("@FLOW_TEXTURE@");
 
     @SubscribeEvent
     public static void extensions(RegisterClientExtensionsEvent event) {
