@@ -31,6 +31,14 @@ def check(root: Path) -> None:
         path = source / label
         path.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(full_source / label, path)
+    # FINAL bundles some UE and Modstats classes also supplied by Voltz. With
+    # those libraries absent, the static graph would see only FINAL as a binary
+    # owner and report ICBM as its add-on. Keep the actual Voltz inputs visible
+    # as legacy evidence; neither is a selected mod or stages into the target.
+    libraries = source / "lib"
+    libraries.mkdir()
+    for filename in ("universal-electricity-3.1.0.74-core.jar", "calclavia-core-development-1.2.0.6-main.jar"):
+        shutil.copyfile(full_source / "mods/1.6.4" / filename, libraries / filename)
     before = fingerprints(source)
     recipe = root / "minechem-recipes"
     proc = subprocess.run([sys.executable, "-m", "mcmodup", "prepare-minechem-pair", *(str(source / label) for label in labels),
@@ -53,6 +61,9 @@ def check(root: Path) -> None:
     report = json.loads((out / REPORT_NAME).read_text())
     assert report["staged"] and report["ready"] and not report["parity_verified"] and not report["connector_required"], report["problems"]
     assert report["selected"] == selected and report["build_order"] == selected, (selected, report["selected"], report["build_order"])
+    assert not report["auto_addons"], report["auto_addons"]
+    linkage = report["legacy_class_providers"][plate_original.label]
+    assert "universalelectricity/api/vector/Vector3" in linkage["ambiguous_classes"], linkage
     [split] = report["legacy_identity_splits"]
     assert split["id"] == "minechem" and not report["legacy_selection_conflicts"], split
     assert [row["archive"] for row in split["archives"]] == labels, split
