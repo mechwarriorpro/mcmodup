@@ -86,6 +86,7 @@ def _java(package: str, namespace: str, entries: list[CatalogEntry], mode: Decom
         definitions.append("        ChemistryEffects.register(bus, mod);")
         definitions.append("        ChemistryRadiation.register(bus, mod);")
         definitions.append("        entries.addAll(ShieldedStorage.register(bus, items));")
+        definitions.append("        UraniumOreFeature.register(bus, mod);")
         definitions.append("        entries.addAll(ChemistryFluids.register(bus, items));")
         if mode == DecomposerMode.RELEASE_394:
             definitions.append("        FluidDispensing.register(bus);")
@@ -191,8 +192,8 @@ def _project_files(profile: Profile, entries: list[CatalogEntry], textures: dict
     namespace = profile.namespace
     package = f"mcmodup.generated.{namespace}"
     mode = _decomposer_mode(profile, digest)
-    version = project_version or {DecomposerMode.FINAL: "1.3.6-partial", DecomposerMode.BATCH: "1.2.0-partial",
-                                  DecomposerMode.RELEASE_394: "1.3.6-partial"}.get(mode, "1.0.0-partial")
+    version = project_version or {DecomposerMode.FINAL: "1.3.7-partial", DecomposerMode.BATCH: "1.2.0-partial",
+                                  DecomposerMode.RELEASE_394: "1.3.7-partial"}.get(mode, "1.0.0-partial")
     machine_rules = machine_recipes(namespace, entries, mode=mode, linked=linked_decomposer) if mode else []
     if mode:
         recipe_files, extra_locales = machine_project(namespace, package, entries, machine_rules, mode=mode,

@@ -45,7 +45,7 @@ final class ShieldedStorage {
 
     private static final net.neoforged.neoforge.registries.DeferredBlock<Chest> CHEST = BLOCKS.register("leaded_chest", () -> new Chest(properties()));
     private static final net.neoforged.neoforge.registries.DeferredBlock<Chest> CABINET = FINAL ? BLOCKS.register("chemical_storage", () -> new Chest(properties())) : null;
-    private static final net.neoforged.neoforge.registries.DeferredBlock<Block> ORE = BLOCKS.registerSimpleBlock("uranium_ore",
+    static final net.neoforged.neoforge.registries.DeferredBlock<Block> ORE = BLOCKS.registerSimpleBlock("uranium_ore",
         BlockBehaviour.Properties.of().strength(4F, 4F).requiresCorrectToolForDrops());
     private static final net.neoforged.neoforge.registries.DeferredHolder<BlockEntityType<?>, BlockEntityType<Contents>> CONTENTS = ENTITIES.register("shielded_storage",
         () -> BlockEntityType.Builder.of(Contents::new, FINAL ? new Block[] {CHEST.get(), CABINET.get()} : new Block[] {CHEST.get()}).build(null));

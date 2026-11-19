@@ -4,6 +4,7 @@ from dataclasses import dataclass
 import json
 import re
 
+from . import minechem_ore
 from .inputs import InputError
 from .minechem_materials import PRODUCT, TEMPLATES, chemical_id, observations
 
@@ -256,32 +257,8 @@ def project(namespace: str, package: str, ids: dict[str, str], names: dict[str, 
         **({"bucket": row.bucket, "tube_volume": 125} if row.placeable else {})} for row in fluids})
     files[f"{data}/mcmodup/radiation.json"] = out({"default_multiplier": int(percent), "decay_safe_machines": safe == "true",
         "rules": {item: {"tier": tier, "products": dict(parts)} for item, tier, parts in radiation}})
-    files.update(ore_generation(namespace, out, prepaid))
+    files.update(minechem_ore.project(namespace, package, prepaid))
     return files, locales
-
-
-def ore_generation(namespace: str, out, prepaid: bool) -> dict[str, str]:
-    enabled, density, cluster = observations(trace_name(prepaid, "radiation"))["worldgen"].split("/")
-    data = f"{RESOURCES}/data/{namespace}"
-    ore = f"{namespace}:uranium_ore"
-    # The old feature rolled size 0 through cluster+9. Vanilla 1.21's terrain and
-    # vein algorithm differ; use its midpoint size, with the original attempts and absolute Y band.
-    result = {
-        f"{RESOURCES}/data/c/tags/block/ores/uranium.json": out({"replace": False, "values": [ore]}),
-        f"{RESOURCES}/data/c/tags/item/ores/uranium.json": out({"replace": False, "values": [ore]}),
-        f"{RESOURCES}/data/minecraft/tags/block/needs_iron_tool.json": out({"replace": False, "values": [ore]}),
-        f"{data}/worldgen/configured_feature/uranium_ore.json": out({"type": "minecraft:ore", "config": {
-            "size": (int(cluster) + 9) // 2, "discard_chance_on_air_exposure": 0,
-            "targets": [{"target": {"predicate_type": "minecraft:block_match", "block": "minecraft:stone"}, "state": {"Name": ore}}]}}),
-        f"{data}/worldgen/placed_feature/uranium_ore.json": out({"feature": ore, "placement": [
-            {"type": "minecraft:count", "count": int(density) + 1}, {"type": "minecraft:in_square"},
-            {"type": "minecraft:height_range", "height": {"type": "minecraft:uniform", "min_inclusive": {"absolute": 0}, "max_inclusive": {"absolute": 49}}},
-            {"type": "minecraft:biome"}]}),
-    }
-    if enabled == "true":
-        result[f"{data}/neoforge/biome_modifier/uranium_ore.json"] = out({"type": "neoforge:add_features", "biomes": "#minecraft:is_overworld",
-            "features": ore, "step": "underground_ores"})
-    return result
 
 
 def features(prepaid: bool) -> dict[str, str]:

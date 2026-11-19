@@ -12,6 +12,7 @@ from mcmodup.audit import ModMetadata
 from mcmodup.legacy_testbed import AUDIT, COMPONENTS, JAR_NAME, REPORT_NAME, build_testbed, fetch_originals
 from mcmodup.port import _build_gradle, _metadata, empty_test_structure, write_workspace
 from mcmodup.source_ports import digest
+from minechem_terrain import fixtures as terrain_fixtures
 from mixed_legacy_pack_smoke import note, summary
 from native_pack_smoke import run_gradle
 from pack_release_smoke import boot
@@ -21,7 +22,7 @@ CHECK = "mcmodup_testbed_check"
 
 
 def staged(root: Path, jar: Path) -> str:
-    from mcmodup import atomic_thermometer, geostrata_rocks, icbm_plate, minechem_final_synthesis, minechem_matter, minechem_pair, minechem_polytool, minechem_reactors
+    from mcmodup import atomic_thermometer, geostrata_rocks, icbm_plate, minechem_final_synthesis, minechem_matter, minechem_ore, minechem_pair, minechem_polytool, minechem_reactors
 
     with ZipFile(jar) as archive:
         entries = minechem_final_synthesis.entries_from_catalog(json.loads(archive.read("data/minechem_chemistry/mcmodup/catalog.json")))
@@ -42,6 +43,7 @@ neoForge.runs.create('gameTestServer') {{
 """,
         f"{resources}/META-INF/neoforge.mods.toml": _metadata(ModMetadata(""), CHECK, "Staged JAR test probe", "1.0.0", "Unlicense"),
         f"run/mods/{JAR_NAME}": jar.read_bytes(),
+        **terrain_fixtures(package, CHECK),
         f"{source}/GeoCrystalChecks.java": geostrata_rocks.crystal_checks(package, CHECK),
         f"{source}/GeoRockChecks.java": geostrata_rocks.checks(package, CHECK),
         f"{source}/LaunchChecks.java": icbm_plate.launch_checks(package, CHECK),
@@ -65,6 +67,7 @@ neoForge.runs.create('gameTestServer') {{
         suffix = "394" if prepaid else "Final"
         files[f"{source}/MatterChecks{suffix}.java"] = minechem_matter.checks(package, CHECK, profile.namespace,
             minechem_final_synthesis.chemical_ids(profile.namespace, rows), prepaid)
+        files[f"{source}/{minechem_ore.check_name(prepaid)}.java"] = minechem_ore.checks(package, CHECK, profile.namespace, prepaid)
     for room, size in {"rock_room": 3, "vein_room": 19, "crystal_room": 9, "water_room": 5, "synthesis_room": 5, "journal_room": 5, "fluid_room": 15, "empty": 5, "test_room": 5, "turbine_room": 5, "platform_room": 5, "accel_room": 15, "launch_room": 17, "reactor_room": 29}.items():
         files[f"{resources}/data/{CHECK}/structure/{room}.nbt"] = empty_test_structure(size)
     write_workspace(root, files)

@@ -7,12 +7,13 @@ import subprocess
 import zipfile
 
 from mcmodup.audit import ModMetadata
-from mcmodup import minechem_final_synthesis, minechem_matter, minechem_polytool
+from mcmodup import minechem_final_synthesis, minechem_matter, minechem_ore, minechem_polytool
 from mcmodup.catalogs import RELEASE_394_SHA256, CatalogEntry
 from mcmodup.machines import FINAL_LEGACY_SHA256, DecomposerMode, machine_recipes
 from mcmodup.method_ports import PROVENANCE
 from mcmodup.minechem_pair import FINAL, RELEASE_394, chemistry_gameplay_checks, journal_clone_checks, release394_checks, synthesis394_checks
 from mcmodup.port import _build_gradle, _metadata, empty_test_structure, write_workspace
+from minechem_terrain import fixtures as terrain_fixtures
 
 
 FIXTURES = Path(__file__).with_name("fixtures")
@@ -43,7 +44,7 @@ def check_minechem_artifacts(final: Path, release394: Path) -> list[CatalogEntry
         assert not any("SynthesisFinalChecks" in name for name in left.namelist()), "Production FINAL JAR contains test code"
         assert not any("Release394Checks" in name or "Synthesis394Checks" in name for name in right.namelist()), "Production .394 JAR contains test code"
         for jar, profile in ((left, FINAL), (right, RELEASE_394)):
-            assert not any("MatterChecks" in name for name in jar.namelist())
+            assert not any("MatterChecks" in name or "UraniumOreChecks" in name for name in jar.namelist())
             assert set(minechem_matter.asset_paths(profile.namespace, profile == RELEASE_394).values()) <= set(jar.namelist())
             assert f"data/{profile.namespace}/mcmodup/chemical_fluids.json" in jar.namelist()
             automation = f"data/{profile.namespace}/mcmodup/fluid_automation.json"
@@ -101,6 +102,7 @@ neoForge.runs.create('gameTestServer') {{
     if include_aspects:
         tests["src/main/java/mcmodup/test/CatalogAspectSmoke.java"] = (FIXTURES / "CatalogAspectSmoke.java").read_bytes()
     research_rooms = {}
+    terrain = {}
     if buffered:
         tests["src/main/java/mcmodup/test/ChemistryGameplayChecksFinal.java"] = chemistry_gameplay_checks("mcmodup.test", namespace, False)
         tests["src/main/java/mcmodup/test/JournalCloneChecks.java"] = journal_clone_checks("mcmodup.test", namespace, FINAL.namespace)
@@ -111,6 +113,8 @@ neoForge.runs.create('gameTestServer') {{
         tests["src/main/java/mcmodup/test/MatterChecksFinal.java"] = minechem_matter.checks("mcmodup.test", namespace, FINAL.namespace,
             minechem_final_synthesis.chemical_ids(FINAL.namespace, minechem_final_synthesis.entries_from_catalog(catalog)), False,
             reactors=paired_final)
+        tests["src/main/java/mcmodup/test/UraniumOreChecksFinal.java"] = minechem_ore.checks("mcmodup.test", namespace, FINAL.namespace, False)
+        terrain = terrain_fixtures("mcmodup.test", namespace)
         research_rooms[f"src/main/resources/data/{namespace}/structure/synthesis_room.nbt"] = empty_test_structure(5)
     if minechem_394:
         assert buffered, "The paired tests require the actual FINAL-based build"
@@ -127,6 +131,7 @@ neoForge.runs.create('gameTestServer') {{
             paired_394 = PROVENANCE in jar.namelist()
         tests["src/main/java/mcmodup/test/MatterChecks394.java"] = minechem_matter.checks("mcmodup.test", namespace, RELEASE_394.namespace,
             minechem_final_synthesis.chemical_ids(RELEASE_394.namespace, entries), True, reactors=paired_394)
+        tests["src/main/java/mcmodup/test/UraniumOreChecks394.java"] = minechem_ore.checks("mcmodup.test", namespace, RELEASE_394.namespace, True)
         research_rooms[f"src/main/resources/data/{namespace}/structure/journal_room.nbt"] = empty_test_structure(5)
         research_rooms[f"src/main/resources/data/{namespace}/structure/fluid_room.nbt"] = empty_test_structure(15)
     def integrate_fixture(filename, code, package, own_namespace):
@@ -192,6 +197,7 @@ neoForge.runs.create('gameTestServer') {{
         "build.gradle": gradle,
         "gradle.properties": "org.gradle.jvmargs=-Xmx2G\n",
         **tests,
+        **terrain,
         "src/main/resources/META-INF/neoforge.mods.toml": _metadata(ModMetadata(""), namespace, "Catalog smoke tests", "1.0.0", "Unlicense"),
         f"src/main/resources/data/{namespace}/structure/empty.nbt": empty_test_structure(),
         f"src/main/resources/data/{namespace}/structure/test_room.nbt": empty_test_structure(5),
@@ -205,7 +211,7 @@ neoForge.runs.create('gameTestServer') {{
     run = subprocess.run(["./gradlew", "--no-daemon", "--console=plain", "runGameTestServer"],
                          cwd=project, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=420)
     # Keep the exact count tied to the probe sources installed into this run.
-    count = sum((source.decode("utf-8") if isinstance(source, bytes) else source).count("@GameTest(") for source in tests.values())
+    count = sum((source.decode("utf-8") if isinstance(source, bytes) else source).count("@GameTest(") for name, source in (tests | terrain).items() if name.endswith(".java"))
     if run.returncode or f"All {count} required tests passed" not in run.stdout:
         issues = [line for line in run.stdout.splitlines() if any(word in line for word in ("error:", " failed!", "Exception:"))]
         raise AssertionError("\n".join(issues[:12]) + "\n" + run.stdout[-6500:])

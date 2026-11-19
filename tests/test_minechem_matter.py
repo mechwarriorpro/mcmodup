@@ -116,8 +116,6 @@ class MatterTests(unittest.TestCase):
             rad = json.loads(files[f"{data}/mcmodup/radiation.json"])
             self.assertEqual(rad['default_multiplier'], 20 if prepaid else 100)
             self.assertEqual(rad['decay_safe_machines'], prepaid)
-            placement = json.loads(files[f"{data}/worldgen/placed_feature/uranium_ore.json"])
-            self.assertEqual(placement['placement'][0]['count'], 6)
             self.assertIn('test.port', checks('test.port', 'checker', ns, ids, prepaid))
 
     def test_decay_probe_rows_and_warning_locales_keep_releases_distinct(self):

@@ -7,7 +7,7 @@ import shutil
 import tempfile
 from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
 
-from . import NEOFORGE_VERSION, minechem_final_synthesis, minechem_matter, minechem_polytool, minechem_reactors
+from . import NEOFORGE_VERSION, minechem_final_synthesis, minechem_matter, minechem_ore, minechem_polytool, minechem_reactors
 from .api import ClassLocation
 from .catalogs import PROFILES, RELEASE_394_PROFILE, RELEASE_394_SHA256, CatalogEntry, Profile
 from .classfiles import CLASS_LIMIT
@@ -25,7 +25,7 @@ STACK = "net/minecraft/item/ItemStack"
 RESOURCE = "src/main/resources/"
 FINAL = PROFILES["minechem-chemistry"]
 RELEASE_394 = PROFILES[RELEASE_394_PROFILE]
-VERSIONS = {FINAL.namespace: "1.3.9-partial", RELEASE_394.namespace: "1.4.8-partial"}
+VERSIONS = {FINAL.namespace: "1.3.10-partial", RELEASE_394.namespace: "1.4.9-partial"}
 FEATURES = minechem_reactors.FEATURES | {"Buffered iron decomposition and saved remaining output": "savedbufferdrains",
             "Original decomposer output-slot method": "linkedslotrule",
             "Journal cloning preserves discovery and selection components": "journalcloningpreservescomponents"}
@@ -44,7 +44,7 @@ def chemistry_gameplay_checks(package: str, test_namespace: str, prepaid: bool) 
             .replace("@CLASS@", name).replace("@PREFIX@", "release394" if prepaid else "final").replace("@PREPAID@", str(prepaid).lower()))
 
 
-FEATURES_394 = FEATURES | gameplay_features(True) | minechem_polytool.features(True) | minechem_matter.features(True) | {"All 198 measured item and molecule decomposition rules": "materialdecompositionmatchestrace",
+FEATURES_394 = FEATURES | gameplay_features(True) | minechem_polytool.features(True) | minechem_matter.features(True) | minechem_ore.features(True) | {"All 198 measured item and molecule decomposition rules": "materialdecompositionmatchestrace",
                            "5,000 mB water tank, shared input priority and buffer save": "watertankroundtripandpriority",
                            "Measured .394 synthesis batches with exact ghost slot counts and extraction cost": "exactsynthesisbatches",
                            "Ghost editing and saved synthesis, no unpaid extraction": "ghosteditingandsavedsynthesis",
@@ -54,7 +54,7 @@ FEATURES_394 = FEATURES | gameplay_features(True) | minechem_polytool.features(T
                            "Sided journal automation and on-extraction payment": "sidedjournalandpaidextraction"}
 
 
-FEATURES_FINAL = FEATURES | gameplay_features(False) | minechem_polytool.features(False) | minechem_matter.features(False) | {"FINAL fluid boundary, volatile remainder and saved converted water": "finalwaterintakeandsave"} | minechem_final_synthesis.FEATURES
+FEATURES_FINAL = FEATURES | gameplay_features(False) | minechem_polytool.features(False) | minechem_matter.features(False) | minechem_ore.features(False) | {"FINAL fluid boundary, volatile remainder and saved converted water": "finalwaterintakeandsave"} | minechem_final_synthesis.FEATURES
 
 
 def final_water_checks(package: str, test_namespace: str) -> str:
@@ -190,6 +190,7 @@ def _recipe(original: Path, profile: Profile, checksum: str, output: Path) -> di
     files[f"src/main/java/{java_root}/PolytoolChecks{suffix}.java"] = minechem_polytool.checks(package, namespace, namespace, entries, prepaid)
     files[f"src/main/java/{java_root}/MatterChecks{suffix}.java"] = minechem_matter.checks(package, namespace, namespace,
         minechem_final_synthesis.chemical_ids(namespace, entries), prepaid)
+    files[f"src/main/java/{java_root}/{minechem_ore.check_name(prepaid)}.java"] = minechem_ore.checks(package, namespace, namespace, prepaid)
     files[f"src/main/java/{java_root}/JournalCloneChecks.java"] = journal_clone_checks(package, namespace, namespace)
     if prepaid:
         files[f"src/main/java/{java_root}/Release394Checks.java"] = release394_checks(package, namespace, entries)
@@ -213,7 +214,7 @@ def _recipe(original: Path, profile: Profile, checksum: str, output: Path) -> di
 tasks.named('compileJava') {{ classpath += files('src/main/resources') }}
 tasks.named('jar') {{
     archiveFileName = '{artifact}'
-    exclude '{tests}.class', '{java_root}/Release394Checks*.class', '{java_root}/Synthesis394Checks*.class', '{java_root}/Sided394Checks*.class', '{java_root}/JournalCloneChecks*.class', '{java_root}/FinalWaterChecks*.class', '{java_root}/SynthesisFinalChecks*.class', '{java_root}/ReactorChecks*.class', '{java_root}/ChemistryGameplayChecks*.class', '{java_root}/PolytoolChecks*.class', '{java_root}/MatterChecks*.class', 'data/{namespace}/structure/*.nbt'
+    exclude '{tests}.class', '{java_root}/Release394Checks*.class', '{java_root}/Synthesis394Checks*.class', '{java_root}/Sided394Checks*.class', '{java_root}/JournalCloneChecks*.class', '{java_root}/FinalWaterChecks*.class', '{java_root}/SynthesisFinalChecks*.class', '{java_root}/ReactorChecks*.class', '{java_root}/ChemistryGameplayChecks*.class', '{java_root}/PolytoolChecks*.class', '{java_root}/MatterChecks*.class', '{java_root}/UraniumOreChecks*.class', 'data/{namespace}/structure/*.nbt'
 }}
 neoForge.runs.create('gameTestServer') {{
     type = 'gameTestServer'
