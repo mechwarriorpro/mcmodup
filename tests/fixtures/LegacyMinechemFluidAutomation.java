@@ -151,15 +151,20 @@ final class LegacyMinechemFluidAutomation {
                 tally(stored, contents);
             }
         }
-        return status + "/" + position(x + 1, y, z) + "/" + contents + "/" + dropsSince(before);
+        return status + "/" + position(x + 1, y, z) + "/" + contents + "/" + dropsSince(before, x + 1, y, z);
     }
 
     private List<?> entities() throws Exception { return (List<?>) w.getField("field_72996_f").get(world); }
 
-    private Map<String, Integer> dropsSince(List<Object> before) throws Exception {
+    private Map<String, Integer> dropsSince(List<Object> before, int x, int y, int z) throws Exception {
         Map<String, Integer> drops = new TreeMap<String, Integer>();
         for (Object found : entities()) {
-            if (dropped.isInstance(found) && !before.contains(found)) tally(dropped.getMethod("func_92059_d").invoke(found), drops);
+            if (!dropped.isInstance(found) || before.contains(found)) continue;
+            // WorldTickEvent scans the entire entity list. Ignore drops at other test stations.
+            if (Math.abs(entity.getField("field_70165_t").getDouble(found) - x) > 2 ||
+                Math.abs(entity.getField("field_70163_u").getDouble(found) - y) > 2 ||
+                Math.abs(entity.getField("field_70161_v").getDouble(found) - z) > 2) continue;
+            tally(dropped.getMethod("func_92059_d").invoke(found), drops);
         }
         return drops;
     }
@@ -267,7 +272,7 @@ final class LegacyMinechemFluidAutomation {
         Class<?> side = Class.forName("cpw.mods.fml.relauncher.Side"), phase = Class.forName("cpw.mods.fml.common.gameevent.TickEvent$Phase");
         Object tick = event.getConstructor(side, phase, w).newInstance(side.getField("SERVER").get(null), phase.getField("END").get(null), world);
         rules.getMethod("tick", event).invoke(rules.newInstance(), tick);
-        return entity.getField("field_70128_L").getBoolean(itemEntity) + "/" + products(x, y, z) + "/" + dropsSince(before);
+        return entity.getField("field_70128_L").getBoolean(itemEntity) + "/" + products(x, y, z) + "/" + dropsSince(before, x, y, z);
     }
 
     private String products(int x, int y, int z) throws Exception {

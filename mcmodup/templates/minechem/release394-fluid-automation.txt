@@ -39,7 +39,7 @@ react_flow=[e1:1@1]
 react_item=true/[e1:0@1, m148:0@-1, m1:0@0]/{bucket=1}
 react_item_chemical_only=false/[m99:0@0]/{}
 react_item_disabled=false/[m1:0@0]/{}
-react_item_water_edge=true/[m1:0@0, m83:0@-1, m99:0@0]/{bucket=1}
+react_item_water_edge=true/[m1:0@0, m83:0@-1]/{bucket=1}
 react_source=[e1:0@1, m148:0@-1]
 react_source_disabled=[e3:0@0, m1:0@0]
 react_water_product=[m83:0@-1]
