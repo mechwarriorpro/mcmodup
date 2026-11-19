@@ -40,6 +40,7 @@ final class LegacyMinechemMatter {
         LegacyMinechemMatter survey = new LegacyMinechemMatter(world, old);
         survey.fluids();
         survey.decayAndStorage(x, y, z);
+        if (!old) LegacyMinechemFluidAutomation.survey(world, x, y + 32, z);
         return "Measured chemical fluid registry, tube/bucket transactions, decay thresholds and shielded inventories";
     }
 

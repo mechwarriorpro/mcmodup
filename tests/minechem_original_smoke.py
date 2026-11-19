@@ -37,7 +37,7 @@ def compile_probe(root: Path, server: Path, forge: Path, javac: str) -> None:
                                                                  "LegacyMinechemSynthesis394.java", "LegacyMinechemJournal394.java",
                                                                  "LegacyMinechemReactors.java", "LegacyMinechemSynthesisFinal.java",
                                                                  "LegacyMinechemChemistry.java", "LegacyMinechemPolytool.java",
-                                                                 "LegacyMinechemMatter.java"))],
+                                                                 "LegacyMinechemMatter.java", "LegacyMinechemFluidAutomation.java"))],
                             capture_output=True, text=True, timeout=60)
     assert result.returncode == 0, result.stderr
     with ZipFile(server / "mods/mcmodup-minechemoracle.jar", "x") as jar:
@@ -118,6 +118,8 @@ def original(root: Path, version: str, matter_only: bool = False) -> None:
         assert not mismatch, f"{version} {kind} differs at {[(key, expected.get(key), actual.get(key)) for key in mismatch[:12]]}"
         note(f"Pinned Minechem {version} {kind}", f"{len(expected)} original rows re-observed")
     if matter_only:
+        path = server / "minechem-fluid-automation.txt"
+        note("Original .394 fluid automation", path.read_text(encoding="utf-8"))
         return
     verify_chemistry(server, version)
     polytool = (server / "minechem-polytool.txt").read_text(encoding="utf-8").splitlines()
