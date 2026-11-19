@@ -17,7 +17,7 @@ import net.neoforged.neoforge.capabilities.RegisterCapabilitiesEvent;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 
-@EventBusSubscriber(modid = "@TEST_NAMESPACE@", bus = EventBusSubscriber.Bus.MOD)
+@EventBusSubscriber(modid = "@TEST_NAMESPACE@")
 @GameTestHolder("@TEST_NAMESPACE@")
 @PrefixGameTestTemplate(false)
 public final class ThermometerChecks {

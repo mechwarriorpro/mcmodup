@@ -20,6 +20,7 @@ import net.neoforged.fml.common.Mod;
 import net.neoforged.neoforge.event.BuildCreativeModeTabContentsEvent;
 import net.neoforged.neoforge.registries.DeferredBlock;
 import net.neoforged.neoforge.registries.DeferredHolder;
+import net.neoforged.neoforge.registries.DeferredItem;
 import net.neoforged.neoforge.registries.DeferredRegister;
 
 @Mod(ThermometerMod.ID)
@@ -32,7 +33,7 @@ public final class ThermometerMod {
         () -> new Thermometer(BlockBehaviour.Properties.of().strength(1F)));
     static final DeferredHolder<BlockEntityType<?>, BlockEntityType<Thermometer.Sensor>> SENSOR = ENTITIES.register("thermometer",
         () -> BlockEntityType.Builder.of(Thermometer.Sensor::new, BLOCK.get()).build(null));
-    static final DeferredHolder<net.minecraft.world.item.Item, TrackingItem> ITEM = ITEMS.register("thermometer", TrackingItem::new);
+    static final DeferredItem<TrackingItem> ITEM = ITEMS.register("thermometer", TrackingItem::new);
 
     public ThermometerMod(IEventBus bus) {
         BLOCKS.register(bus);
