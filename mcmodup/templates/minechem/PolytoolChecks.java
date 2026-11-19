@@ -665,8 +665,7 @@ public final class @CLASS@ {
                     rand.nextInt(16); // Silicon's guaranteed rank-15 activation still consumes the roll.
                     if ((rand.nextFloat() < .05F) == pass) break;
                 }
-                level.random.setSeed(seed);
-                combat(test, "silicon_flesh_" + (pass ? "pass" : "miss"), loot(test, actor, zombie, Items.ROTTEN_FLESH, 1, true));
+                combat(test, "silicon_flesh_" + (pass ? "pass" : "miss"), loot(test, actor, zombie, Items.ROTTEN_FLESH, 1, true, seed));
             }
             test.assertTrue(loot(test, actor, skeleton, Items.BEDROCK, 1, true).equals("{minecraft:bedrock=1}"),
                 "Silicon deleted an item with no native decomposition rule");
@@ -862,9 +861,14 @@ public final class @CLASS@ {
     }
 
     private static String loot(GameTestHelper test, ServerPlayer attacker, LivingEntity victim, Item item, int count, boolean melee) {
+        return loot(test, attacker, victim, item, count, melee, null);
+    }
+
+    private static String loot(GameTestHelper test, ServerPlayer attacker, LivingEntity victim, Item item, int count, boolean melee, Long seed) {
         var level = test.getLevel();
         var drops = new ArrayList<ItemEntity>();
         drops.add(new ItemEntity(level, victim.getX(), victim.getY(), victim.getZ(), new ItemStack(item, count)));
+        if (seed != null) level.random.setSeed(seed); // ItemEntity's constructor also consumes world RNG.
         NeoForge.EVENT_BUS.post(new LivingDropsEvent(victim, melee ? level.damageSources().playerAttack(attacker) : level.damageSources().magic(), drops, true));
         return combatItems(drops);
     }
