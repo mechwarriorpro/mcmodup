@@ -60,9 +60,9 @@ public final class LaunchSystem extends BaseEntityBlock {
     private static final DeferredRegister.Items ITEMS = DeferredRegister.createItems(ID);
     private static final DeferredRegister<BlockEntityType<?>> TILES = DeferredRegister.create(Registries.BLOCK_ENTITY_TYPE, ID);
     private static final DeferredRegister<EntityType<?>> ENTITIES = DeferredRegister.create(Registries.ENTITY_TYPE, ID);
-    static final net.neoforged.neoforge.registries.DeferredBlock<LaunchSystem> BASE = BLOCKS.register("launcher_base", LaunchSystem::new);
-    static final net.neoforged.neoforge.registries.DeferredBlock<LaunchSystem> SCREEN = BLOCKS.register("launcher_screen", LaunchSystem::new);
-    static final net.neoforged.neoforge.registries.DeferredBlock<LaunchSystem> AA = BLOCKS.register("anti_air_turret", LaunchSystem::new);
+    static final net.neoforged.neoforge.registries.DeferredBlock<LaunchSystem> BASE = BLOCKS.register("launcher_base", () -> new LaunchSystem());
+    static final net.neoforged.neoforge.registries.DeferredBlock<LaunchSystem> SCREEN = BLOCKS.register("launcher_screen", () -> new LaunchSystem());
+    static final net.neoforged.neoforge.registries.DeferredBlock<LaunchSystem> AA = BLOCKS.register("anti_air_turret", () -> new LaunchSystem());
     static final net.neoforged.neoforge.registries.DeferredBlock<Block> FRAME = BLOCKS.registerSimpleBlock("launcher_frame", Properties.of().strength(4F).noOcclusion());
     static final net.neoforged.neoforge.registries.DeferredItem<Item> TRAINING = ITEMS.register("training_missile", () -> new Item(new Item.Properties().stacksTo(1)));
     static final net.neoforged.neoforge.registries.DeferredItem<Item> CONDENSED = ITEMS.register("condensed_missile", () -> new Item(new Item.Properties().stacksTo(1)));
