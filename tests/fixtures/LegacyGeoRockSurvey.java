@@ -78,15 +78,65 @@ public final class LegacyGeoRockSurvey {
                 crafts++;
             }
             require(placed == 153 && natural.size() == 17 && crafts == 153, "The original rock families changed");
+            int connectedCases = checkConnected(world, place, getItem, blocks, rocks, shapes, x, y, z);
             String generated = rockGeneration(world, worldType, place, getId, getMeta, natural);
             String terrain = terrainRules(world, worldType, place, getId, getMeta, x, z, rocks);
             System.out.println("MCMODUP_GEO_PASS " + rocks.length + " rock types; " + shapes.length + " shapes; "
-                    + placed + " exact placements and drops; " + crafts + " crafting or smelting cases | " + specs + " | " + generated + " | " + terrain);
+                    + placed + " exact placements and drops; " + crafts + " crafting or smelting cases | " + specs + " | " + generated + " | " + terrain + " | " + connectedCases + " connected-face masks match; same-rock variants connect; different rock does not");
         } catch (Throwable failure) {
             Throwable cause = failure.getCause() == null ? failure : failure.getCause();
             System.err.println("MCMODUP_GEO_FAIL " + cause + " (probe: " + failure.getStackTrace()[0] + ")");
             failure.printStackTrace();
         }
+    }
+
+    /** Exhaust each of the 256 possible in-plane neighbor patterns on all six faces of a real v23b wall. */
+    private static int checkConnected(Object world, Method place, Method getItem, Object[] blocks,
+                                      Object[] rocks, Object[] shapes, int x, int y, int z) throws Exception {
+        Object granite = constant(rocks, "GRANITE"), marble = constant(rocks, "MARBLE");
+        Object connected = constant(shapes, "CONNECTED"), smooth = constant(shapes, "SMOOTH"), brick = constant(shapes, "BRICK");
+        Object center = getItem.invoke(granite, connected), stone = getItem.invoke(granite, smooth);
+        Object edge = getItem.invoke(granite, brick), unlike = getItem.invoke(marble, connected);
+        Class<?> faces = Class.forName("net.minecraftforge.common.ForgeDirection");
+        Method masks = blocks[itemId(center)].getClass().getMethod("getEdgesForFace", mc("world.IBlockAccess"),
+                int.class, int.class, int.class, faces, ((Enum<?>) granite).getDeclaringClass());
+        final String[] sides = {"DOWN", "UP", "NORTH", "SOUTH", "WEST", "EAST"};
+        // Each row is [side mapped to mask 2, side mapped to mask 4]; the corner masks are 1/3/7/9.
+        final int[][] advances = {{0, 0, 1, 1, 0, 0}, {0, 0, 1, 1, 0, 0}, {1, 0, 0, 0, 1, 0},
+                                  {1, 0, 0, 0, 1, 0}, {0, 0, 1, 0, 1, 0}, {0, 0, 1, 0, 1, 0}};
+        final int[] two = {1, 1, 1, 0, 0, -1, -1, -1}, four = {1, 0, -1, 1, -1, 1, 0, -1};
+        final int[] ids = {1, 2, 3, 4, 6, 7, 8, 9};
+        place.invoke(world, x, y, z, itemId(center), meta(center), 2);
+        for (int i = 0; i < sides.length; i++) {
+            Object face = faces.getField(sides[i]).get(null);
+            int[] dir = advances[i];
+            for (int pattern = 0; pattern < 256; pattern++) {
+                for (int index = 0; index < ids.length; index++) {
+                    Object next = (pattern & (1 << index)) == 0 ? unlike : index % 2 == 0 ? stone : edge;
+                    place.invoke(world, x + dir[0] * two[index] + dir[3] * four[index], y + dir[1] * two[index] + dir[4] * four[index],
+                            z + dir[2] * two[index] + dir[5] * four[index], itemId(next), meta(next), 2);
+                }
+                int removed = 0;
+                for (int index = 0; index < ids.length; index++) {
+                    if ((pattern & (1 << index)) == 0) continue;
+                    int mask = ids[index];
+                    if (two[index] != 0 && four[index] != 0 && ((pattern & (two[index] > 0 ? 2 : 64)) == 0 ||
+                            (pattern & (four[index] > 0 ? 8 : 16)) == 0)) continue;
+                    removed |= 1 << mask;
+                }
+                int actual = 0;
+                for (Object mask : (java.util.Collection<?>) masks.invoke(blocks[itemId(center)], world, x, y, z, face, granite)) {
+                    require(mask instanceof Integer && (Integer) mask >= 0 && (Integer) mask < 10, "Bad overlay index " + mask);
+                    actual |= 1 << (Integer) mask;
+                }
+                require(actual == (0x3fe & ~removed), "Unexpected " + sides[i] + " connected masks for " + pattern + ": " + actual + " vs " + (0x3fe & ~removed));
+            }
+            for (int index = 0; index < ids.length; index++) {
+                place.invoke(world, x + dir[0] * two[index] + dir[3] * four[index], y + dir[1] * two[index] + dir[4] * four[index],
+                        z + dir[2] * two[index] + dir[5] * four[index], 0, 0, 2);
+            }
+        }
+        return 6 * 256;
     }
 
     private static int checkCraft(Crafting crafting, Method getItem, Object[] shapes, Object rock,

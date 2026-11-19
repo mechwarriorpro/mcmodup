@@ -49,11 +49,60 @@ public final class LegacyIcbmPlateSmoke {
             power(block, world, signal, x, y, z, 15);
             tick(world, info, now + 20);
             power(block, world, signal, x, y, z, 0);
-            System.out.println("MCMODUP_PLATE_PASS 1 output from horizontal glass, no panel/vertical recipe, no drops; item triggers 15 and releases after the second 10-tick check");
+            System.out.println("MCMODUP_PLATE_PASS 1 output from horizontal glass, no panel/vertical recipe, no drops; item triggers 15 and releases after the second 10-tick check | " + building(world, x + 5, y, z));
         } catch (Throwable error) {
             System.err.println("MCMODUP_PLATE_FAIL " + error);
             error.printStackTrace();
         }
+    }
+
+    private static String building(Object world, int x, int y, int z) throws Exception {
+        Class<?> core = Class.forName("icbm.core.ICBMCore"), block = blockType(), worldType = type("world.World");
+        Object concrete = core.getField("blockConcrete").get(null), glass = core.getField("blockReinforcedGlass").get(null);
+        int concreteId = block.getField("field_71990_ca").getInt(concrete), glassId = block.getField("field_71990_ca").getInt(glass);
+        Object[][] inputs = {
+            {stack(12), stack(13), stack(12), stack(13), stack(326), stack(13), stack(12), stack(13), stack(12)},
+            ring(concreteId, 0, 49), ring(concreteId, 1, 265), ring(265, 0, 20)
+        };
+        Class<?> gridType = type("inventory.InventoryCrafting"), managerType = type("item.crafting.CraftingManager");
+        java.lang.reflect.Field raw = gridType.getDeclaredField("field_70466_a");
+        raw.setAccessible(true);
+        Method craft = managerType.getMethod("func_82787_a", gridType, worldType);
+        Object manager = managerType.getMethod("func_77594_a").invoke(null);
+        Method metadata = stackType().getMethod("func_77960_j");
+        Method drops = block.getMethod("getBlockDropped", worldType, int.class, int.class, int.class, int.class, int.class);
+        Method place = worldType.getMethod("func_72832_d", int.class, int.class, int.class, int.class, int.class, int.class);
+        Method resistance = block.getMethod("getExplosionResistance", type("entity.Entity"), worldType, int.class, int.class, int.class,
+                double.class, double.class, double.class);
+        Method hardness = block.getMethod("func_71934_m", worldType, int.class, int.class, int.class);
+        for (int i = 0; i < inputs.length; i++) {
+            int id = i == 3 ? glassId : concreteId, meta = i == 3 ? 0 : i;
+            Object expected = i == 3 ? glass : concrete;
+            Object grid = gridType.getConstructor(type("inventory.Container"), int.class, int.class).newInstance(null, 3, 3);
+            System.arraycopy(inputs[i], 0, raw.get(grid), 0, 9);
+            Object made = craft.invoke(manager, grid, world);
+            require(itemId(made) == id && (Integer) metadata.invoke(made) == meta &&
+                stackType().getField("field_77994_a").getInt(made) == 8, "Unexpected build recipe/metadata for case " + i);
+            require((Boolean) place.invoke(world, x, y, z, id, meta, 2), "Could not place build variant " + i);
+            java.util.List<?> result = (java.util.List<?>) drops.invoke(expected, world, x, y, z, meta, 0);
+            require(result.size() == 1 && itemId(result.get(0)) == id && (Integer) metadata.invoke(result.get(0)) == meta,
+                    "Original building block dropped a different variant at " + i);
+            float blast = (Float) resistance.invoke(expected, null, world, x, y, z, 0D, 0D, 0D);
+            require(Math.abs(blast - new float[]{30F, 38F, 48F, 28.8F}[i]) < .001F &&
+                    (Float) hardness.invoke(expected, world, x, y, z) == (i == 3 ? 0.6F : 3.8F), "Wrong physical properties for " + i + ": " + blast);
+            require(!(Boolean) block.getMethod("hasTileEntity", int.class).invoke(expected, meta), "Building block has a tile: " + i);
+        }
+        Method side = block.getMethod("func_71877_c", type("world.IBlockAccess"), int.class, int.class, int.class, int.class);
+        require(!(Boolean) side.invoke(glass, world, x, y, z, 5) && (Boolean) side.invoke(glass, world, x + 1, y, z, 5),
+                "Reinforced glass does not cull only its interior face in air");
+        return "concrete/compact/reinforced/glass each craft 8 and drop their own variant; hardness 3.8/3.8/3.8/0.6; " +
+               "resistance 30/38/48/28.8; reinforced glass culls inner face; no building block tiles";
+    }
+
+    private static Object[] ring(int a, int meta, int b) throws Exception {
+        Object first = stackType().getConstructor(int.class, int.class, int.class).newInstance(a, 1, meta);
+        Object second = stack(b);
+        return new Object[]{first, second, first, second, first, second, first, second, first};
     }
 
     private static Object craft(Object world, int width, int height, int first, int second) throws Exception {

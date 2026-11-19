@@ -8,7 +8,7 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.Map;
 
-/** Observe utility behavior only: turbine, empty assembler state and Sentry power-bus forwarding. */
+/** Observe utility behavior: heat, steam, empty assembler state and Sentry power-bus forwarding. */
 @Mod(modid = "mcmodup_voltz_infrastructure", name = "Voltz infrastructure parity probe", version = "1.0.0",
      dependencies = "required-after:AtomicScience;required-after:ICBM|Explosion;required-after:ICBM|Sentry")
 public final class LegacyVoltzInfrastructure {
@@ -30,10 +30,11 @@ public final class LegacyVoltzInfrastructure {
             z = coord(spawn, "field_71573_c") + 1;
             String grid = thermal();
             String turbine = turbine();
+            String steam = steamProduction();
             String assembler = assembler();
             String platform = platform();
             String inventory = platformInventory();
-            System.out.println("MCMODUP_INFRA_PASS " + grid + " | " + turbine + " | " + assembler + " | " + platform + " | " + inventory);
+            System.out.println("MCMODUP_INFRA_PASS " + grid + " | " + turbine + " | " + steam + " | " + assembler + " | " + platform + " | " + inventory);
         } catch (Throwable error) {
             Throwable cause = error.getCause() == null ? error : error.getCause();
             System.err.println("MCMODUP_INFRA_FAIL " + cause + " (probe: " + error.getStackTrace()[0] + ")");
@@ -108,6 +109,62 @@ public final class LegacyVoltzInfrastructure {
         long restoredEnergy = (Long) stored.invoke(field(tile.getClass(), "energy").get(restored));
         return "turbine bottom steam only; capacity=" + capacity.invoke(tank) + "; steam/power/spin=" + stages +
                 "; energy=" + stored.invoke(energy) + "; restored=" + restoredAmount + "/" + restoredEnergy;
+    }
+
+    private static String steamProduction() throws Exception {
+        Class<?> atomic = Class.forName("atomicscience.AtomicScience"), block = mc("block.Block");
+        Class<?> gridType = Class.forName("calclavia.lib.thermal.ThermalGrid"), vector = Class.forName("universalelectricity.api.vector.VectorWorld");
+        Class<?> fluid = Class.forName("net.minecraftforge.fluids.Fluid");
+        Class<?> direction = Class.forName("net.minecraftforge.common.ForgeDirection");
+        Object down = direction.getField("DOWN").get(null), up = direction.getField("UP").get(null), east = direction.getField("EAST").get(null);
+        Object water = Class.forName("net.minecraftforge.fluids.FluidRegistry").getField("WATER").get(null);
+        Object steam = atomic.getField("FLUID_STEAM").get(null);
+        Object collector = atomic.getField("blockSteamFunnel").get(null);
+        int px = x + 23;
+        Object lower = place(collector, px, y + 1, z, 0), higher = place(collector, px, y + 2, z, 0);
+        Class<?> funnel = lower.getClass();
+        Object lowerTank = field(funnel, "tank").get(lower), upperTank = field(funnel, "tank").get(higher);
+        Method amount = lowerTank.getClass().getMethod("getFluidAmount");
+        Method canFill = funnel.getMethod("canFill", direction, fluid), canDrain = funnel.getMethod("canDrain", direction, fluid);
+        require((Integer) lowerTank.getClass().getMethod("getCapacity").invoke(lowerTank) == 16000 &&
+                (Boolean) canFill.invoke(lower, down, steam) && !(Boolean) canFill.invoke(lower, east, steam) &&
+                !(Boolean) canFill.invoke(lower, down, water) && (Boolean) canDrain.invoke(lower, up, steam) &&
+                !(Boolean) canDrain.invoke(lower, down, steam), "Funnel capacity or sided rules changed");
+        Object still = block.getField("field_71943_B").get(null);
+        Method at = worldType.getMethod("func_72798_a", int.class, int.class, int.class);
+        int stillId = block.getField("field_71990_ca").getInt(still);
+        for (float threshold : new float[]{372F, 373F}) {
+            Object grid = gridType.newInstance();
+            Object origin = vector.getConstructor(worldType, double.class, double.class, double.class).newInstance(world, px, y, z);
+            place(still, px, y, z, 0);
+            float ambient = (Float) gridType.getMethod("getDefaultTemperature", vector).invoke(grid, origin);
+            gridType.getMethod("addTemperature", vector, float.class).invoke(grid, origin, threshold - ambient);
+            gridType.getMethod("update").invoke(grid);
+            boolean boiling = threshold == 373F;
+            require((Integer) amount.invoke(lowerTank) == (boiling ? 500 : 0) && (Integer) amount.invoke(upperTank) == (boiling ? 1000 : 0) &&
+                    (Integer) at.invoke(world, px, y, z) == (boiling ? 0 : stillId), "Wrong steam uptake or water at " + threshold + " K: lower=" +
+                    amount.invoke(lowerTank) + ", upper=" + amount.invoke(upperTank) + ", water=" + at.invoke(world, px, y, z));
+            if (!boiling) worldType.getMethod("func_72832_d", int.class, int.class, int.class, int.class, int.class, int.class).invoke(world, px, y, z, 0, 0, 2);
+        }
+        Object turbine = place(atomic.getField("blockElectricTurbine").get(null), px, y + 3, z, 0);
+        Method tick = funnel.getMethod("func_70316_g");
+        tick.invoke(lower);
+        require((Integer) amount.invoke(lowerTank) == 0 && (Integer) amount.invoke(upperTank) == 1500, "Original funnel did not push only its accepted amount upward");
+        tick.invoke(higher);
+        require((Integer) amount.invoke(upperTank) == 0 && (Integer) amount.invoke(field(turbine.getClass(), "tank").get(turbine)) == 1500,
+                "Original funnel did not supply the original turbine");
+        Object tag = mc("nbt.NBTTagCompound").newInstance(), restored = funnel.newInstance();
+        Class<?> stack = Class.forName("net.minecraftforge.fluids.FluidStack");
+        Object fill = stack.getConstructor(fluid, int.class).newInstance(steam, 2000);
+        Method insert = funnel.getMethod("fill", direction, stack, boolean.class);
+        require((Integer) insert.invoke(higher, down, fill, true) == 2000, "Funnel refused bottom gas");
+        // Observe regular world-save callbacks. This particular Calclavia tile calls
+        // the tank read method from the world writer and vice versa.
+        funnel.getMethod("func_70310_b", tag.getClass()).invoke(higher, tag);
+        funnel.getMethod("func_70307_a", tag.getClass()).invoke(restored, tag);
+        require((Integer) amount.invoke(field(funnel, "tank").get(restored)) == 0, "Original funnel NBT behavior changed");
+        return "372 K does not boil; 373 K source disappears and offers 500/1000 mB at 1/2 blocks above; 16000 mB each; " +
+               "gas-only bottom fill/top drain advice; upward push supplies turbine 1500 mB; normal original NBT reload loses stored gas";
     }
 
     private static String assembler() throws Exception {

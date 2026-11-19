@@ -185,7 +185,7 @@ public final class LegacyMinechemDecomposer {
             String materials = FINAL_164 ? "" : "; " + LegacyMinechemMaterials.survey(machine, world) +
                     " | " + LegacyMinechemSynthesis394.survey(world) + " | " + LegacyMinechemJournal394.survey(world, x, y, z);
             System.out.println("MCMODUP_MINECHEM_ORIGINAL_PASS slots=" + slots + "; start_charge=" + capacity + "; start_cost=" + paidAtStart
-                    + "; input_consumed_on_start; saved_queue_emits_16_iron_tubes_one_per_tick; remaining_charge=0" + jam + materials);
+                    + "; input_consumed_on_start; saved_queue_emits_16_iron_tubes_one_per_tick; remaining_charge=0" + jam + materials + " | " + cloning(world));
         } catch (Throwable failure) {
             Throwable cause = failure.getCause() == null ? failure : failure.getCause();
             System.err.println("MCMODUP_MINECHEM_ORIGINAL_FAIL " + cause + " at " +
@@ -193,6 +193,51 @@ public final class LegacyMinechemDecomposer {
                     " (probe: " + failure.getStackTrace()[0] + ")");
             failure.printStackTrace();
         }
+    }
+
+    private static String cloning(Object world) throws Exception {
+        Class<?> stack = type("item.ItemStack"), item = type("item.Item"), worldType = type("world.World");
+        Class<?> tagType = type("nbt.NBTTagCompound"), gridType = type("inventory.InventoryCrafting");
+        Object journalItem = Class.forName(FINAL_164 ? "minechem.MinechemItemsGeneration" : "minechem.MinechemItemsRegistration").getField("journal").get(null);
+        Object journal = stack.getConstructor(item, int.class, int.class).newInstance(journalItem, 1, 0);
+        Object book = FINAL_164 ? stack.getConstructor(int.class, int.class, int.class).newInstance(340, 1, 0) :
+            stack.getConstructor(item, int.class, int.class).newInstance(
+                Class.forName("cpw.mods.fml.common.registry.GameRegistry").getMethod("findItem", String.class, String.class)
+                    .invoke(null, "minecraft", "book"), 1, 0);
+        Object tag = tagType.newInstance();
+        tagType.getMethod("func_74778_a", String.class, String.class).invoke(tag, "owner", "Minechem oracle");
+        stack.getMethod("func_77982_d", tagType).invoke(journal, tag);
+        journalItem.getClass().getMethod("addItemStackToJournal", stack, stack, worldType).invoke(journalItem, book, journal, world);
+        journalItem.getClass().getMethod("setActiveStack", stack, stack).invoke(journalItem, book, journal);
+        Object grid = gridType.getConstructor(type("inventory.Container"), int.class, int.class).newInstance(null, 3, 3);
+        java.lang.reflect.Field raw = gridType.getDeclaredField("field_70466_a");
+        raw.setAccessible(true);
+        Object[] slots = (Object[]) raw.get(grid);
+        Class<?> managerType = type("item.crafting.CraftingManager");
+        Object manager = managerType.getMethod("func_77594_a").invoke(null);
+        Method craft = managerType.getMethod("func_82787_a", gridType, worldType);
+        slots[0] = journal;
+        slots[1] = book;
+        Object result = craft.invoke(manager, grid, world);
+        Method getItem = stack.getMethod("func_77973_b"), getTag = stack.getMethod("func_77978_p");
+        java.lang.reflect.Field count = stack.getField("field_77994_a");
+        Object copied = result == null ? null : getTag.invoke(result);
+        require(result != null && getItem.invoke(result) == journalItem && count.getInt(result) == 2 && count.getInt(journal) == 1 &&
+                (Integer) stack.getMethod("func_77976_d").invoke(result) == 64 && copied != null && copied != tag && copied.equals(tag),
+                "Registered journal clone did not preserve the whole original tag and two-count output");
+        slots[0] = book;
+        slots[1] = journal;
+        require(craft.invoke(manager, grid, world) == null, "Original cloning unexpectedly matched reversed books");
+        slots[0] = null;
+        slots[1] = journal;
+        slots[2] = book;
+        require(craft.invoke(manager, grid, world) == null, "Original cloning unexpectedly matched shifted books");
+        slots[0] = journal;
+        slots[1] = book;
+        slots[2] = null;
+        slots[6] = stack.getMethod("func_77946_l").invoke(book);
+        require(craft.invoke(manager, grid, world) != null, "Original cloning no longer ignores other slots");
+        return "registered journal clone: top-left journal then book yields 2, limit 64, independent tag copy including owner, discoveries and selection; rejects reverse/shift, ignores extras";
     }
 
     private static void fill(Object tile, long energy) throws Exception {
